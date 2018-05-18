@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -73,7 +73,7 @@ class PAPER2D_API UPaperTileMap : public UObject
 
 	// Last tile set that was selected when editing the tile map
 	UPROPERTY()
-	TAssetPtr<UPaperTileSet> SelectedTileSet;
+	TSoftObjectPtr<UPaperTileSet> SelectedTileSet;
 
 	// The material to use on a tile map instance if not overridden
 	UPROPERTY(Category=Setup, EditAnywhere, BlueprintReadOnly)

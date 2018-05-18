@@ -1,7 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "ADPCMAudioInfo.h"
+#include "CoreMinimal.h"
 #include "Interfaces/IAudioFormat.h"
 #include "Sound/SoundWave.h"
 #include "Audio.h"
@@ -19,6 +20,7 @@ namespace ADPCM
 FADPCMAudioInfo::FADPCMAudioInfo(void)
 {
 	UncompressedBlockData = NULL;
+	SamplesPerBlock = 0;
 }
 
 FADPCMAudioInfo::~FADPCMAudioInfo(void)
@@ -36,19 +38,42 @@ void FADPCMAudioInfo::SeekToTime(const float SeekTime)
 	{
 		CurrentUncompressedBlockSampleIndex = UncompressedBlockSize / sizeof(uint16);
 		CurrentCompressedBlockIndex = 0;
-	
+
 		CurrentUncompressedBlockSampleIndex = 0;
 		CurrentChunkIndex = 0;
 		CurrentChunkBufferOffset = 0;
 		TotalSamplesStreamed = 0;
 		CurCompressedChunkData = NULL;
 	}
+	else
+	{
+		if (Format == WAVE_FORMAT_LPCM)
+		{
+			// There are no "blocks" on LPCM, so only update the total samples streamed (which is based off sample rate).
+			// Note that TotalSamplesStreamed is per-channel in the ReadCompressedInfo. Channels are taken into account there.
+			uint32 SeekedSamples = (uint32)(SeekTime * (float)(*WaveInfo.pSamplesPerSec));
+			TotalSamplesStreamed = FMath::Clamp<uint32>(SeekedSamples, 0, TotalSamplesPerChannel - 1);
+		}
+		else
+		{
+			// Figure out the block index that the seek takes us to
+			uint32 SeekedSamples = (uint32)(SeekTime * (float)(*WaveInfo.pSamplesPerSec));
+
+			// Clamp to the end of memory in case we have an invalid seek time.
+			SeekedSamples = FMath::Clamp<uint32>(SeekedSamples, 0, TotalSamplesPerChannel - 1);
+
+			// Compute the block index that we're seeked to
+			CurrentCompressedBlockIndex = SeekedSamples / SamplesPerBlock;
+
+			// Update the samples streamed to the current block index and the samples per block
+			TotalSamplesStreamed = CurrentCompressedBlockIndex * SamplesPerBlock;
+		}
+	}
 }
 
 bool FADPCMAudioInfo::ReadCompressedInfo(const uint8* InSrcBufferData, uint32 InSrcBufferDataSize, struct FSoundQualityInfo* QualityInfo)
 {
 	check(InSrcBufferData);
-	check(QualityInfo);
 
 	SrcBufferData = InSrcBufferData;
 	SrcBufferDataSize = InSrcBufferDataSize;
@@ -64,11 +89,12 @@ bool FADPCMAudioInfo::ReadCompressedInfo(const uint8* InSrcBufferData, uint32 In
 	Format = *WaveInfo.pFormatTag;
 	NumChannels = *WaveInfo.pChannels;
 
-	if(Format == WAVE_FORMAT_ADPCM)
+	if (Format == WAVE_FORMAT_ADPCM)
 	{
-		ADPCM::ADPCMFormatHeader* APPCMHeader = (ADPCM::ADPCMFormatHeader*)FormatHeader;
-		TotalSamplesPerChannel = APPCMHeader->SamplesPerChannel;
-		
+		ADPCM::ADPCMFormatHeader* ADPCMHeader = (ADPCM::ADPCMFormatHeader*)FormatHeader;
+		TotalSamplesPerChannel = ADPCMHeader->SamplesPerChannel;
+		SamplesPerBlock = ADPCMHeader->wSamplesPerBlock;
+
 		const uint32 PreambleSize = 7;
 		BlockSize = *WaveInfo.pBlockAlign;
 
@@ -107,12 +133,10 @@ bool FADPCMAudioInfo::ReadCompressedInfo(const uint8* InSrcBufferData, uint32 In
 	
 	if (QualityInfo)
 	{
-		uint32 TrueSampleCount = TotalDecodedSize / *WaveInfo.pBitsPerSample;
-
 		QualityInfo->SampleRate = *WaveInfo.pSamplesPerSec;
 		QualityInfo->NumChannels = *WaveInfo.pChannels;
 		QualityInfo->SampleDataSize = TotalDecodedSize;
-		QualityInfo->Duration = (float)TrueSampleCount / QualityInfo->SampleRate;
+		QualityInfo->Duration = (float)TotalSamplesPerChannel / QualityInfo->SampleRate;
 	}
 	
 	CurrentCompressedBlockIndex = 0;
@@ -261,7 +285,7 @@ bool FADPCMAudioInfo::StreamCompressedInfo(USoundWave* Wave, struct FSoundQualit
 	
 	void*	FormatHeader;
 	
-	if (!WaveInfo.ReadWaveInfo((uint8*)firstChunk, Wave->RunningPlatformData->Chunks[0].DataSize, NULL, true, &FormatHeader))
+	if (!WaveInfo.ReadWaveInfo((uint8*)firstChunk, Wave->RunningPlatformData->Chunks[0].AudioDataSize, NULL, true, &FormatHeader))
 	{
 		UE_LOG(LogAudio, Warning, TEXT("WaveInfo.ReadWaveInfo Failed"));
 		return false;
@@ -276,7 +300,7 @@ bool FADPCMAudioInfo::StreamCompressedInfo(USoundWave* Wave, struct FSoundQualit
 	Format = *WaveInfo.pFormatTag;
 	NumChannels = *WaveInfo.pChannels;
 	
-	if(Format == WAVE_FORMAT_ADPCM)
+	if (Format == WAVE_FORMAT_ADPCM)
 	{
 		ADPCM::ADPCMFormatHeader* APPCMHeader = (ADPCM::ADPCMFormatHeader*)FormatHeader;
 		TotalSamplesPerChannel = APPCMHeader->SamplesPerChannel;
@@ -292,25 +316,19 @@ bool FADPCMAudioInfo::StreamCompressedInfo(USoundWave* Wave, struct FSoundQualit
 		const uint32 targetBlocks = MONO_PCM_BUFFER_SAMPLES / uncompressedBlockSamples;
 		StreamBufferSize = targetBlocks * UncompressedBlockSize;
 		TotalDecodedSize = ((WaveInfo.SampleDataSize + CompressedBlockSize - 1) / CompressedBlockSize) * UncompressedBlockSize;
-		if (QualityInfo)
-		{
-			uint32 TrueSampleCount = TotalDecodedSize / *WaveInfo.pBitsPerSample;
-
-			QualityInfo->SampleRate = *WaveInfo.pSamplesPerSec;
-			QualityInfo->NumChannels = *WaveInfo.pChannels;
-			QualityInfo->SampleDataSize = TotalDecodedSize;
-			QualityInfo->Duration = (float)TrueSampleCount / QualityInfo->SampleRate;
-		}
 		
 		UncompressedBlockData = (uint8*)FMemory::Realloc(UncompressedBlockData, NumChannels * UncompressedBlockSize);
 		check(UncompressedBlockData != NULL);
 	}
-	else if(Format == WAVE_FORMAT_LPCM)
+	else if (Format == WAVE_FORMAT_LPCM)
 	{
 		BlockSize = 0;
 		UncompressedBlockSize = 0;
 		CompressedBlockSize = 0;
-		StreamBufferSize = TotalDecodedSize = WaveInfo.SampleDataSize;
+
+		// This is uncompressed, so decoded size and buffer size are the same
+		TotalDecodedSize = WaveInfo.SampleDataSize;
+		StreamBufferSize = WaveInfo.SampleDataSize;
 		TotalSamplesPerChannel = StreamBufferSize / sizeof(uint16) / NumChannels;
 	}
 	else
@@ -319,6 +337,14 @@ bool FADPCMAudioInfo::StreamCompressedInfo(USoundWave* Wave, struct FSoundQualit
 		return false;
 	}
 	
+	if (QualityInfo)
+	{
+		QualityInfo->SampleRate = *WaveInfo.pSamplesPerSec;
+		QualityInfo->NumChannels = *WaveInfo.pChannels;
+		QualityInfo->SampleDataSize = TotalDecodedSize;
+		QualityInfo->Duration = (float)TotalSamplesPerChannel / QualityInfo->SampleRate;
+	}
+
 	return true;
 }
 
@@ -327,7 +353,7 @@ bool FADPCMAudioInfo::StreamCompressedData(uint8* Destination, bool bLooping, ui
 	// Destination samples are interlaced by channel, BufferSize is in bytes
 	
 	// Ensure that BuffserSize is a multiple of the sample size times the number of channels
-	check((BufferSize % (sizeof(uint16) * NumChannels)) == 0);
+	checkf((BufferSize % (sizeof(uint16) * NumChannels)) == 0, TEXT("Invalid buffer size %d requested for %d channels"), BufferSize, NumChannels);
 	
 	int16*	OutData = (int16*)Destination;
 	

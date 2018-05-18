@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSubsystemIOSPrivatePCH.h"
 #import "OnlineStoreKitHelper.h"
@@ -202,8 +202,8 @@ void FOnlineSubsystemIOS::InitStoreKitHelper()
 
 void FOnlineSubsystemIOS::CleanupStoreKitHelper()
 {
-	[StoreHelper release];
-	StoreHelper = nil;
+	// @todo MetalMRT: This needs to be analyzed with ASAN - but this pointer is garbage on shutdown...
+	// [StoreHelper release];
 }
 
 void FOnlineSubsystemIOS::InitAppStoreHelper()
@@ -293,13 +293,18 @@ bool FOnlineSubsystemIOS::Exec(UWorld* InWorld, const TCHAR* Cmd, FOutputDevice&
 	return false;
 }
 
-bool FOnlineSubsystemIOS::IsEnabled()
+bool FOnlineSubsystemIOS::IsEnabled() const
 {
 	bool bEnableGameCenter = false;
 	GConfig->GetBool(TEXT("/Script/IOSRuntimeSettings.IOSRuntimeSettings"), TEXT("bEnableGameCenterSupport"), bEnableGameCenter, GEngineIni);
-    bool bEnableCloudKit = false;
+
+	bool bEnableCloudKit = false;
     GConfig->GetBool(TEXT("/Script/IOSRuntimeSettings.IOSRuntimeSettings"), TEXT("bEnableCloudKitSupport"), bEnableCloudKit, GEngineIni);
-	return bEnableGameCenter || bEnableCloudKit || IsInAppPurchasingEnabled();
+	
+	const bool bIsInAppPurchasingEnabled = IsInAppPurchasingEnabled();
+	const bool bIsEnabledByConfig = FOnlineSubsystemImpl::IsEnabled(); // TODO: Do we want to enable this by this config?
+	
+	return bEnableGameCenter || bEnableCloudKit || bIsInAppPurchasingEnabled || bIsEnabledByConfig;
 }
 
 bool FOnlineSubsystemIOS::IsV2StoreEnabled()

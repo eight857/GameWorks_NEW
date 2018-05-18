@@ -1,7 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SAutomationWindow.h"
 #include "HAL/PlatformProcess.h"
+#include "HAL/PlatformApplicationMisc.h"
 #include "Misc/MessageDialog.h"
 #include "Misc/TextFilter.h"
 #include "Misc/FilterCollection.h"
@@ -1270,7 +1271,7 @@ namespace
 {
 	bool MakeMapPathUrl(FString& InPath)
 	{
-		if ( FPaths::MakePathRelativeTo(InPath, *FPaths::GameContentDir()) )
+		if ( FPaths::MakePathRelativeTo(InPath, *FPaths::ProjectContentDir()) )
 		{
 			InPath.InsertAt(0, TEXT("/Game/"));
 			InPath.RemoveFromEnd(TEXT(".umap"));
@@ -2087,7 +2088,7 @@ void SAutomationWindow::CopyLog( )
 			SelectedText += LINE_TERMINATOR;
 		}
 
-		FPlatformMisc::ClipboardCopy( *SelectedText );
+		FPlatformApplicationMisc::ClipboardCopy( *SelectedText );
 	}
 }
 

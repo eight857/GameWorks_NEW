@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -86,6 +86,9 @@ private:
 
 	// Holds the number of transactions at the last undo list reload.
 	int32 LastQueueLength;
+
+	// Holds the number of undo actions at the last undo list reload.
+	int32 LastUndoCount;
 
 	// Holds the list of undo transaction indices.
 	TArray<TSharedPtr<FTransactionInfo> > UndoList;

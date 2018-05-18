@@ -1,9 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
-
-#pragma once
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineMessageMultiTaskOculus.h"
 #include "OnlineSubsystemOculusPrivate.h"
+
 
 void FOnlineMessageMultiTaskOculus::AddNewRequest(ovrRequest RequestId)
 {

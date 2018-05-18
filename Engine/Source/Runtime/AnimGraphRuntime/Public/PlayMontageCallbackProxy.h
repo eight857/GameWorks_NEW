@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -63,6 +63,7 @@ protected:
 private:
 	TWeakObjectPtr<UAnimInstance> AnimInstancePtr;
 	int32 MontageInstanceID;
+	uint32 bInterruptedCalledBeforeBlendingOut : 1;
 
 	bool IsNotifyValid(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointNotifyPayload) const;
 	void UnbindDelegates();

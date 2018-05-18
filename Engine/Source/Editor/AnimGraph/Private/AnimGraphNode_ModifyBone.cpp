@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimGraphNode_ModifyBone.h"
 #include "UnrealWidget.h"
@@ -18,20 +18,24 @@ UAnimGraphNode_ModifyBone::UAnimGraphNode_ModifyBone(const FObjectInitializer& O
 
 void UAnimGraphNode_ModifyBone::ValidateAnimNodeDuringCompilation(USkeleton* ForSkeleton, FCompilerResultsLog& MessageLog)
 {
-	if (ForSkeleton->GetReferenceSkeleton().FindBoneIndex(Node.BoneToModify.BoneName) == INDEX_NONE)
+	// Temporary fix where skeleton is not fully loaded during AnimBP compilation and thus virtual bone name check is invalid UE-39499 (NEED FIX) 
+	if (ForSkeleton && !ForSkeleton->HasAnyFlags(RF_NeedPostLoad))
 	{
-		if (Node.BoneToModify.BoneName == NAME_None)
+		if (ForSkeleton->GetReferenceSkeleton().FindBoneIndex(Node.BoneToModify.BoneName) == INDEX_NONE)
 		{
-			MessageLog.Warning(*LOCTEXT("NoBoneSelectedToModify", "@@ - You must pick a bone to modify").ToString(), this);
-		}
-		else
-		{
-			FFormatNamedArguments Args;
-			Args.Add(TEXT("BoneName"), FText::FromName(Node.BoneToModify.BoneName));
+			if (Node.BoneToModify.BoneName == NAME_None)
+			{
+				MessageLog.Warning(*LOCTEXT("NoBoneSelectedToModify", "@@ - You must pick a bone to modify").ToString(), this);
+			}
+			else
+			{
+				FFormatNamedArguments Args;
+				Args.Add(TEXT("BoneName"), FText::FromName(Node.BoneToModify.BoneName));
 
-			FText Msg = FText::Format(LOCTEXT("NoBoneFoundToModify", "@@ - Bone {BoneName} not found in Skeleton"), Args);
+				FText Msg = FText::Format(LOCTEXT("NoBoneFoundToModify", "@@ - Bone {BoneName} not found in Skeleton"), Args);
 
-			MessageLog.Warning(*Msg.ToString(), this);
+				MessageLog.Warning(*Msg.ToString(), this);
+			}
 		}
 	}
 

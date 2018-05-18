@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Perception/AIPerceptionComponent.h"
 #include "GameFramework/Controller.h"
@@ -683,6 +683,15 @@ bool UAIPerceptionComponent::GetActorsPerception(AActor* Actor, FActorPerception
 	}
 
 	return bInfoFound;
+}
+
+void UAIPerceptionComponent::SetSenseEnabled(TSubclassOf<UAISense> SenseClass, const bool bEnable)
+{
+	const FAISenseID SenseID = UAISense::GetSenseID(SenseClass);
+	if (SenseID.IsValid())
+	{
+		UpdatePerceptionWhitelist(SenseID, bEnable);
+	}
 }
 
 //----------------------------------------------------------------------//

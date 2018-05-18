@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -36,7 +36,7 @@ public:
 	 * @param InArgs The Slate argument list.
 	 * @param InModel The data model.
 	 */
-	void Construct( const FArguments& InArgs, const FProjectLauncherModelRef& InModel );
+	void Construct( const FArguments& InArgs, const TSharedRef<FProjectLauncherModel>& InModel );
 
 private:
 
@@ -55,7 +55,7 @@ private:
 private:
 
 	// Holds a pointer to the data model.
-	FProjectLauncherModelPtr Model;
+	TSharedPtr<FProjectLauncherModel> Model;
 
 	TSharedPtr<SProjectLauncherPackagingSettings> ProjectLauncherPackagingSettings;
 };

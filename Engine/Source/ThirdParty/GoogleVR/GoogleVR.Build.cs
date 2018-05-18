@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System.IO;
 using UnrealBuildTool;
@@ -9,7 +9,7 @@ public class GoogleVR : ModuleRules
 	{
 		Type = ModuleType.External;
 
-		string GoogleVRSDKDir = UEBuildConfiguration.UEThirdPartySourceDirectory + "GoogleVR/";
+		string GoogleVRSDKDir = Target.UEThirdPartySourceDirectory + "GoogleVR/";
 		PublicSystemIncludePaths.AddRange(
 			new string[] {
 					GoogleVRSDKDir + "include",

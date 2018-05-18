@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AttributeDetails.h"
 #include "UObject/UnrealType.h"
@@ -40,7 +40,7 @@ void FAttributePropertyDetails::CustomizeHeader( TSharedRef<IPropertyHandle> Str
 	PropertyOptions.Empty();
 	PropertyOptions.Add(MakeShareable(new FString("None")));
 
-	FString FilterMetaStr = StructPropertyHandle->GetProperty()->GetMetaData(TEXT("FilterMetaTag"));
+	const FString& FilterMetaStr = StructPropertyHandle->GetProperty()->GetMetaData(TEXT("FilterMetaTag"));
 
 	TArray<UProperty*> PropertiesToAdd;
 	FGameplayAttribute::GetAllAttributeProperties(PropertiesToAdd, FilterMetaStr);

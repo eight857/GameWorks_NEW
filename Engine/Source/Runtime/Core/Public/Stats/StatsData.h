@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -68,14 +68,6 @@ struct CORE_API FStatConstants
 	/** A special meta data used to advance the frame. */
 	static const FStatNameAndInfo AdvanceFrame;
 };
-
-namespace Lex
-{
-	inline void FromString(FName& OutValue, const TCHAR* Buffer )
-	{
-		OutValue = FName( Buffer );
-	}
-}
 
 /** Parse a typed value into the specified out parameter.
  * 	Expects to find a FromString function that takes a reference to T. Defaults are provided in the Lex namespace.

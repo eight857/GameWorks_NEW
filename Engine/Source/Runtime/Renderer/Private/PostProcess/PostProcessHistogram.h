@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PostProcessHistogram.h: Post processing histogram implementation.
@@ -24,7 +24,7 @@ public:
 	// changing this number require Histogram.usf to be recompiled
 	static const uint32 ThreadGroupSizeX = 8;
 	// changing this number require Histogram.usf to be recompiled
-	static const uint32 ThreadGroupSizeY = 8;
+	static const uint32 ThreadGroupSizeY = 4;
 
 	static const uint32 HistogramSize = 64;
 
@@ -40,6 +40,6 @@ public:
 
 	// -------------------------------------------
 
-	static FIntPoint ComputeGatherExtent(const FSceneView& View);
+	static FIntPoint ComputeGatherExtent(const FRenderingCompositePassContext& Context);
 	static FIntPoint ComputeThreadGroupCount(FIntPoint PixelExtent);
 };

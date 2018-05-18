@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	RenderTargetPool.cpp: Scene render target pool manager.
@@ -62,12 +62,15 @@ static FAutoConsoleCommand GRenderTargetPoolEventsCmd(
 	);
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-static TAutoConsoleVariable<int32> CVarRenderTargetPoolTest(
-	TEXT("r.RenderTargetPoolTest"),
+static TAutoConsoleVariable<int32> CVarClobberRenderTarget(
+	TEXT("r.Test.ClobberRenderRarget"),
 	0,
 	TEXT("Clears the texture returned by the rendertarget pool with a special color\n")
 	TEXT("so we can see better which passes would need to clear. Doesn't work on volume textures and non rendertargets yet.\n")
-	TEXT(" 0:off (default), 1:on"),
+	TEXT(" 0:off (default);\n")
+	TEXT(" 1: 1000 on RGBA channels;\n")
+	TEXT(" 2: NaN on RGBA channels;\n")
+	TEXT(" 3: +INFINITY on RGBA channels.\n"),
 	ECVF_Cheat | ECVF_RenderThreadSafe);
 #endif
 
@@ -79,6 +82,16 @@ static TAutoConsoleVariable<int32> CVarAllowMultipleAliasingDiscardsPerFrame(
 	TEXT("with some RHIs (due to additional commandlist flushes)\n")
 	TEXT(" 0:off (default), 1:on"),
 	ECVF_Cheat | ECVF_RenderThreadSafe);
+
+static TAutoConsoleVariable<int32> CVarRtPoolTransientMode(
+	TEXT("r.RenderTargetPool.TransientAliasingMode"),
+	2,
+	TEXT("Enables transient resource aliasing for rendertargets. Used only if GSupportsTransientResourceAliasing is true.\n")
+	TEXT("0 : Disabled\n")
+	TEXT("1 : enable transient resource aliasing for fastVRam rendertargets\n")
+	TEXT("2 : enable transient resource aliasing for fastVRam rendertargets and those with a Transient hint. Best for memory usage - has some GPU cost (~0.2ms)\n")
+	TEXT("3 : enable transient resource aliasing for ALL rendertargets (not recommended)\n"),
+	ECVF_ReadOnly);
 
 bool FRenderTargetPool::IsEventRecordingEnabled() const
 {
@@ -136,6 +149,45 @@ FRenderTargetPool::FRenderTargetPool()
 {
 }
 
+// Logic for determining whether to make a rendertarget transient
+bool FRenderTargetPool::DoesTargetNeedTransienceOverride(const FPooledRenderTargetDesc& InputDesc, ERenderTargetTransience TransienceHint) const
+{
+	if (!GSupportsTransientResourceAliasing)
+	{
+		return false;
+	}
+	int32 AliasingMode = CVarRtPoolTransientMode.GetValueOnRenderThread();
+
+	// We only override transience if aliasing is supported and enabled, the format is suitable, and the target is not already transient
+	if (AliasingMode > 0 &&
+	  	(InputDesc.TargetableFlags & (TexCreate_RenderTargetable | TexCreate_DepthStencilTargetable | TexCreate_UAV)) && 
+		((InputDesc.Flags & TexCreate_Transient) == 0) )
+	{
+		if (AliasingMode == 1)
+		{
+			// Mode 1: Only make FastVRAM rendertargets transient
+			if (InputDesc.Flags & TexCreate_FastVRAM)
+			{
+				return true;
+			}
+		}
+		else if (AliasingMode == 2)
+		{
+			// Mode 2: Make fastvram and ERenderTargetTransience::Transient rendertargets transient
+			if (InputDesc.Flags & TexCreate_FastVRAM || TransienceHint == ERenderTargetTransience::Transient)
+			{
+				return true;
+			}
+		}
+		else if (AliasingMode == 3)
+		{
+			// Mode 3 : All rendertargets are transient
+			return true;
+		}
+	}
+	return false;
+}
+
 void FRenderTargetPool::TransitionTargetsWritable(FRHICommandListImmediate& RHICmdList)
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_RenderTargetPoolTransition);
@@ -181,7 +233,54 @@ void FRenderTargetPool::WaitForTransitionFence()
 	DeferredDeleteArray.Reset();
 }
 
-bool FRenderTargetPool::FindFreeElement(FRHICommandList& RHICmdList, const FPooledRenderTargetDesc& InputDesc, TRefCountPtr<IPooledRenderTarget> &Out, const TCHAR* InDebugName, bool bDoWritableBarrier)
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+
+static void ClobberAllocatedRenderTarget(FRHICommandList& RHICmdList, const FPooledRenderTargetDesc& Desc, IPooledRenderTarget* Out)
+{
+	int32 ClearId = CVarClobberRenderTarget.GetValueOnRenderThread();
+
+	if (!ClearId)
+	{
+		return;
+	}
+	if (Desc.bIsCubemap || Desc.bIsArray)
+	{
+		return;
+	}
+
+	FLinearColor Color = FLinearColor(1000, 1000, 1000, 1000);
+
+	if (ClearId == 2)
+	{
+		Color = FLinearColor(NAN, NAN, NAN, NAN);
+	}
+	else if (ClearId == 3)
+	{
+		Color = FLinearColor(INFINITY, INFINITY, INFINITY, INFINITY);
+	}
+
+	SCOPED_DRAW_EVENT(RHICmdList, ClobberAllocatedRenderTarget);
+
+	if (Out->GetDesc().TargetableFlags & TexCreate_RenderTargetable)
+	{
+		SetRenderTarget(RHICmdList, Out->GetRenderTargetItem().TargetableTexture, FTextureRHIRef());
+		DrawClearQuad(RHICmdList, Color);
+	}
+	else if (Out->GetDesc().TargetableFlags & TexCreate_UAV)
+	{
+		ClearUAV(RHICmdList, Out->GetRenderTargetItem(), Color);
+	}
+
+	if (Desc.TargetableFlags & TexCreate_DepthStencilTargetable)
+	{
+		SetRenderTarget(RHICmdList, FTextureRHIRef(), Out->GetRenderTargetItem().TargetableTexture);
+		DrawClearQuad(RHICmdList, false, FLinearColor::Black, true, 0.0f, true, 0);
+	}
+}
+
+#endif
+
+bool FRenderTargetPool::FindFreeElement(FRHICommandList& RHICmdList, const FPooledRenderTargetDesc& InputDesc, TRefCountPtr<IPooledRenderTarget> &Out, const TCHAR* InDebugName, bool bDoWritableBarrier, ERenderTargetTransience TransienceHint)
 {
 	check(IsInRenderingThread());
 
@@ -195,36 +294,16 @@ bool FRenderTargetPool::FindFreeElement(FRHICommandList& RHICmdList, const FPool
 	ensure(!IsDepthOrStencilFormat(InputDesc.Format) || (InputDesc.ClearValue.ColorBinding == EClearBinding::ENoneBound || InputDesc.ClearValue.ColorBinding == EClearBinding::EDepthStencilBound));
 
 	// If we're doing aliasing, we may need to override Transient flags, depending on the input format and mode
-	int32 AliasingMode = CVarTransientResourceAliasing_RenderTargets.GetValueOnRenderThread();
 	FPooledRenderTargetDesc ModifiedDesc;
-	bool bModifyDesc = false;
-	if (GSupportsTransientResourceAliasing && AliasingMode > 0 && 
-	   (InputDesc.TargetableFlags & (TexCreate_RenderTargetable | TexCreate_DepthStencilTargetable | TexCreate_UAV) ) )
-	{
-		// Only override if the flags aren't already transient (this avoids a copy)
-		if ((InputDesc.Flags & TexCreate_Transient) == 0)
-		{
-			if (AliasingMode == 1)
+	bool bMakeTransient = DoesTargetNeedTransienceOverride(InputDesc, TransienceHint);
+	if (bMakeTransient)
 			{
-				// Mode 1: Make FastVRAM rendertargets transient
-				if (InputDesc.Flags & TexCreate_FastVRAM)
-				{
-					ModifiedDesc = InputDesc;
-					ModifiedDesc.Flags |= TexCreate_Transient;
-					bModifyDesc = true;
-				}
-			}
-			else if (AliasingMode == 2)
-			{
-				// Mode 2: Make all rendertargets transient
 				ModifiedDesc = InputDesc;
 				ModifiedDesc.Flags |= TexCreate_Transient;
-				bModifyDesc = true;
-			}
-		}
 	}
 
-	const FPooledRenderTargetDesc& Desc = bModifyDesc ? ModifiedDesc : InputDesc;
+	// Override the descriptor if necessary
+	const FPooledRenderTargetDesc& Desc = bMakeTransient ? ModifiedDesc : InputDesc;
 
 
 	// if we can keep the current one, do that
@@ -242,6 +321,9 @@ bool FRenderTargetPool::FindFreeElement(FRHICommandList& RHICmdList, const FPool
 			Current->Desc.DebugName = InDebugName;
 			RHIBindDebugLabelName(Current->GetRenderTargetItem().TargetableTexture, InDebugName);
 			check(!Out->IsFree());
+			#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+				ClobberAllocatedRenderTarget(RHICmdList, Desc, Out);
+			#endif
 			return true;
 		}
 		else
@@ -265,6 +347,7 @@ bool FRenderTargetPool::FindFreeElement(FRHICommandList& RHICmdList, const FPool
 		}
 	}
 
+	int32 AliasingMode = CVarRtPoolTransientMode.GetValueOnRenderThread();
 	FPooledRenderTarget* Found = 0;
 	uint32 FoundIndex = -1;
 	bool bReusingExistingTarget = false;
@@ -275,9 +358,9 @@ bool FRenderTargetPool::FindFreeElement(FRHICommandList& RHICmdList, const FPool
 		if (AliasingMode == 0)
 		{
 			if ((Desc.Flags & TexCreate_FastVRAM) && FPlatformMemory::SupportsFastVRAMMemory() )
-		    {
-			    PassCount = 2;
-		    }
+		{
+			PassCount = 2;
+		}
 		}
 
 		bool bAllowMultipleDiscards = ( CVarAllowMultipleAliasingDiscardsPerFrame.GetValueOnRenderThread() != 0 );
@@ -496,29 +579,9 @@ Done:
 		Found->Desc.DebugName = InDebugName;
 	}
 
-#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-	{
-		
-		if(CVarRenderTargetPoolTest.GetValueOnRenderThread())
-		{
-			if(Found->GetDesc().TargetableFlags & TexCreate_RenderTargetable)
-			{
-				SetRenderTarget(RHICmdList, Found->RenderTargetItem.TargetableTexture, FTextureRHIRef());
-				DrawClearQuad(RHICmdList, FLinearColor(1000, 1000, 1000, 1000));
-			}
-			else if(Found->GetDesc().TargetableFlags & TexCreate_UAV)
-			{
-				ClearUAV(RHICmdList, Found->RenderTargetItem, FLinearColor(1000, 1000, 1000, 1000));
-			}
-
-			if(Desc.TargetableFlags & TexCreate_DepthStencilTargetable)
-			{
-				SetRenderTarget(RHICmdList, FTextureRHIRef(), Found->RenderTargetItem.TargetableTexture);
-				DrawClearQuad(RHICmdList, false, FLinearColor::Black, true, 0.0f, true, 0);
-			}
-		}
-	}
-#endif
+	#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+		ClobberAllocatedRenderTarget(RHICmdList, Desc, Found);
+	#endif
 
 	check(Found->IsFree());
 	check(!Found->IsSnapshot());
@@ -1058,6 +1121,13 @@ void FRenderTargetPool::PresentContent(FRHICommandListImmediate& RHICmdList, con
 	VisualizeTexture.PresentContent(RHICmdList, View);
 }
 
+void FRenderTargetPool::UpdateElementSize(const TRefCountPtr<IPooledRenderTarget>& Element, const uint32 OldElementSize)
+{
+	check(Element.IsValid() && FindIndex(&(*Element)) >= 0);
+	AllocationLevelInKB -= (OldElementSize + 1023) / 1024;
+	AllocationLevelInKB += (Element->ComputeMemorySize() + 1023) / 1024;
+}
+
 void FRenderTargetPool::AddDeallocEvents()
 {
 	check(IsInRenderingThread());
@@ -1240,6 +1310,14 @@ void FRenderTargetPool::TickPoolElements()
 	AddPhaseEvent(TEXT("FromLastFrame"));
 	AddAllocEventsFromCurrentState();
 	AddPhaseEvent(TEXT("Rendering"));
+
+#if STATS
+	uint32 Count, SizeKB, UsedKB;
+	GetStats(Count, SizeKB, UsedKB);
+	SET_MEMORY_STAT(STAT_RenderTargetPoolSize, int64(SizeKB) * 1024ll);
+	SET_MEMORY_STAT(STAT_RenderTargetPoolUsed, int64(UsedKB) * 1024ll);
+	SET_DWORD_STAT(STAT_RenderTargetPoolCount, Count);
+#endif // STATS
 }
 
 
@@ -1325,7 +1403,7 @@ void FRenderTargetPool::DumpMemoryUsage(FOutputDevice& OutputDevice)
 		{
 			check(!Element->IsSnapshot());
 			OutputDevice.Logf(
-				TEXT("  %6.3fMB %4dx%4d%s%s %2dmip(s) %s (%s)"),
+				TEXT("  %6.3fMB %4dx%4d%s%s %2dmip(s) %s (%s) %s %s"),
 				ComputeSizeInKB(*Element) / 1024.0f,
 				Element->Desc.Extent.X,
 				Element->Desc.Extent.Y,
@@ -1333,7 +1411,9 @@ void FRenderTargetPool::DumpMemoryUsage(FOutputDevice& OutputDevice)
 				Element->Desc.bIsArray ? *FString::Printf(TEXT("[%3d]"), Element->Desc.ArraySize) : TEXT("     "),
 				Element->Desc.NumMips,
 				Element->Desc.DebugName,
-				GPixelFormats[Element->Desc.Format].Name
+				GPixelFormats[Element->Desc.Format].Name,
+				Element->IsTransient() ? TEXT("(transient)") : TEXT(""),
+				GSupportsTransientResourceAliasing ? *FString::Printf(TEXT("Frames since last discard: %d"), GFrameNumberRenderThread - Element->FrameNumberLastDiscard) : TEXT("")
 				);
 		}
 	}

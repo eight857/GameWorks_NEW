@@ -1,10 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "Misc/StringClassReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "Engine/World.h"
 #include "AI/AISystemBase.h"
 #include "Math/RandomStream.h"
@@ -29,10 +29,10 @@ class AIMODULE_API UAISystem : public UAISystemBase
 
 protected:
 	UPROPERTY(globalconfig, EditAnywhere, Category = "AISystem", meta = (MetaClass = "AIPerceptionSystem", DisplayName = "Perception System Class"))
-	FStringClassReference PerceptionSystemClassName;
+	FSoftClassPath PerceptionSystemClassName;
 
 	UPROPERTY(globalconfig, EditAnywhere, Category = "AISystem", meta = (MetaClass = "AIHotSpotManager", DisplayName = "AIHotSpotManager Class"))
-	FStringClassReference HotSpotManagerClassName;
+	FSoftClassPath HotSpotManagerClassName;
 
 public:
 	/** Default AI movement's acceptance radius used to determine whether 

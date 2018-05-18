@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 //
 // Private implementation for communication with Recast library
@@ -90,11 +90,6 @@ public:
 
 	/** Returns a random location on the navmesh. */
 	FNavLocation GetRandomPoint(const FNavigationQueryFilter& Filter, const UObject* Owner) const;
-
-	/** Returns a random location on the navmesh within Radius from Origin. 
-	 *	@return false if no valid navigable location available in specified area */
-	DEPRECATED(4.8, "GetRandomPointInRadius is deprecated, please use ANavigationData::GetRandomReachablePointInRadius")
-	bool GetRandomPointInRadius(const FVector& Origin, float Radius, FNavLocation& OutLocation, const FNavigationQueryFilter& Filter, const UObject* Owner) const;
 
 	/** Returns a random location on the navmesh within cluster */
 	bool GetRandomPointInCluster(NavNodeRef ClusterRef, FNavLocation& OutLocation) const;

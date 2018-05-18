@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	VulkanResources.h: Vulkan resource RHI definitions.
@@ -143,6 +143,8 @@ struct FVulkanCodeHeader
 	FString ShaderName;
 	FSHAHash SourceHash;
 
+	uint64 UniformBuffersWithDescriptorMask;
+
 	// Number of uniform buffers (not including PackedGlobalUBs)
 	uint32 NEWNumNonGlobalUBs;
 
@@ -206,6 +208,7 @@ inline FArchive& operator<<(FArchive& Ar, FVulkanCodeHeader& Header)
 		}
 	}
 	Ar << Header.ShaderName;
+	Ar << Header.UniformBuffersWithDescriptorMask;
 	Ar << Header.SourceHash;
 	return Ar;
 }

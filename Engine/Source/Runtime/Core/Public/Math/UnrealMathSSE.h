@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -806,9 +806,9 @@ FORCEINLINE VectorRegister VectorTransformVector(const VectorRegister&  VecP,  c
  * @param Vec1		Source vector1
  * @param Vec2		Source vector2
  * @param X			Index for which component of Vector1 to use for X (literal 0-3)
- * @param Y			Index for which component to Vector1 to use for Y (literal 0-3)
- * @param Z			Index for which component to Vector2 to use for Z (literal 0-3)
- * @param W			Index for which component to Vector2 to use for W (literal 0-3)
+ * @param Y			Index for which component of Vector1 to use for Y (literal 0-3)
+ * @param Z			Index for which component of Vector2 to use for Z (literal 0-3)
+ * @param W			Index for which component of Vector2 to use for W (literal 0-3)
  * @return			The swizzled vector
  */
 #define VectorShuffle( Vec1, Vec2, X, Y, Z, W )	_mm_shuffle_ps( Vec1, Vec2, SHUFFLEMASK(X,Y,Z,W) )
@@ -1102,10 +1102,14 @@ inline bool VectorContainsNaNOrInfinite(const VectorRegister& Vec)
 	// NaN is represented with all exponent bits set, plus at least one fraction/significand bit set.
 	// This means finite values will not have all exponent bits set, so check against those bits.
 	
+	// We cannot rely on the initialisation order of global variables between different namespaces so this is a local copy of
+    // the vector we need.
+	static const VectorRegister FloatInfinity = MakeVectorRegister((uint32)0x7F800000, (uint32)0x7F800000, (uint32)0x7F800000, (uint32)0x7F800000);
+
 	// Mask off Exponent
-	VectorRegister ExpTest = VectorBitwiseAnd(Vec, GlobalVectorConstants::FloatInfinity);
+	VectorRegister ExpTest = VectorBitwiseAnd(Vec, FloatInfinity);
 	// Compare to full exponent. If any are full exponent (not finite), the signs copied to the mask are non-zero, otherwise it's zero and finite.
-	bool IsFinite = VectorMaskBits(VectorCompareEQ(ExpTest, GlobalVectorConstants::FloatInfinity)) == 0;
+	bool IsFinite = VectorMaskBits(VectorCompareEQ(ExpTest, FloatInfinity)) == 0;
 	return !IsFinite;
 }
 

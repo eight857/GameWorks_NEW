@@ -1,11 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreTypes.h"
+#include "Templates/Atomic.h"
 
 /**
  * Flags controlling [de]compression
+ * Make sure to update VerifyCompressionFlagsValid after changing these values.
  */
 enum ECompressionFlags
 {
@@ -46,12 +48,12 @@ enum ECompressionFlags
 
 struct FCompression
 {
-	/** Time spent compressing data in seconds. */
-	CORE_API static double CompressorTime;
+	/** Time spent compressing data in cycles. */
+	CORE_API static TAtomic<uint64> CompressorTimeCycles;
 	/** Number of bytes before compression.		*/
-	CORE_API static uint64 CompressorSrcBytes;
+	CORE_API static TAtomic<uint64> CompressorSrcBytes;
 	/** Number of bytes after compression.		*/
-	CORE_API static uint64 CompressorDstBytes;
+	CORE_API static TAtomic<uint64> CompressorDstBytes;
 
 	/**
 	 * Thread-safe abstract compression routine to query memory requirements for a compression operation.
@@ -90,6 +92,12 @@ struct FCompression
 	 * @return true if compression succeeds, false if it fails because CompressedBuffer was too small or other reasons
 	 */
 	CORE_API static bool UncompressMemory( ECompressionFlags Flags, void* UncompressedBuffer, int32 UncompressedSize, const void* CompressedBuffer, int32 CompressedSize, bool bIsSourcePadded = false, int32 BitWindow = DEFAULT_ZLIB_BIT_WINDOW );
+
+	/**
+	* Verifies if the passed in value represents valid compression flags
+	* @param InCompressionFlags Value to test
+	*/
+	CORE_API static bool VerifyCompressionFlagsValid(int32 InCompressionFlags);
 };
 
 

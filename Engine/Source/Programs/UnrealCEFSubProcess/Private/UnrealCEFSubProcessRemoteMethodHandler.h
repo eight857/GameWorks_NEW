@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -23,10 +23,14 @@ THIRD_PARTY_INCLUDES_END
 #include "HideWindowsPlatformTypes.h"
 #endif
 
+#if PLATFORM_LINUX
+typedef CefBase CefBaseRefCounted;
+#endif
+
 class FUnrealCEFSubProcessRemoteScripting;
 
 class FUnrealCEFSubProcessRemoteObject
-	: public CefBase
+	: public CefBaseRefCounted
 {
 public:
 	FUnrealCEFSubProcessRemoteObject(FUnrealCEFSubProcessRemoteScripting* InRemoteScripting, CefRefPtr<CefBrowser> InBrowser, const FGuid& InObjectId)

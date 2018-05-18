@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SceneFilterRendering.h: Filter rendering definitions.
@@ -56,19 +56,19 @@ extern void DrawRectangle(
 
 extern void DrawTransformedRectangle(
 	FRHICommandListImmediate& RHICmdList,
-    float X,
-    float Y,
-    float SizeX,
-    float SizeY,
-    const FMatrix& PosTransform,
-    float U,
-    float V,
-    float SizeU,
-    float SizeV,
-    const FMatrix& TexTransform,
-    FIntPoint TargetSize,
-    FIntPoint TextureSize
-    );
+	float X,
+	float Y,
+	float SizeX,
+	float SizeY,
+	const FMatrix& PosTransform,
+	float U,
+	float V,
+	float SizeU,
+	float SizeV,
+	const FMatrix& TexTransform,
+	FIntPoint TargetSize,
+	FIntPoint TextureSize
+	);
 
 extern void DrawHmdMesh(
 	FRHICommandList& RHICmdList,

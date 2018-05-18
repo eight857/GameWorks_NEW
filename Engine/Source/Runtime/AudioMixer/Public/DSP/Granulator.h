@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -257,7 +257,7 @@ namespace Audio
 		float GetSampleDuration() const;
 
 		// Generate the next audio buffer
-		void Generate(TArray<float>& OutAudiobuffer, const int32 NumFrames);
+		void Generate(float* OutAudiobuffer, const int32 NumFrames);
 
 	protected:
 		// Spawns grains

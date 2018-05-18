@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,11 +14,13 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimNotifyQueue.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
+// #include "Engine/Canvas.h"
 #include "AnimInstance.generated.h"
 
 // Post Compile Validation requires WITH_EDITOR
 #define ANIMINST_PostCompileValidation WITH_EDITOR
 
+struct FDisplayDebugManager;
 class FDebugDisplayInfo;
 class IAnimClassInterface;
 class UAnimInstance;
@@ -322,7 +324,7 @@ struct FMontageEvaluationState
 	{}
 
 	// The montage to evaluate
-	UAnimMontage* Montage;
+	TWeakObjectPtr<UAnimMontage> Montage;
 
 	// The weight to use for this montage
 	float MontageWeight;
@@ -340,7 +342,7 @@ struct FMontageEvaluationState
 	bool bIsActive;
 };
 
-UCLASS(transient, Blueprintable, hideCategories=AnimInstance, BlueprintType, meta=(BlueprintThreadSafe))
+UCLASS(transient, Blueprintable, hideCategories=AnimInstance, BlueprintType, meta=(BlueprintThreadSafe), Within=SkeletalMeshComponent)
 class ENGINE_API UAnimInstance : public UObject
 {
 	GENERATED_UCLASS_BODY()
@@ -456,6 +458,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pose")
 	virtual void SnapshotPose(UPARAM(ref) FPoseSnapshot& Snapshot);
 
+	// Can this animation instance run Update or Evaluation work in parallel
+	virtual bool CanRunParallelWork() const { return true; }
+
 	// Are we being evaluated on a worker thread
 	bool IsRunningParallelEvaluation() const;
 
@@ -527,7 +532,7 @@ public:
 public:
 	/** Plays an animation montage. Returns the length of the animation montage in seconds. Returns 0.f if failed to play. */
 	UFUNCTION(BlueprintCallable, Category = "Montage")
-	float Montage_Play(UAnimMontage* MontageToPlay, float InPlayRate = 1.f, EMontagePlayReturnType ReturnValueType = EMontagePlayReturnType::MontageLength, float InTimeToStartMontageAt=0.f);
+	float Montage_Play(UAnimMontage* MontageToPlay, float InPlayRate = 1.f, EMontagePlayReturnType ReturnValueType = EMontagePlayReturnType::MontageLength, float InTimeToStartMontageAt=0.f, bool bStopAllMontages = true);
 
 	/** Stops the animation montage. If reference is NULL, it will stop ALL active montages. */
 	UFUNCTION(BlueprintCallable, Category = "Montage")
@@ -903,7 +908,7 @@ public:
 	/** Name of Class to do Post Compile Validation.
 	* See Class UAnimBlueprintPostCompileValidation. */
 	UPROPERTY()
-	FStringClassReference PostCompileValidationClassName;
+	FSoftClassPath PostCompileValidationClassName;
 
 	/** Warn if AnimNodes are not using fast path during AnimBP compilation. */
 	virtual bool PCV_ShouldWarnAboutNodesNotUsingFastPath() const { return false; }
@@ -939,6 +944,9 @@ public:
 	void PostEvaluateAnimation();
 	void UninitializeAnimation();
 
+	/** Called on the CDO to pre-init cached UFunctions */
+	void PreInitializeRootNode();
+
 	// the below functions are the native overrides for each phase
 	// Native initialization override point
 	virtual void NativeInitializeAnimation();
@@ -954,6 +962,9 @@ public:
 	virtual void NativePostEvaluateAnimation();
 	// Native Uninitialize override point
 	virtual void NativeUninitializeAnimation();
+
+	// Executed when begin play is called on the owning component
+	virtual void NativeBeginPlay();
 
 	// Sets up a native transition delegate between states with PrevStateName and NextStateName, in the state machine with name MachineName.
 	// Note that a transition already has to exist for this to succeed
@@ -974,19 +985,25 @@ public:
 	// Check for whether a native exit delegate is bound to the specified state
 	bool HasNativeStateExitBinding(const FName& MachineName, const FName& StateName, FName& OutBindingName);
 
-	// Debug output for this anim instance 
+	// Debug output for this anim instance. Info for SyncGroups, Graph, Montages, etc.
 	void DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& DebugDisplay, float& YL, float& YPos);
+
+	// Display debug info about AnimInstance. Can be overridden to add custom info from child classes.
+	virtual void DisplayDebugInstance(FDisplayDebugManager& DisplayDebugManager, float& Indent);
 
 	/** Reset any dynamics running simulation-style updates (e.g. on teleport, time skip etc.) */
 	void ResetDynamics();
 
 public:
+	/** Access a read only version of the Updater Counter from the AnimInstanceProxy on the GameThread. */
+	const FGraphTraversalCounter& GetUpdateCounter() const; 
 
 	/** Access the required bones array */
 	FBoneContainer& GetRequiredBones();
 	const FBoneContainer& GetRequiredBones() const;
 
 	/** Animation Notifies that has been triggered in the latest tick **/
+	UPROPERTY(transient)
 	FAnimNotifyQueue NotifyQueue;
 
 	/** Currently Active AnimNotifyState, stored as a copy of the event as we need to
@@ -1019,10 +1036,17 @@ public:
 	bool HasMorphTargetCurves() const;
 
 	/** 
-	 * Retrieve animation curve list by Curve Flags, it will return list of {UID, value} 
-	 * It will clear the OutCurveList before adding
+	 * Append the type of curve to the OutCurveList specified by Curve Flags
 	 */
-	void GetAnimationCurveList(EAnimCurveType Type, TMap<FName, float>& OutCurveList) const;
+	void AppendAnimationCurveList(EAnimCurveType Type, TMap<FName, float>& InOutCurveList) const;
+
+
+	DEPRECATED(4.19, "This function is deprecated. Use AppendAnimationCurveList instead.")
+	void GetAnimationCurveList(EAnimCurveType Type, TMap<FName, float>& InOutCurveList) const;
+	/**
+	 *	Return the list of curves that are specified by type 
+	 */
+	const TMap<FName, float>& GetAnimationCurveList(EAnimCurveType Type) const;
 
 #if WITH_EDITORONLY_DATA
 	// Maximum playback position ever reached (only used when debugging in Persona)
@@ -1048,7 +1072,7 @@ public:
 	/**
 	* Recalculate Required Curves based on Required Bones [RequiredBones]
 	*/
-	void RecalcRequiredCurves(bool bDisableAnimCurves);
+	void RecalcRequiredCurves(const FCurveEvaluationOption& CurveEvalOption);
 
 	// @todo document
 	inline USkeletalMeshComponent* GetSkelMeshComponent() const { return CastChecked<USkeletalMeshComponent>(GetOuter()); }
@@ -1120,16 +1144,20 @@ private:
 	 */
 	TArray<FQueuedRootMotionBlend> RootMotionBlendQueue;
 
+	// Root motion read from proxy (where it is calculated) and stored here to avoid potential stalls by calling GetProxyOnGameThread
+	FRootMotionMovementParams ExtractedRootMotion;
+
 private:
 	// update montage
 	void UpdateMontage(float DeltaSeconds);
+	void UpdateMontageSyncGroup();
 
 protected:
 	// Updates the montage data used for evaluation based on the current playing montages
 	void UpdateMontageEvaluationData();
 
 	/** Called to setup for updates */
-	void PreUpdateAnimation(float DeltaSeconds);
+	virtual void PreUpdateAnimation(float DeltaSeconds);
 
 	/** update animation curves to component */
 	void UpdateCurvesToComponents(USkeletalMeshComponent* Component);

@@ -1,12 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Modules/ModuleInterface.h"
 #include "Interfaces/ITargetDevice.h"
+#include "Modules/ModuleInterface.h"
 
 class ITargetPlatform;
+
 
 /**
  * Module for the target platform manager
@@ -143,7 +144,7 @@ public:
 	 * @param Name Name of the shader format to get the version for.
 	 * @return Version number.
 	 */
-	virtual uint16 ShaderFormatVersion(FName Name) = 0;
+	virtual uint32 ShaderFormatVersion(FName Name) = 0;
 
 	/**
 	 * Allows changes to environment for a given platform

@@ -1,6 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Interceptors/SMessagingInterceptorsTableRow.h"
+
+#include "IMessageTracer.h"
+#include "Styling/ISlateStyle.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Widgets/Views/STableViewBase.h"
+
+#include "Models/MessagingDebuggerModel.h"
 
 
 namespace MessagingInterceptorTableRow

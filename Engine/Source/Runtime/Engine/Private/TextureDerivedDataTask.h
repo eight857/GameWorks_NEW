@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*==============================================================================
 	TextureDerivedDataTask.h: Tasks to update texture DDC.
@@ -13,7 +13,7 @@
 #include "Async/AsyncWork.h"
 #include "ImageCore.h"
 #include "TextureCompressorModule.h"
-#include "Interfaces/IImageWrapperModule.h"
+#include "IImageWrapperModule.h"
 #include "Engine/Texture2D.h"
 
 #endif // WITH_EDITOR

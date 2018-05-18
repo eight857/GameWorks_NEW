@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -79,17 +79,6 @@ public:
 	FORCEINLINE bool IsValid() const
 	{
 		return Handle != InvalidHandleValue;
-	}
-
-	/**
-	 * (Deprecated. Handles created with FPlatformProcess::CreateProc() should be closed with FPlatformProcess::CloseProc())
-	 * Closes handle and frees this resource to the operating system.
-	 * @return true, if this handle was valid before closing it
-	 */
-	DEPRECATED(4.8, "FProcHandle::Close() is deprecated as redundant - handles created with FPlatformProcess::CreateProc() should be closed with FPlatformProcess::CloseProc().")
-	FORCEINLINE bool Close()
-	{
-		return IsValid();
 	}
 
 protected:
@@ -315,7 +304,8 @@ struct CORE_API FGenericPlatformProcess
 	/**
 	 * Launch a uniform resource locator (i.e. http://www.epicgames.com/unreal).
 	 * This is expected to return immediately as the URL is launched by another
-	 * task.
+	 * task. The URL param must already be a valid URL. If you're looking for code 
+	 * to properly escape a URL fragment, use FGenericPlatformHttp::UrlEncode.
 	 */
 	static void LaunchURL( const TCHAR* URL, const TCHAR* Parms, FString* Error );
 
@@ -416,9 +406,6 @@ struct CORE_API FGenericPlatformProcess
 	/** Outputs the virtual memory usage, of the process with the specified PID */
 	static bool GetApplicationMemoryUsage(uint32 ProcessId, SIZE_T* OutMemoryUsage);
 
-	/** Returns true if the specified application has a visible window, and that window is active/has focus/is selected */
-	static bool IsThisApplicationForeground();	
-
 	/**
 	 * Executes a process, returning the return code, stdout, and stderr. This
 	 * call blocks until the process has returned.
@@ -478,6 +465,7 @@ struct CORE_API FGenericPlatformProcess
 	 * @return A new event, or nullptr none could be created.
 	 * @see GetSynchEventFromPool, ReturnSynchEventToPool
 	 */
+	// Message to others in the future, don't try to delete this function as it isn't exactly deprecated, but it should only ever be called from FEventPool::GetEventFromPool()
 	DEPRECATED(4.8, "Please use GetSynchEventFromPool to create a new event, and ReturnSynchEventToPool to release the event.")
 	static class FEvent* CreateSynchEvent(bool bIsManualReset = false);
 
@@ -556,6 +544,19 @@ struct CORE_API FGenericPlatformProcess
 	* @see CreatePipe, ClosePipe, ReadPipe
 	*/
 	static bool WritePipe(void* WritePipe, const FString& Message, FString* OutWritten = nullptr);
+
+	/**
+	* Sends data to process through pipe
+	*
+	* @param WritePipe Pipe for writing.
+	* @param Data The data to be written.
+	* @param DataLength how many bytes to write.
+	* @param OutDataLength Optional parameter to know how many bytes had been written.
+	* @return True if all bytes written successfully.
+	* @see CreatePipe, ClosePipe, ReadPipe
+	*/
+	static bool WritePipe(void* WritePipe, const uint8* Data, const int32 DataLength, int32* OutDataLength = nullptr);
+
 
 	/**
 	 * Gets whether this platform can use multiple threads.

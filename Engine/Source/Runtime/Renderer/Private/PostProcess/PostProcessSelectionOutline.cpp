@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PostProcessSelectionOutline.cpp: Post processing outline effect.
@@ -38,7 +38,7 @@ void FRCPassPostProcessSelectionOutlineColor::Process(FRenderingCompositePassCon
 	}
 
 	const FViewInfo& View = Context.View;
-	FIntRect ViewRect = View.ViewRect;
+	FIntRect ViewRect = Context.SceneColorViewRect;
 	FIntPoint SrcSize = SceneColorInputDesc->Extent;
 
 	FDrawingPolicyRenderState DrawRenderState(View);
@@ -49,6 +49,19 @@ void FRCPassPostProcessSelectionOutlineColor::Process(FRenderingCompositePassCon
 	// Set the render target/viewport.
 	FRHIDepthRenderTargetView DepthRT(DestRenderTarget.TargetableTexture, ERenderTargetLoadAction::EClear, ERenderTargetStoreAction::ENoAction, ERenderTargetLoadAction::EClear, ERenderTargetStoreAction::ENoAction);
 	FRHISetRenderTargetsInfo RTInfo(0, nullptr, DepthRT);
+
+	if (GRHIRequiresRenderTargetForPixelShaderUAVs)
+	{
+		FIntVector ss = PassOutputs[0].RenderTargetDesc.GetSize();
+
+		TRefCountPtr<IPooledRenderTarget> Dummy;
+		FPooledRenderTargetDesc Desc(FPooledRenderTargetDesc::Create2DDesc(FIntPoint(ss.X, ss.Y), PF_B8G8R8A8, FClearValueBinding::None, TexCreate_None, TexCreate_RenderTargetable, false));
+		GRenderTargetPool.FindFreeElement(Context.RHICmdList, Desc, Dummy, TEXT("Dummy"));
+		FRHIRenderTargetView DummyRTView(Dummy->GetRenderTargetItem().TargetableTexture, ERenderTargetLoadAction::ENoAction);
+
+		RTInfo = FRHISetRenderTargetsInfo(1, &DummyRTView, DepthRT);
+	}
+
 	Context.RHICmdList.SetRenderTargetsAndClear(RTInfo);
 
 	Context.SetViewportAndCallRHI(ViewRect);
@@ -57,6 +70,31 @@ void FRCPassPostProcessSelectionOutlineColor::Process(FRenderingCompositePassCon
 
 	if (View.Family->EngineShowFlags.Selection)
 	{
+		FViewInfo& EditorView = *Context.View.CreateSnapshot();
+
+		{
+			// Patch view rect.
+			EditorView.ViewRect = ViewRect;
+
+			// Override pre exposure to 1.0f, because rendering after tonemapper. 
+			EditorView.PreExposure = 1.0f;
+
+			// Kills material texture mipbias because after TAA.
+			EditorView.MaterialTextureMipBias = 0.0f;
+
+			if (EditorView.AntiAliasingMethod == AAM_TemporalAA)
+			{
+				EditorView.ViewMatrices.HackRemoveTemporalAAProjectionJitter();
+			}
+
+			EditorView.CachedViewUniformShaderParameters = MakeUnique<FViewUniformShaderParameters>();
+
+			FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(Context.RHICmdList);
+			FBox VolumeBounds[TVC_MAX];
+			EditorView.SetupUniformBufferParameters(SceneContext, VolumeBounds, TVC_MAX, *EditorView.CachedViewUniformShaderParameters);
+			EditorView.ViewUniformBuffer = TUniformBufferRef<FViewUniformShaderParameters>::CreateUniformBufferImmediate(*EditorView.CachedViewUniformShaderParameters, UniformBuffer_SingleFrame);
+		}
+
 		FHitProxyDrawingPolicyFactory::ContextType FactoryContext;
 		DrawRenderState.ModifyViewOverrideFlags() |= EDrawingPolicyOverrideFlags::TwoSided;
 		DrawRenderState.SetBlendState(TStaticBlendStateWriteMask<CW_NONE, CW_NONE, CW_NONE, CW_NONE>::GetRHI());
@@ -69,7 +107,7 @@ void FRCPassPostProcessSelectionOutlineColor::Process(FRenderingCompositePassCon
 		FScene* Scene = View.Family->Scene->GetRenderScene();
 		if(Scene)
 		{	
-			Scene->EditorSelectionDrawList.DrawVisible(Context.RHICmdList, View, DrawRenderState, View.StaticMeshEditorSelectionMap, View.StaticMeshBatchVisibility);
+			Scene->EditorSelectionDrawList.DrawVisible(Context.RHICmdList, EditorView, DrawRenderState, View.StaticMeshEditorSelectionMap, View.StaticMeshBatchVisibility);
 		}
 	
 		for (int32 MeshBatchIndex = 0; MeshBatchIndex < View.DynamicMeshElements.Num(); MeshBatchIndex++)
@@ -94,7 +132,7 @@ void FRCPassPostProcessSelectionOutlineColor::Process(FRenderingCompositePassCon
 				DrawRenderState.SetStencilRef(StencilValue);
 
 				const FMeshBatch& MeshBatch = *MeshBatchAndRelevance.Mesh;
-				FHitProxyDrawingPolicyFactory::DrawDynamicMesh(Context.RHICmdList, View, FactoryContext, MeshBatch, true, DrawRenderState, MeshBatchAndRelevance.PrimitiveSceneProxy, MeshBatch.BatchHitProxyId);
+				FHitProxyDrawingPolicyFactory::DrawDynamicMesh(Context.RHICmdList, EditorView, FactoryContext, MeshBatch, true, DrawRenderState, MeshBatchAndRelevance.PrimitiveSceneProxy, MeshBatch.BatchHitProxyId);
 			}
 		}
 
@@ -165,9 +203,9 @@ class FPostProcessSelectionOutlinePS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FPostProcessSelectionOutlinePS, Global);
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		if(!IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5))
+		if(!IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5))
 		{
 			if(MSAASampleCount > 1)
 			{
@@ -175,12 +213,12 @@ class FPostProcessSelectionOutlinePS : public FGlobalShader
 			}
 		}
 
-		return IsPCPlatform(Platform);
+		return IsPCPlatform(Parameters.Platform);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine( TEXT("MSAA_SAMPLE_COUNT"), MSAASampleCount);
 	}
 
@@ -223,7 +261,7 @@ public:
 		const FSceneViewFamily& ViewFamily = *(Context.View.Family);
 		FSceneViewState* ViewState = (FSceneViewState*)Context.View.State;
 
-		PostprocessParameter.SetPS(ShaderRHI, Context, TStaticSamplerState<SF_Point,AM_Clamp,AM_Clamp,AM_Clamp>::GetRHI());
+		PostprocessParameter.SetPS(Context.RHICmdList, ShaderRHI, Context, TStaticSamplerState<SF_Point,AM_Clamp,AM_Clamp,AM_Clamp>::GetRHI());
 
 		// PostprocessInput1MS and EditorPrimitivesStencil
 		{
@@ -354,15 +392,17 @@ void FRCPassPostProcessSelectionOutline::Process(FRenderingCompositePassContext&
 		return;
 	}
 
-	const FSceneView& View = Context.View;
-	FIntRect ViewRect = View.ViewRect;
-	FIntPoint SrcSize = SceneColorInputDesc->Extent;
-
 	const FSceneRenderTargetItem& DestRenderTarget = PassOutputs[0].RequestSurface(Context);
+
+	FIntRect SrcRect = Context.SceneColorViewRect;
+	FIntRect DestRect = Context.GetSceneColorDestRect(DestRenderTarget);
+	checkf(DestRect.Size() == SrcRect.Size(), TEXT("Selection outline should not be used as upscaling pass."));
+
+	FIntPoint SrcSize = SceneColorInputDesc->Extent;
 
 	// Set the view family's render target/viewport.
 	SetRenderTarget(Context.RHICmdList, DestRenderTarget.TargetableTexture, FTextureRHIRef());
-	Context.SetViewportAndCallRHI(ViewRect);
+	Context.SetViewportAndCallRHI(DestRect);
 
 	const uint32 MSAASampleCount = FSceneRenderTargets::Get(Context.RHICmdList).GetEditorMSAACompositingSampleCount();
 
@@ -393,10 +433,10 @@ void FRCPassPostProcessSelectionOutline::Process(FRenderingCompositePassContext&
 	DrawRectangle(
 		Context.RHICmdList,
 		0, 0,
-		ViewRect.Width(), ViewRect.Height(),
-		ViewRect.Min.X, ViewRect.Min.Y,
-		ViewRect.Width(), ViewRect.Height(),
-		ViewRect.Size(),
+		DestRect.Width(), DestRect.Height(),
+		SrcRect.Min.X, SrcRect.Min.Y,
+		SrcRect.Width(), SrcRect.Height(),
+		DestRect.Size(),
 		SrcSize,
 		*VertexShader,
 		EDRF_UseTriangleOptimization);

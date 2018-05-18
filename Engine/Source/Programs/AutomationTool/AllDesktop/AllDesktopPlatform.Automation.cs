@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -114,7 +114,7 @@ public class AllDesktopPlatform : Platform
 		return "AllDesktop";
 	}
 
-	public override bool DeployLowerCaseFilenames(bool bUFSFile)
+	public override bool DeployLowerCaseFilenames()
 	{
 		return false;
 	}
@@ -126,7 +126,7 @@ public class AllDesktopPlatform : Platform
 		return PakType.DontCare;
 	}
     
-	public override List<string> GetDebugFileExtentions()
+	public override List<string> GetDebugFileExtensions()
 	{
 		return new List<string> { };
 	}

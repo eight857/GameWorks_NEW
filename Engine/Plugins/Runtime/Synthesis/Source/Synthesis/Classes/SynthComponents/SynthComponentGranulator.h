@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -47,10 +47,10 @@ class SYNTHESIS_API UGranularSynth : public USynthComponent
 	~UGranularSynth();
 
 	// Initialize the synth component
-	virtual void Init(const int32 SampleRate) override;
+	virtual bool Init(int32& SampleRate) override;
 
 	// Called to generate more audio
-	virtual void OnGenerateAudio(TArray<float>& OutAudio) override;
+	virtual void OnGenerateAudio(float* OutAudio, int32 NumSamples) override;
 
 	//~ Begin ActorComponent Interface.
 	virtual void OnRegister() override;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // Module includes
 #include "OnlineIdentityFacebook.h"
@@ -11,6 +11,7 @@
 
 // Other UE4 includes
 #include "IOSAppDelegate.h"
+#include "Misc/ConfigCacheIni.h"
 #include "IOS/IOSAsyncTask.h"
 #include "Misc/ConfigCacheIni.h"
 

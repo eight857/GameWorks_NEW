@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SAnimCurveViewer.h"
@@ -359,10 +359,8 @@ bool SAnimCurveListRow::GetActiveWeight(float& OutWeight) const
 		if (AnimInstance)
 		{
 			// See if curve is in active set, attribute curve should have everything
-			TMap<FName, float> CurveList;
-			AnimInstance->GetAnimationCurveList(EAnimCurveType::AttributeCurve, CurveList);
-
-			float* CurrentValue = CurveList.Find(Item->SmartName.DisplayName);
+			const TMap<FName, float>& CurveList = AnimInstance->GetAnimationCurveList(EAnimCurveType::AttributeCurve);
+			const float* CurrentValue = CurveList.Find(Item->SmartName.DisplayName);
 			if (CurrentValue)
 			{
 				OutWeight = *CurrentValue;
@@ -545,7 +543,7 @@ void SAnimCurveViewer::Construct(const FArguments& InArgs, const TSharedRef<clas
 	InPreviewScene->RegisterOnAnimChanged(FOnAnimChanged::CreateSP(this, &SAnimCurveViewer::OnPreviewAssetChanged));
 	InOnPostUndo.Add(FSimpleDelegate::CreateSP(this, &SAnimCurveViewer::OnPostUndo));
 
-	SmartNameRemovedHandle = InEditableSkeleton->RegisterOnSmartNameRemoved(FOnSmartNameRemoved::FDelegate::CreateSP(this, &SAnimCurveViewer::HandleSmartNameRemoved));
+	SmartNameChangedHandle = InEditableSkeleton->RegisterOnSmartNameChanged(FOnSmartNameChanged::FDelegate::CreateSP(this, &SAnimCurveViewer::HandleSmartNamesChange));
 
 	// Register and bind all our menu commands
 	FCurveViewerCommands::Register();
@@ -637,7 +635,7 @@ SAnimCurveViewer::~SAnimCurveViewer()
 
 	if (EditableSkeletonPtr.IsValid())
 	{
-		EditableSkeletonPtr.Pin()->UnregisterOnSmartNameRemoved(SmartNameRemovedHandle);
+		EditableSkeletonPtr.Pin()->UnregisterOnSmartNameChanged(SmartNameChangedHandle);
 	}
 }
 
@@ -850,17 +848,17 @@ void SAnimCurveViewer::CreateAnimCurveList( const FString& SearchText )
 			// so only search other container if attribute is off
 			if (CurrentCurveFlag & ACEF_DriveAttribute)
 			{
-				AnimInstance->GetAnimationCurveList(EAnimCurveType::AttributeCurve, ActiveCurves);
+				AnimInstance->AppendAnimationCurveList(EAnimCurveType::AttributeCurve, ActiveCurves);
 			}
 			else
 			{
 				if (CurrentCurveFlag & ACEF_DriveMorphTarget)
 				{
-					AnimInstance->GetAnimationCurveList(EAnimCurveType::MorphTargetCurve, ActiveCurves);
+					AnimInstance->AppendAnimationCurveList(EAnimCurveType::MorphTargetCurve, ActiveCurves);
 				}
 				if (CurrentCurveFlag & ACEF_DriveMaterial)
 				{
-					AnimInstance->GetAnimationCurveList(EAnimCurveType::MaterialCurve, ActiveCurves);
+					AnimInstance->AppendAnimationCurveList(EAnimCurveType::MaterialCurve, ActiveCurves);
 				}
 			}
 		}
@@ -1075,14 +1073,14 @@ void SAnimCurveViewer::OnNameCommitted(const FText& InNewName, ETextCommit::Type
 void SAnimCurveViewer::OnDeleteNameClicked()
 {
 	TArray< TSharedPtr<FDisplayedAnimCurveInfo> > SelectedItems = AnimCurveListView->GetSelectedItems();
-	TArray<SmartName::UID_Type> SelectedUids;
+	TArray<FName> SelectedNames;
 
 	for (TSharedPtr<FDisplayedAnimCurveInfo> Item : SelectedItems)
 	{
-		SelectedUids.Add(Item->SmartName.UID);
+		SelectedNames.Add(Item->SmartName.DisplayName);
 	}
 
-	EditableSkeletonPtr.Pin()->RemoveSmartnamesAndFixupAnimations(ContainerName, SelectedUids);
+	EditableSkeletonPtr.Pin()->RemoveSmartnamesAndFixupAnimations(ContainerName, SelectedNames);
 }
 
 bool SAnimCurveViewer::CanDelete()
@@ -1106,12 +1104,14 @@ void SAnimCurveViewer::OnSelectionChanged(TSharedPtr<FDisplayedAnimCurveInfo> In
 			TArray<FBoneReference> BoneLinks;
 			FSmartName CurrentName = RowItem->SmartName;
 			const FCurveMetaData* CurveMetaData = EditableSkeletonPtr.Pin()->GetSkeleton().GetCurveMetaData(CurrentName);
+			uint32 MaxLOD = 0xFF;
 			if (CurveMetaData)
 			{
 				BoneLinks = CurveMetaData->LinkedBones;
+				MaxLOD = CurveMetaData->MaxLOD;
 			}
 
-			EditorMirrorObj->Refresh(CurrentName, BoneLinks);
+			EditorMirrorObj->Refresh(CurrentName, BoneLinks, MaxLOD);
 		}
 
 		SelectedObjects.Add(EditorMirrorObj);
@@ -1124,11 +1124,11 @@ void SAnimCurveViewer::ApplyCurveBoneLinks(class UEditorAnimCurveBoneLinks* Edit
 {
 	if (EditorObj)
 	{
-		EditableSkeletonPtr.Pin()->SetCurveMetaBoneLinks(EditorObj->CurveName, EditorObj->ConnectedBones);
+		EditableSkeletonPtr.Pin()->SetCurveMetaBoneLinks(EditorObj->CurveName, EditorObj->ConnectedBones, EditorObj->MaxLOD);
 	}
 }
 
-void SAnimCurveViewer::HandleSmartNameRemoved(const FName& InContainerName, const TArray<SmartName::UID_Type>& InNameUids)
+void SAnimCurveViewer::HandleSmartNamesChange(const FName& InContainerName)
 {
 	AnimCurveList.Empty();
 	RefreshCurveList();

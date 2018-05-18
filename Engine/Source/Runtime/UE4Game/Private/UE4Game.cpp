@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreTypes.h"
 #include "Modules/Boilerplate/ModuleBoilerplate.h"
@@ -11,7 +11,7 @@ IMPLEMENT_MODULE(FDefaultModuleImpl, UE4Game);
 #if IS_MONOLITHIC
 PER_MODULE_BOILERPLATE
 bool GIsGameAgnosticExe = true;
-TCHAR GInternalGameName[64] = TEXT("");
+TCHAR GInternalProjectName[64] = TEXT("");
 IMPLEMENT_DEBUGGAME()
 IMPLEMENT_FOREIGN_ENGINE_DIR()
 #endif

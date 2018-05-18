@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "KismetNodes/SGraphNodeK2Base.h"
@@ -15,8 +15,6 @@
 #include "SGraphPin.h"
 #include "EdGraphSchema_K2.h"
 #include "K2Node.h"
-#include "K2Node_Composite.h"
-#include "K2Node_MacroInstance.h"
 #include "K2Node_Timeline.h"
 #include "Engine/Breakpoint.h"
 #include "Kismet2/KismetDebugUtilities.h"
@@ -25,11 +23,6 @@
 #include "IDocumentation.h"
 #include "TutorialMetaData.h"
 #include "Widgets/Layout/SBox.h"
-
-// Blueprint Profiler
-#include "Developer/BlueprintProfiler/Public/BlueprintProfilerModule.h"
-#include "Editor/Kismet/Public/Profiler/BlueprintProfilerSettings.h"
-#include "Editor/Kismet/Public/Profiler/EventExecution.h"
 
 #define LOCTEXT_NAMESPACE "SGraphNodeK2Base"
 
@@ -366,28 +359,13 @@ void SGraphNodeK2Base::GetOverlayBrushes(bool bSelected, const FVector2D WidgetS
 	{
 		FOverlayBrushInfo BreakpointOverlayInfo;
 
-		if (Breakpoint->GetLocation()->IsA<UK2Node_Composite>()
-			|| Breakpoint->GetLocation()->IsA<UK2Node_MacroInstance>())
+		if (Breakpoint->IsEnabledByUser())
 		{
-			if (Breakpoint->IsEnabledByUser())
-			{
-				BreakpointOverlayInfo.Brush = FEditorStyle::GetBrush(FKismetDebugUtilities::IsBreakpointValid(Breakpoint) ? TEXT("Kismet.DebuggerOverlay.Breakpoint.EnabledAndValidCollapsed") : TEXT("Kismet.DebuggerOverlay.Breakpoint.EnabledAndInvalidCollapsed"));
-			}
-			else
-			{
-				BreakpointOverlayInfo.Brush = FEditorStyle::GetBrush(TEXT("Kismet.DebuggerOverlay.Breakpoint.DisabledCollapsed"));
-			}
+			BreakpointOverlayInfo.Brush = FEditorStyle::GetBrush(FKismetDebugUtilities::IsBreakpointValid(Breakpoint) ? TEXT("Kismet.DebuggerOverlay.Breakpoint.EnabledAndValid") : TEXT("Kismet.DebuggerOverlay.Breakpoint.EnabledAndInvalid"));
 		}
 		else
 		{
-			if (Breakpoint->IsEnabledByUser())
-			{
-				BreakpointOverlayInfo.Brush = FEditorStyle::GetBrush(FKismetDebugUtilities::IsBreakpointValid(Breakpoint) ? TEXT("Kismet.DebuggerOverlay.Breakpoint.EnabledAndValid") : TEXT("Kismet.DebuggerOverlay.Breakpoint.EnabledAndInvalid"));
-			}
-			else
-			{
-				BreakpointOverlayInfo.Brush = FEditorStyle::GetBrush(TEXT("Kismet.DebuggerOverlay.Breakpoint.Disabled"));
-			}
+			BreakpointOverlayInfo.Brush = FEditorStyle::GetBrush(TEXT("Kismet.DebuggerOverlay.Breakpoint.Disabled"));
 		}
 
 		if(BreakpointOverlayInfo.Brush != NULL)
@@ -531,20 +509,20 @@ void SGraphNodeK2Base::GetNodeInfoPopups(FNodeInfoContext* Context, TArray<FGrap
 					switch (WatchStatus)
 					{
 					case FKismetDebugUtilities::EWTR_Valid:
-						PinnedWatchText += FString::Printf(*LOCTEXT("WatchingAndValid", "Watching %s\n\t%s").ToString(), *PinName, *WatchText);//@TODO: Print out object being debugged name?
+						PinnedWatchText += FText::Format(LOCTEXT("WatchingAndValidFmt", "Watching {0}\n\t{1}"), FText::FromString(PinName), FText::FromString(WatchText)).ToString();//@TODO: Print out object being debugged name?
 						break;
 
 					case FKismetDebugUtilities::EWTR_NotInScope:
-						PinnedWatchText += FString::Printf(*LOCTEXT("WatchingWhenNotInScope", "Watching %s\n\t(not in scope)").ToString(), *PinName);
+						PinnedWatchText += FText::Format(LOCTEXT("WatchingWhenNotInScopeFmt", "Watching {0}\n\t(not in scope)"), FText::FromString(PinName)).ToString();
 						break;
 
 					case FKismetDebugUtilities::EWTR_NoProperty:
-						PinnedWatchText += FString::Printf(*LOCTEXT("WatchingUnknownProperty", "Watching %s\n\t(no debug data)").ToString(), *PinName);
+						PinnedWatchText += FText::Format(LOCTEXT("WatchingUnknownPropertyFmt", "Watching {0}\n\t(no debug data)"), FText::FromString(PinName)).ToString();
 						break;
 
 					default:
 					case FKismetDebugUtilities::EWTR_NoDebugObject:
-						PinnedWatchText += FString::Printf(*LOCTEXT("WatchingNoDebugObject", "Watching %s").ToString(), *PinName);
+						PinnedWatchText += FText::Format(LOCTEXT("WatchingNoDebugObjectFmt", "Watching {0}"), FText::FromString(PinName)).ToString();
 						break;
 					}
 
@@ -573,53 +551,6 @@ const FSlateBrush* SGraphNodeK2Base::GetShadowBrush(bool bSelected) const
 	{
 		return SGraphNode::GetShadowBrush(bSelected);
 	}
-}
-
-FLinearColor SGraphNodeK2Base::GetProfilerHeatmapIntensity() const
-{
-	float IntensityValue = 0.0f;
-	IBlueprintProfilerInterface& ProfilerModule = FModuleManager::LoadModuleChecked<IBlueprintProfilerInterface>("BlueprintProfiler");
-	if (ProfilerModule.IsProfilerEnabled() && GraphNode)
-	{
-		UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(GraphNode);
-		if (Blueprint && Blueprint->GeneratedClass && Blueprint->GeneratedClass->HasInstrumentation())
-		{
-			TSharedPtr<FScriptExecutionNode> ExecNode = ProfilerModule.GetProfilerDataForNode(GraphNode);
-			if (ExecNode.IsValid())
-			{
-				const FScriptPerfData& NodePerfData = ExecNode->GetNodePerfData();
-				switch (GetDefault<UBlueprintProfilerSettings>()->GraphNodeHeatMapDisplayMode)
-				{
-				case EBlueprintProfilerHeatMapDisplayMode::Average:
-					IntensityValue = NodePerfData.GetAverageHeatLevel();
-					break;
-
-				case EBlueprintProfilerHeatMapDisplayMode::Inclusive:
-					IntensityValue = NodePerfData.GetInclusiveHeatLevel();
-					break;
-
-				case EBlueprintProfilerHeatMapDisplayMode::MaxTiming:
-					IntensityValue = NodePerfData.GetMaxTimeHeatLevel();
-					break;
-
-				case EBlueprintProfilerHeatMapDisplayMode::Total:
-					IntensityValue = NodePerfData.GetTotalHeatLevel();
-					break;
-				}
-			}
-		}
-	}
-	const float Value = 1.f - IntensityValue;
-	return FLinearColor(1.f, Value, Value, IntensityValue*IntensityValue);
-}
-
-const FSlateBrush* SGraphNodeK2Base::GetProfilerHeatmapBrush() const
-{
-	const UK2Node* K2Node = CastChecked<UK2Node>(GraphNode);
-	const bool bCompactMode = K2Node->ShouldDrawCompact();
-
-	return bCompactMode ?	FEditorStyle::GetBrush(TEXT("BlueprintProfiler.CompactNode.HeatDisplay")) : 
-							FEditorStyle::GetBrush(TEXT("BlueprintProfiler.RegularNode.HeatDisplay"));
 }
 
 void SGraphNodeK2Base::PerformSecondPassLayout(const TMap< UObject*, TSharedRef<SNode> >& NodeToWidgetLookup) const

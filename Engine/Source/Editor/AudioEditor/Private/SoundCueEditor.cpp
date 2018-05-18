@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SoundCueEditor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
@@ -29,6 +29,7 @@
 #include "Framework/Commands/GenericCommands.h"
 #include "Sound/SoundNodeDialoguePlayer.h"
 #include "SSoundCuePalette.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #define LOCTEXT_NAMESPACE "SoundCueEditor"
 
@@ -488,13 +489,18 @@ bool FSoundCueEditor::CanAddInput() const
 
 void FSoundCueEditor::DeleteInput()
 {
-	UEdGraphPin* SelectedPin = SoundCueGraphEditor->GetGraphPinForMenu();
-	
-	USoundCueGraphNode* SelectedNode = Cast<USoundCueGraphNode>(SelectedPin->GetOwningNode());
-
-	if (SelectedNode && SelectedNode == SelectedPin->GetOwningNode())
+	if (SoundCueGraphEditor.IsValid())
 	{
-		SelectedNode->RemoveInputPin(SelectedPin);
+		UEdGraphPin* SelectedPin = SoundCueGraphEditor->GetGraphPinForMenu();
+		if (ensure(SelectedPin))
+		{
+			USoundCueGraphNode* SelectedNode = Cast<USoundCueGraphNode>(SelectedPin->GetOwningNode());
+
+			if (SelectedNode && SelectedNode == SelectedPin->GetOwningNode())
+			{
+				SelectedNode->RemoveInputPin(SelectedPin);
+			}
+		}
 	}
 }
 
@@ -768,7 +774,7 @@ void FSoundCueEditor::CopySelectedNodes()
 	}
 
 	FEdGraphUtilities::ExportNodesToText(SelectedNodes, /*out*/ ExportedText);
-	FPlatformMisc::ClipboardCopy(*ExportedText);
+	FPlatformApplicationMisc::ClipboardCopy(*ExportedText);
 
 	// Make sure SoundCue remains the owner of the copied nodes
 	for (FGraphPanelSelectionSet::TConstIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
@@ -812,7 +818,7 @@ void FSoundCueEditor::PasteNodesHere(const FVector2D& Location)
 
 	// Grab the text to paste from the clipboard.
 	FString TextToImport;
-	FPlatformMisc::ClipboardPaste(TextToImport);
+	FPlatformApplicationMisc::ClipboardPaste(TextToImport);
 
 	// Import the nodes
 	TSet<UEdGraphNode*> PastedNodes;
@@ -869,7 +875,7 @@ void FSoundCueEditor::PasteNodesHere(const FVector2D& Location)
 bool FSoundCueEditor::CanPasteNodes() const
 {
 	FString ClipboardContent;
-	FPlatformMisc::ClipboardPaste(ClipboardContent);
+	FPlatformApplicationMisc::ClipboardPaste(ClipboardContent);
 
 	return FEdGraphUtilities::CanImportNodesFromText(SoundCue->SoundCueGraph, ClipboardContent);
 }

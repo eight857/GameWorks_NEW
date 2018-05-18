@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LuaScriptCodeGenerator.h"
 #include "ScriptGeneratorLog.h"
@@ -315,8 +315,8 @@ bool FLuaScriptCodeGenerator::IsPropertyTypeSupported(UProperty* Property) const
 		}
 	}
 	else if (Property->IsA(ULazyObjectProperty::StaticClass()) ||
-		Property->IsA(UAssetObjectProperty::StaticClass()) ||
-		Property->IsA(UAssetClassProperty::StaticClass()) ||
+		Property->IsA(USoftObjectProperty::StaticClass()) ||
+		Property->IsA(USoftClassProperty::StaticClass()) ||
 		Property->IsA(UWeakObjectProperty::StaticClass()))
 	{
 		bSupported = false;

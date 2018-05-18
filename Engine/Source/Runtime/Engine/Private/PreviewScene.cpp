@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PreviewScene.cpp: Preview scene implementation.
@@ -139,7 +139,6 @@ void FPreviewScene::RemoveComponent(UActorComponent* Component)
 void FPreviewScene::AddReferencedObjects( FReferenceCollector& Collector )
 {
 	Collector.AddReferencedObjects( Components );
-	Collector.AddReferencedObject( DirectionalLight );
 	Collector.AddReferencedObject( PreviewWorld );
 }
 
@@ -214,4 +213,10 @@ void FPreviewScene::LoadSettings(const TCHAR* Section)
 void FPreviewScene::SaveSettings(const TCHAR* Section)
 {
 	GConfig->SetRotator( Section, TEXT("LightDir"), GetLightDirection(), GEditorPerProjectIni );
+}
+
+FLinearColor FPreviewScene::GetBackgroundColor() const
+{
+	FLinearColor BackgroundColor = FColor(55, 55, 55);
+	return BackgroundColor;
 }

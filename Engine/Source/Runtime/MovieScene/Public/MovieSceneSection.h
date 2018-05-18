@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -24,6 +24,8 @@ enum class EMovieSceneCompletionMode : uint8
 	KeepState,
 
 	RestoreState,
+
+	ProjectDefault,
 };
 
 
@@ -410,6 +412,9 @@ public:
 	/** Gets/sets the amount of time to continue 'postrolling' this section for after evaluation has ended. */
 	void SetPostRollTime(float InPostRollTime) { PostRollTime = InPostRollTime; }
 	float GetPostRollTime() const { return PostRollTime; }
+
+	/** The optional offset time of this section */
+	virtual TOptional<float> GetOffsetTime() const { return TOptional<float>(); }
 
 	/** Gets the time for the key referenced by the supplied key handle. */
 	virtual TOptional<float> GetKeyTime( FKeyHandle KeyHandle ) const PURE_VIRTUAL( UAISenseEvent::GetKeyTime, return TOptional<float>(); );

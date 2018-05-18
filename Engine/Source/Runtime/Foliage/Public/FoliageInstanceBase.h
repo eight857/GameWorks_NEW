@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/LazyObjectPtr.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 
 class AInstancedFoliageActor;
 class UActorComponent;
@@ -82,7 +82,7 @@ struct FFoliageInstanceBaseCache
 	
 	// Map for detecting removed bases
 	// serialized
-	TMap<TAssetPtr<UWorld>, TArray<FFoliageInstanceBasePtr>> InstanceBaseLevelMap;
+	TMap<TSoftObjectPtr<UWorld>, TArray<FFoliageInstanceBasePtr>> InstanceBaseLevelMap;
 };
 
 #endif// WITH_EDITORONLY_DATA

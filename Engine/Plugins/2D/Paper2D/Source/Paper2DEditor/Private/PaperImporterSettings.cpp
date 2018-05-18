@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PaperImporterSettings.h"
 #include "Paper2DEditorLog.h"
@@ -27,13 +27,13 @@ UPaperImporterSettings::UPaperImporterSettings()
 
 	if (!IsRunningCommandlet())
 	{
-		UnlitDefaultMaskedMaterialName = FStringAssetReference("/Paper2D/MaskedUnlitSpriteMaterial.MaskedUnlitSpriteMaterial");
-		UnlitDefaultTranslucentMaterialName = FStringAssetReference("/Paper2D/TranslucentUnlitSpriteMaterial.TranslucentUnlitSpriteMaterial");
-		UnlitDefaultOpaqueMaterialName = FStringAssetReference("/Paper2D/OpaqueUnlitSpriteMaterial.OpaqueUnlitSpriteMaterial");
+		UnlitDefaultMaskedMaterialName = FSoftObjectPath("/Paper2D/MaskedUnlitSpriteMaterial.MaskedUnlitSpriteMaterial");
+		UnlitDefaultTranslucentMaterialName = FSoftObjectPath("/Paper2D/TranslucentUnlitSpriteMaterial.TranslucentUnlitSpriteMaterial");
+		UnlitDefaultOpaqueMaterialName = FSoftObjectPath("/Paper2D/OpaqueUnlitSpriteMaterial.OpaqueUnlitSpriteMaterial");
 
-		LitDefaultMaskedMaterialName = FStringAssetReference("/Paper2D/MaskedLitSpriteMaterial.MaskedLitSpriteMaterial");
-		LitDefaultTranslucentMaterialName = FStringAssetReference("/Paper2D/TranslucentLitSpriteMaterial.TranslucentLitSpriteMaterial");
-		LitDefaultOpaqueMaterialName = FStringAssetReference("/Paper2D/OpaqueLitSpriteMaterial.OpaqueLitSpriteMaterial");
+		LitDefaultMaskedMaterialName = FSoftObjectPath("/Paper2D/MaskedLitSpriteMaterial.MaskedLitSpriteMaterial");
+		LitDefaultTranslucentMaterialName = FSoftObjectPath("/Paper2D/TranslucentLitSpriteMaterial.TranslucentLitSpriteMaterial");
+		LitDefaultOpaqueMaterialName = FSoftObjectPath("/Paper2D/OpaqueLitSpriteMaterial.OpaqueLitSpriteMaterial");
 	}
 }
 

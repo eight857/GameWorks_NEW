@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PackageUtilities.cpp: Commandlets for viewing information about package files
@@ -51,6 +51,7 @@
 #include "Animation/AnimationSettings.h"
 
 #include "EngineUtils.h"
+#include "Materials/Material.h"
 
 DEFINE_LOG_CATEGORY(LogPackageHelperFunctions);
 DEFINE_LOG_CATEGORY_STATIC(LogPackageUtilities, Log, All);
@@ -215,11 +216,34 @@ bool NormalizePackageNames( TArray<FString> PackageNames, TArray<FString>& Packa
 		for ( int32 PackageIndex = 0; PackageIndex < PackagePathNames.Num(); PackageIndex++ )
 		{
 			// (otherwise, attempting to run a commandlet on e.g. Engine.xxx will always return results for Engine.u instead)
-			const FString& PackageName = PackagePathNames[PackageIndex];
+			FString PackageName;
+			if (!FPackageName::TryConvertFilenameToLongPackageName(PackagePathNames[PackageIndex], PackageName))
+			{
+				PackageName = PackagePathNames[PackageIndex];
+			}
 			UPackage* ExistingPackage = FindObject<UPackage>(NULL, *PackageName, true);
 			if ( ExistingPackage != NULL )
 			{
-				ResetLoaders(ExistingPackage);
+				// skip resetting loaders on default materials since they are expected to be post-loaded at that point
+				bool bContainsDefaultMaterial = false;
+				ForEachObjectWithOuter(ExistingPackage,
+					[&bContainsDefaultMaterial](UObject* Obj)
+					{
+						if (!bContainsDefaultMaterial)
+						{
+							UMaterial* Material = Cast<UMaterial>(Obj);
+							if (Material && Material->IsDefaultMaterial())
+							{
+								bContainsDefaultMaterial = true;
+							}
+						}
+					}
+				);
+
+				if (!bContainsDefaultMaterial)
+				{
+					ResetLoaders(ExistingPackage);
+				}
 			}
 		}
 	}
@@ -245,18 +269,7 @@ bool SavePackageHelper(UPackage* Package, FString Filename, EObjectFlags KeepObj
 {
 	// look for a world object in the package (if there is one, there's a map)
 	UWorld* World = UWorld::FindWorldInPackage(Package);
-	bool bSavedCorrectly;
-	if (World)
-	{
-		bSavedCorrectly = GEditor->SavePackage(Package, World, RF_NoFlags, *Filename, ErrorDevice, LinkerToConformAgainst, false, true, SaveFlags);
-	}
-	else
-	{
-		bSavedCorrectly = GEditor->SavePackage(Package, NULL, KeepObjectFlags, *Filename, ErrorDevice, LinkerToConformAgainst, false, true, SaveFlags);
-	}
-
-	// return success
-	return bSavedCorrectly;
+	return GEditor->SavePackage(Package, World, KeepObjectFlags, *Filename, ErrorDevice, LinkerToConformAgainst, false, true, SaveFlags);
 }
 
 /**
@@ -939,25 +952,6 @@ void FPkgInfoReporter_Log::GeneratePackageReport( FLinkerLoad* InLinker/*=NULL*/
 		UE_LOG(LogPackageUtilities, Warning,TEXT("\t\t\t%d) ExportCount=%d, NameCount=%d "), i, generationInfo.ExportCount, generationInfo.NameCount );
 	}
 
-
-	if( (InfoFlags&PKGINFO_Chunks) != 0 )
-	{
-		UE_LOG(LogPackageUtilities, Warning, TEXT("--------------------------------------------") );
-		GWarn->Log ( TEXT("Compression Chunks"));
-		GWarn->Log ( TEXT("=========="));
-
-		for ( int32 ChunkIndex = 0; ChunkIndex < Linker->Summary.CompressedChunks.Num(); ChunkIndex++ )
-		{
-			FCompressedChunk& Chunk = Linker->Summary.CompressedChunks[ChunkIndex];
-			GWarn->Log ( TEXT("\t*************************"));
-			UE_LOG(LogPackageUtilities, Warning, TEXT("\tChunk %d:"), ChunkIndex );
-			UE_LOG(LogPackageUtilities, Warning, TEXT("\t\tUncompressedOffset: %d"), Chunk.UncompressedOffset);
-			UE_LOG(LogPackageUtilities, Warning, TEXT("\t\t  UncompressedSize: %d"), Chunk.UncompressedSize);
-			UE_LOG(LogPackageUtilities, Warning, TEXT("\t\t  CompressedOffset: %d"), Chunk.CompressedOffset);
-			UE_LOG(LogPackageUtilities, Warning, TEXT("\t\t    CompressedSize: %d"), Chunk.CompressedSize);
-		}
-	}
-
 	if( (InfoFlags&PKGINFO_Names) != 0 )
 	{
 		UE_LOG(LogPackageUtilities, Warning, TEXT("--------------------------------------------") );
@@ -1421,10 +1415,6 @@ int32 UPkgInfoCommandlet::Main( const FString& Params )
 	if ( Switches.Contains(TEXT("simple")) )
 	{
 		InfoFlags |= PKGINFO_Compact;
-	}
-	if ( Switches.Contains(TEXT("chunks")) )
-	{
-		InfoFlags |= PKGINFO_Chunks;
 	}
 	if ( Switches.Contains(TEXT("depends")) )
 	{
@@ -2109,9 +2099,7 @@ struct CompressAnimationsFunctor
 			SIZE_T OldSize;
 			SIZE_T NewSize;
 
-			{
-				OldSize = AnimSeq->GetResourceSizeBytes(EResourceSizeMode::Inclusive);
-			}
+			OldSize = AnimSeq->GetResourceSizeBytes(EResourceSizeMode::EstimatedTotal);
 
 			// Clear bDoNotOverrideCompression flag
 			if( bClearNoCompressionOverride && AnimSeq->bDoNotOverrideCompression )
@@ -2142,25 +2130,30 @@ struct CompressAnimationsFunctor
 				continue;
 			}
 
-			// Set version since we've checked this animation for recompression.
-			if (AnimSeq->CompressCommandletVersion != CompressCommandletVersion)
-			{
-				AnimSeq->CompressCommandletVersion = CompressCommandletVersion;
-				bDirtyPackage = true;
-			}
-
 			UE_LOG(LogPackageUtilities, Warning, TEXT("Compressing animation '%s' [#%d / %d in package '%s']"),
 				*AnimSeq->GetName(),
 				ActiveAnimationIndex,
 				NumAnimationsInPackage,
 				*PackageFileName);
 
+			// First set automatic compressor and call it.
+			// This will run through a bunch of compressors and pick the best.
+			// Problem is this is going to create a DDC key with 'Automatic Compressor'
 			UAnimCompress* CompressionAlgorithm = NewObject<UAnimCompress_Automatic>();
 			AnimSeq->CompressionScheme = static_cast<UAnimCompress*>(StaticDuplicateObject(CompressionAlgorithm, AnimSeq));
-			AnimSeq->RequestAnimCompression(false, false, false);
+			AnimSeq->RequestAnimCompression(false, true, false);
+
+			// Automatic compression should have picked a suitable compressor that is not UAnimCompress_Automatic
+			if (ensure(!AnimSeq->CompressionScheme->IsA(UAnimCompress_Automatic::StaticClass())))
 			{
-				NewSize = AnimSeq->GetResourceSizeBytes(EResourceSizeMode::Inclusive);
+				// Update CompressCommandletVersion in that case, and create a proper DDC entry
+				// (with actual compressor)
+				AnimSeq->CompressCommandletVersion = CompressCommandletVersion;
+				AnimSeq->RequestAnimCompression(false, false, false);
+				bDirtyPackage = true;
 			}
+
+			NewSize = AnimSeq->GetResourceSizeBytes(EResourceSizeMode::EstimatedTotal);
 
 			// Only save package if size has changed.
 			const int64 DeltaSize = NewSize - OldSize;
@@ -2421,7 +2414,7 @@ int32 UReplaceActorCommandlet::Main(const FString& Params)
 		// get the full path name to the file
 		FString FileName = PathPrefix + PackageName;
 
-		const bool bIsAutoSave = FString(*FileName).ToUpper().Contains( TEXT("AUTOSAVES") );
+		const bool bIsAutoSave = FileName.Contains( TEXT("AUTOSAVES") );
 
 		FSourceControlStatePtr SourceControlState = SourceControl.GetProvider().GetState(FileName, EStateCacheUsage::ForceUpdate);
 
@@ -2575,7 +2568,7 @@ int32 UReplaceActorCommandlet::Main(const FString& Params)
 				}
 
 				// collect garbage to delete replaced actors and any objects only referenced by them (components, etc)
-				World->PerformGarbageCollectionAndCleanupActors();
+				GEngine->PerformGarbageCollectionAndCleanupActors();
 
 				// save the world
 				if( ( Package->IsDirty() == true ) && ( bIsDirty == true ) )

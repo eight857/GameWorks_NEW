@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tasks/AITask_MoveTo.h"
 #include "UObject/Package.h"
@@ -158,7 +158,7 @@ void UAITask_MoveTo::PerformMove()
 		PathFinishDelegateHandle = PFComp->OnRequestFinished.AddUObject(this, &UAITask_MoveTo::OnRequestFinished);
 		SetObservedPath(FollowedPath);
 
-		if (TaskState == EGameplayTaskState::Finished)
+		if (IsFinished())
 		{
 			UE_VLOG(GetGameplayTasksComponent(), LogGameplayTasks, Error, TEXT("%s> re-Activating Finished task!"), *GetName());
 		}
@@ -185,7 +185,7 @@ void UAITask_MoveTo::Resume()
 {
 	Super::Resume();
 
-	if (!MoveRequestID.IsValid() || !OwnerController->ResumeMove(MoveRequestID))
+	if (!MoveRequestID.IsValid() || (OwnerController && !OwnerController->ResumeMove(MoveRequestID)))
 	{
 		UE_CVLOG(MoveRequestID.IsValid(), GetGameplayTasksComponent(), LogGameplayTasks, Log, TEXT("%s> Resume move failed, starting new one."), *GetName());
 		ConditionalPerformMove();

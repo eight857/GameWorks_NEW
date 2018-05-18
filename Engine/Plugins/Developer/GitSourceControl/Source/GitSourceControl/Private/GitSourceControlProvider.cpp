@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GitSourceControlProvider.h"
 #include "HAL/PlatformProcess.h"
@@ -60,8 +60,8 @@ void FGitSourceControlProvider::CheckGitAvailability()
 void FGitSourceControlProvider::CheckRepositoryStatus(const FString& InPathToGitBinary)
 {
 	// Find the path to the root Git directory (if any)
-	const FString PathToGameDir = FPaths::ConvertRelativePathToFull(FPaths::GameDir());
-	bGitRepositoryFound = GitSourceControlUtils::FindRootDirectory(PathToGameDir, PathToRepositoryRoot);
+	const FString PathToProjectDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+	bGitRepositoryFound = GitSourceControlUtils::FindRootDirectory(PathToProjectDir, PathToRepositoryRoot);
 	if(bGitRepositoryFound)
 	{
 		// Get branch name
@@ -73,7 +73,7 @@ void FGitSourceControlProvider::CheckRepositoryStatus(const FString& InPathToGit
 	}
 	else
 	{
-		UE_LOG(LogSourceControl, Warning, TEXT("'%s' is not part of a Git repository"), *FPaths::GameDir());
+		UE_LOG(LogSourceControl, Warning, TEXT("'%s' is not part of a Git repository"), *FPaths::ProjectDir());
 	}
 
 	// Get user name & email (of the repository, else from the global Git config)

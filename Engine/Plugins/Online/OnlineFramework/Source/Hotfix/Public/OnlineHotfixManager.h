@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -119,8 +119,12 @@ protected:
 
 	struct FConfigFileBackup
 	{
+		/** Name of the ini file backed up*/
 		FString IniName;
+		/** Previous ini data backed up */
 		FConfigFile ConfigData;
+		/** UClasses reloaded as a result of the current ini */
+		TArray<FString> ClassesReloaded;
 	};
 
 	/** Holds which files are pending download */
@@ -180,16 +184,16 @@ protected:
 	/** Unmounts any changed PAK files so they can be re-mounted after downloading */
 	void UnmountHotfixFiles();
 	/** Stores off the INI file for restoration later */
-	void BackupIniFile(const FString& IniName, const FConfigFile* ConfigFile);
+	FConfigFileBackup& BackupIniFile(const FString& IniName, const FConfigFile* ConfigFile);
 	/** Restores any changed INI files to their default loaded state */
 	void RestoreBackupIniFiles();
 	/** Builds the list of files that are different between two runs of the hotfix process */
 	void BuildHotfixFileListDeltas();
 
 	/** Called once the list of hotfix files has been retrieved */
-	void OnEnumerateFilesComplete(bool bWasSuccessful);
+	void OnEnumerateFilesComplete(bool bWasSuccessful, const FString& ErrorStr);
 	/** Called once the list of hotfix files has been retrieved and we only want to see if a hotfix is necessary */
-	void OnEnumerateFilesForAvailabilityComplete(bool bWasSuccessful, FOnHotfixAvailableComplete InCompletionDelegate);
+	void OnEnumerateFilesForAvailabilityComplete(bool bWasSuccessful, const FString& ErrorStr, FOnHotfixAvailableComplete InCompletionDelegate);
 	/** Called as files are downloaded to determine when to apply the hotfix data */
 	void OnReadFileComplete(bool bWasSuccessful, const FString& FileName);
 	/** Called as files are downloaded to provide progress notifications */
@@ -271,7 +275,7 @@ protected:
 	 */
 	virtual FString GetCachedDirectory()
 	{
-		return FPaths::GamePersistentDownloadDir();
+		return FPaths::ProjectPersistentDownloadDir();
 	}
 
 	/** Finds the header associated with the file name */
@@ -279,6 +283,9 @@ protected:
 
 	/** Fires the progress delegate with our updated progress */
 	void UpdateProgress(uint32 FileCount, uint64 UpdateSize);
+
+	/** Called after any hotfixes are applied to apply last-second changes to certain asset types from .ini file data */
+	void PatchAssetsFromIniFiles();
 
 public:
 	UOnlineHotfixManager();
@@ -298,6 +305,12 @@ public:
 	/** Starts the fetching of hotfix data from the OnlineTitleFileInterface that is registered for this game */
 	UFUNCTION(BlueprintCallable, Category="Hotfix")
 	virtual void StartHotfixProcess();
+
+	/** Array of objects that we're forcing to remain resident because we've applied live hotfixes and won't get an
+	    opportunity to reapply changes if the object is evicted from memory. */
+	UPROPERTY(Transient)
+	TArray<UObject*> AssetsHotfixedFromIniFiles;
+	
 
 	/** 
 	 * Check for available hotfix files (but do not apply them) 

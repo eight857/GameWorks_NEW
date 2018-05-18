@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SBlueprintEditorToolbar.h"
@@ -101,24 +101,11 @@ void FKismet2Menu::FillDeveloperMenu( FMenuBuilder& MenuBuilder )
 	}
 	MenuBuilder.EndSection();
 
-	MenuBuilder.BeginSection("FileDeveloperModuleIteration", LOCTEXT("ModuleIterationHeading", "Module Iteration"));
+	MenuBuilder.BeginSection("GenerateNativeCode", LOCTEXT("Cpp", "C++"));
 	{
-		MenuBuilder.AddMenuEntry( FBlueprintEditorCommands::Get().RecompileGraphEditor );
-		MenuBuilder.AddMenuEntry( FBlueprintEditorCommands::Get().RecompileKismetCompiler );
-		MenuBuilder.AddMenuEntry( FBlueprintEditorCommands::Get().RecompileBlueprintEditor );
-		MenuBuilder.AddMenuEntry( FBlueprintEditorCommands::Get().RecompilePersona );
+		MenuBuilder.AddMenuEntry(FBlueprintEditorCommands::Get().GenerateNativeCode);
 	}
 	MenuBuilder.EndSection();
-
-	static const FBoolConfigValueHelper NativeCodeGenerationTool(TEXT("Kismet"), TEXT("bNativeCodeGenerationTool"), GEngineIni);
-	if (NativeCodeGenerationTool)
-	{
-		MenuBuilder.BeginSection("GenerateNativeCode", LOCTEXT("Cpp", "C++"));
-		{
-			MenuBuilder.AddMenuEntry(FBlueprintEditorCommands::Get().GenerateNativeCode);
-		}
-		MenuBuilder.EndSection();
-	}
 
 	if (false)
 	{
@@ -350,8 +337,6 @@ void FFullBlueprintEditorCommands::RegisterCommands()
 	UI_COMMAND(SwitchToBlueprintDefaultsMode, "Defaults", "Switches to Class Defaults Mode", EUserInterfaceActionType::ToggleButton, FInputChord());
 	UI_COMMAND(SwitchToComponentsMode, "Components", "Switches to Components Mode", EUserInterfaceActionType::ToggleButton, FInputChord());
 
-	UI_COMMAND(ToggleProfiler,"Profiler", "Toggle Profiler State", EUserInterfaceActionType::ToggleButton, FInputChord());
-
 	UI_COMMAND(EditGlobalOptions, "Class Settings", "Edit Class Settings (Previously known as Blueprint Props)", EUserInterfaceActionType::ToggleButton, FInputChord());
 	UI_COMMAND(EditClassDefaults, "Class Defaults", "Edit the initial values of your class.", EUserInterfaceActionType::ToggleButton, FInputChord());
 
@@ -480,17 +465,6 @@ void FBlueprintEditorToolbar::AddComponentsToolbar(TSharedPtr<FExtender> Extende
 		FToolBarExtensionDelegate::CreateSP( this, &FBlueprintEditorToolbar::FillComponentsToolbar ) );
 }
 
-void FBlueprintEditorToolbar::AddProfilerToolbar(TSharedPtr<FExtender> Extender)
-{
-	TSharedPtr<FBlueprintEditor> BlueprintEditorPtr = BlueprintEditor.Pin();
-
-	Extender->AddToolBarExtension(
-		"Asset",
-		EExtensionHook::After,
-		BlueprintEditorPtr->GetToolkitCommands(),
-		FToolBarExtensionDelegate::CreateSP( this, &FBlueprintEditorToolbar::FillProfilerToolbar ) );
-}
-
 void FBlueprintEditorToolbar::FillBlueprintEditorModesToolbar(FToolBarBuilder& ToolbarBuilder)
 {
 	TSharedPtr<FBlueprintEditor> BlueprintEditorPtr = BlueprintEditor.Pin();
@@ -550,29 +524,6 @@ void FBlueprintEditorToolbar::FillCompileToolbar(FToolBarBuilder& ToolbarBuilder
 			/*bSimpleComboBox =*/true
 		);
 	}
-	ToolbarBuilder.EndSection();
-}
-
-void FBlueprintEditorToolbar::FillProfilerToolbar(FToolBarBuilder& ToolbarBuilder)
-{
-	const FFullBlueprintEditorCommands& Commands = FFullBlueprintEditorCommands::Get();
-	TSharedPtr<FBlueprintEditor> BlueprintEditorPtr = BlueprintEditor.Pin();
-	UBlueprint* BlueprintObj = BlueprintEditorPtr->GetBlueprintObj();
-	
-	ToolbarBuilder.BeginSection("Profiler");
-	
-	if(BlueprintObj != NULL)
-	{
-		ToolbarBuilder.AddToolBarButton( Commands.ToggleProfiler,
-										 NAME_None, 
-										 TAttribute<FText>(),
-										 TAttribute<FText>(this, &FBlueprintEditorToolbar::GetProfilerStatusTooltip),
-										 FSlateIcon(FEditorStyle::GetStyleSetName(), "BlueprintEditor.EnableProfiling"),
-										 FName(TEXT("ToggleProfiler")));
-
-
-	}
-	
 	ToolbarBuilder.EndSection();
 }
 
@@ -665,14 +616,7 @@ FSlateIcon FBlueprintEditorToolbar::GetStatusImage() const
 	case BS_Error:
 		return FSlateIcon(FEditorStyle::GetStyleSetName(), "Kismet.Status.Error");
 	case BS_UpToDate:
-	{
-		const bool bInstrumented = BlueprintObj->GeneratedClass->HasInstrumentation();
-		if (BlueprintEditor.Pin()->IsProfilerActive())
-		{
-			return bInstrumented ? FSlateIcon(FEditorStyle::GetStyleSetName(), "Kismet.Status.Instrumented") : FSlateIcon(FEditorStyle::GetStyleSetName(), "Kismet.Status.NotInstrumented");
-		}
-		return bInstrumented ? FSlateIcon(FEditorStyle::GetStyleSetName(), "Kismet.Status.Instrumented") : FSlateIcon(FEditorStyle::GetStyleSetName(), "Kismet.Status.Good");
-	}
+		return FSlateIcon(FEditorStyle::GetStyleSetName(), "Kismet.Status.Good");
 	case BS_UpToDateWithWarnings:
 		return FSlateIcon(FEditorStyle::GetStyleSetName(), "Kismet.Status.Warning");
 	}
@@ -699,23 +643,10 @@ FText FBlueprintEditorToolbar::GetStatusTooltip() const
 	case BS_Error:
 		return LOCTEXT("CompileError_Status", "There was an error during compilation, see the log for details");
 	case BS_UpToDate:
-	{
-		const bool bInstrumented = BlueprintObj->GeneratedClass->HasInstrumentation();
-		if (BlueprintEditor.Pin()->IsProfilerActive())
-		{
-			return bInstrumented ? LOCTEXT("GoodToGoInstrumented_Status", "Instrumentation is active") : LOCTEXT("GoodToGoNotInstrumented_Status", "Compile to add instrumentation");
-		}
-		return bInstrumented ? LOCTEXT("GoodToGoInstrumented_Status", "Instrumentation is active") : LOCTEXT("GoodToGo_Status", "Good to go");
-	}
+		return LOCTEXT("GoodToGo_Status", "Good to go");
 	case BS_UpToDateWithWarnings:
 		return LOCTEXT("GoodToGoWarning_Status", "There was a warning during compilation, see the log for details");
 	}
-}
-
-FText FBlueprintEditorToolbar::GetProfilerStatusTooltip() const
-{
-	return BlueprintEditor.Pin()->IsProfilerActive() ?	LOCTEXT("Profiling_Enabled", "Profiling Active") :
-														LOCTEXT("Profiling_Disabled", "Profiling Inactive");
 }
 
 TArray< TSharedPtr< SWidget> > FBlueprintEditorToolbar::GenerateToolbarWidgets(const UBlueprint* BlueprintObj, TAttribute<FName> ActiveModeGetter, FOnModeChangeRequested ActiveModeSetter)

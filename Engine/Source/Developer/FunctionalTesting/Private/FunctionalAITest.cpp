@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "FunctionalAITest.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
-#include "FuncTestManager.h"
+#include "FunctionalTestingModule.h"
 #include "FunctionalTestingManager.h"
 #include "AI/Navigation/NavigationSystem.h"
 #include "AIController.h"

@@ -1,10 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "Engine/DeveloperSettings.h"
 #include "AudioSettings.generated.h"
 
@@ -35,6 +35,15 @@ struct ENGINE_API FAudioPlatformSettings
 		, NumSourceWorkers(0)
 	{
 	}
+};
+
+// Enumeration for what our options are for sample rates used for VOIP.
+UENUM()
+enum class EVoiceSampleRate : int32
+{
+	Low16000Hz = 16000,
+	Normal24000Hz = 24000,
+	/* High48000Hz = 48000 //TODO: 48k VOIP requires serious performance optimizations on encoding and decoding. */
 };
 
 
@@ -72,19 +81,31 @@ class ENGINE_API UAudioSettings : public UDeveloperSettings
 
 	/** The SoundClass assigned to newly created sounds */
 	UPROPERTY(config, EditAnywhere, Category="Audio", meta=(AllowedClasses="SoundClass", DisplayName="Default Sound Class"))
-	FStringAssetReference DefaultSoundClassName;
+	FSoftObjectPath DefaultSoundClassName;
 
 	/** The SoundConcurrency assigned to newly created sounds */
 	UPROPERTY(config, EditAnywhere, Category = "Audio", meta = (AllowedClasses = "SoundConcurrency", DisplayName = "Default Sound Concurrency"))
-	FStringAssetReference DefaultSoundConcurrencyName;
+	FSoftObjectPath DefaultSoundConcurrencyName;
 
 	/** The SoundMix to use as base when no other system has specified a Base SoundMix */
 	UPROPERTY(config, EditAnywhere, Category="Audio", meta=(AllowedClasses="SoundMix"))
-	FStringAssetReference DefaultBaseSoundMix;
+	FSoftObjectPath DefaultBaseSoundMix;
 	
 	/** Sound class to be used for the VOIP audio component */
 	UPROPERTY(config, EditAnywhere, Category="Audio", meta=(AllowedClasses="SoundClass"))
-	FStringAssetReference VoiPSoundClass;
+	FSoftObjectPath VoiPSoundClass;
+
+	/** Sample rate used for voice over IP. VOIP audio is resampled to the application's sample rate on the receiver side. */
+	UPROPERTY(config, EditAnywhere, Category = "Audio")
+	EVoiceSampleRate VoiPSampleRate;
+
+	/** The amount of time to buffer incoming voice audio for ahead of time. Increasing this value can help avoid jitter on slower network connections. */
+	UPROPERTY(config, EditAnywhere, Category = "Audio", AdvancedDisplay, meta = (ClampMin = 0.05, ClampMax = 3.0))
+	float VoipBufferingDelay;
+
+	/** The amount of audio to send to reverb submixes if no reverb send is setup for the source through attenuation settings. Only used in audio mixer. */
+	UPROPERTY(config, EditAnywhere, Category = "Audio", AdvancedDisplay, meta = (ClampMin = 0.0, ClampMax = 1.0))
+	float DefaultReverbSendLevel;
 
 	UPROPERTY(config, EditAnywhere, Category="Audio", AdvancedDisplay, meta=(ClampMin=0.1,ClampMax=1.5))
 	float LowPassFilterResonance;

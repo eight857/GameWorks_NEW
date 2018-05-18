@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NormalMapIdentification.h"
 #include "Engine/Texture2D.h"
@@ -434,7 +434,7 @@ public:
 			{
 				// Must wait until the texture is done with previous operations before
 				// changing settings and getting it to rebuild.
-				if ( Texture2D->PendingMipChangeRequestStatus.GetValue() != TexState_ReadyFor_Requests )
+				if ( !Texture2D->IsReadyForStreaming() || Texture2D->HasPendingUpdate() )
 				{
 					Texture2D->WaitForStreaming();
 				}

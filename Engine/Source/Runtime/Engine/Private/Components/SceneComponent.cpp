@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SceneComponent.cpp
@@ -378,13 +378,16 @@ static int32 SetDescendantIsEditorOnly(USceneComponent const* SceneComponentObje
 	// recursively alter the bIsEditorOnly flag for children and deeper descendants 
 	for (USceneComponent* ChildSceneComponent : AttachedChildren)
 	{
-		if (!ChildSceneComponent->bIsEditorOnly)
+		if (ChildSceneComponent != nullptr)
 		{
-			ChildSceneComponent->Modify();
-			ChildSceneComponent->bIsEditorOnly = true;
-			++NumDescendantsChanged;
+			if (!ChildSceneComponent->bIsEditorOnly)
+			{
+				ChildSceneComponent->Modify();
+				ChildSceneComponent->bIsEditorOnly = true;
+				++NumDescendantsChanged;
+			}
+			NumDescendantsChanged += SetDescendantIsEditorOnly(ChildSceneComponent);
 		}
-		NumDescendantsChanged += SetDescendantIsEditorOnly(ChildSceneComponent);
 	}
 
 	return NumDescendantsChanged;
@@ -505,19 +508,19 @@ void USceneComponent::UpdateComponentToWorldWithParent(USceneComponent* Parent,F
 #endif
 
 	// If our parent hasn't been updated before, we'll need walk up our parent attach hierarchy
-	if (Parent && !Parent->bWorldToComponentUpdated)
+	if (Parent && !Parent->bComponentToWorldUpdated)
 	{
 		//QUICK_SCOPE_CYCLE_COUNTER(STAT_USceneComponent_UpdateComponentToWorldWithParent_Parent);
 		Parent->UpdateComponentToWorld();
 
 		// Updating the parent may (depending on if we were already attached to parent) result in our being updated, so just return
-		if (bWorldToComponentUpdated)
+		if (bComponentToWorldUpdated)
 		{
 			return;
 		}
 	}
 
-	bWorldToComponentUpdated = true;
+	bComponentToWorldUpdated = true;
 
 	FTransform NewTransform(NoInit);
 
@@ -843,43 +846,46 @@ void USceneComponent::DestroyComponent(bool bPromoteChildren/*= false*/)
 			{
 				// Cache our AttachParent
 				USceneComponent* CachedAttachParent = GetAttachParent();
-				check(CachedAttachParent != nullptr);
-
-				// Find the our position in its AttachParent's child array
-				const TArray<USceneComponent*>& AttachSiblings = CachedAttachParent->GetAttachChildren();
-				int32 Index = AttachSiblings.Find(this);
-				check(Index != INDEX_NONE);
-
-				// Detach from parent
-				DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-
-				// Find an appropriate child node to promote to this node's position in the hierarchy
-				if (AttachedChildren.Num() > 0)
+				if (ensureMsgf(CachedAttachParent != nullptr, TEXT("Deleting a non-root scene component with no AttachParent: %s"), *GetFullName()))
 				{
-					// Always choose non editor-only child nodes over editor-only child nodes (since we don't want editor-only nodes to end up with non editor-only child nodes)
-					USceneComponent* const * FindResult =
-						AttachedChildren.FindByPredicate([Owner](USceneComponent* Child){ return Child != nullptr && !Child->IsEditorOnly(); });
+					// Find the our position in its AttachParent's child array
+					const TArray<USceneComponent*>& AttachSiblings = CachedAttachParent->GetAttachChildren();
+					int32 Index = AttachSiblings.Find(this);
+					check(Index != INDEX_NONE);
 
-					if (FindResult != nullptr)
+					// Detach from parent
+					DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+
+					// Find an appropriate child node to promote to this node's position in the hierarchy
+					if (AttachedChildren.Num() > 0)
 					{
-						ChildToPromote = *FindResult;
+						// Always choose non editor-only child nodes over editor-only child nodes (since we don't want editor-only nodes to end up with non editor-only child nodes)
+						USceneComponent* const * FindResult =
+							AttachedChildren.FindByPredicate([Owner](USceneComponent* Child) { return Child != nullptr && !Child->IsEditorOnly(); });
+
+						if (FindResult != nullptr)
+						{
+							ChildToPromote = *FindResult;
+						}
+						else
+						{
+							// Default to first child node
+							if(ensureMsgf(AttachedChildren[0] != nullptr, TEXT("Deleting a non-root scene component with no promotable AttachChildren: %s"), *GetFullName()))
+							{
+								ChildToPromote = AttachedChildren[0];
+							}
+						}
 					}
-					else
+
+					if (ChildToPromote != nullptr)
 					{
-						// Default to first child node
-						check(AttachedChildren[0] != nullptr);
-						ChildToPromote = AttachedChildren[0];
+						// Attach the child node that we're promoting to the parent and move it to the same position as the old node was in the array
+						ChildToPromote->AttachToComponent(CachedAttachParent, FAttachmentTransformRules::KeepWorldTransform);
+						CachedAttachParent->AttachChildren.Remove(ChildToPromote);
+
+						Index = FMath::Clamp<int32>(Index, 0, AttachSiblings.Num());
+						CachedAttachParent->AttachChildren.Insert(ChildToPromote, Index);
 					}
-				}
-
-				if (ChildToPromote != nullptr)
-				{
-					// Attach the child node that we're promoting to the parent and move it to the same position as the old node was in the array
-					ChildToPromote->AttachToComponent(CachedAttachParent, FAttachmentTransformRules::KeepWorldTransform);
-					CachedAttachParent->AttachChildren.Remove(ChildToPromote);
-
-					Index = FMath::Clamp<int32>(Index, 0, AttachSiblings.Num());
-					CachedAttachParent->AttachChildren.Insert(ChildToPromote, Index);
 				}
 			}
 
@@ -887,13 +893,14 @@ void USceneComponent::DestroyComponent(bool bPromoteChildren/*= false*/)
 			TArray<USceneComponent*> AttachChildrenLocalCopy(AttachedChildren);
 			for (USceneComponent* Child : AttachChildrenLocalCopy)
 			{
-				check(Child != nullptr);
-
-				// Note: This will internally call Modify(), so we don't need to call it here
-				Child->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-				if (Child != ChildToPromote)
+				if (ensure(Child))
 				{
-					Child->AttachToComponent(ChildToPromote, FAttachmentTransformRules::KeepWorldTransform);
+					// Note: This will internally call Modify(), so we don't need to call it here
+					Child->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+					if (Child != ChildToPromote)
+					{
+						Child->AttachToComponent(ChildToPromote, FAttachmentTransformRules::KeepWorldTransform);
+					}
 				}
 			}
 		}
@@ -1598,9 +1605,10 @@ void USceneComponent::SetupAttachment(class USceneComponent* InParent, FName InS
 	{
 		if (ensureMsgf(InParent != this, TEXT("Cannot attach a component to itself.")))
 		{
-			if (ensureMsgf(InParent == nullptr || !InParent->IsAttachedTo(this), TEXT("Setting up attachment would create a cycle.")))
+			// Paragon hack
+			if (/*ensureMsgf*/(InParent == nullptr || !InParent->IsAttachedTo(this))) //, TEXT("Setting up attachment would create a cycle.")))
 			{
-				if (ensureMsgf(AttachParent == nullptr || !AttachParent->AttachChildren.Contains(this), TEXT("SetupAttachment cannot be used once a component has already had AttachTo used to connect it to a parent.")))
+				if (/*ensureMsgf*/(AttachParent == nullptr || !AttachParent->AttachChildren.Contains(this)))// , TEXT("SetupAttachment cannot be used once a component has already had AttachTo used to connect it to a parent.")))
 				{
 					AttachParent = InParent;
 					AttachSocketName = InSocketName;
@@ -1845,7 +1853,7 @@ bool USceneComponent::AttachToComponent(USceneComponent* Parent, const FAttachme
 
 		if (Parent->IsNetSimulating() && !IsNetSimulating())
 		{
-			Parent->ClientAttachedChildren.Add(this);
+			Parent->ClientAttachedChildren.AddUnique(this);
 		}
 
 		// Now apply attachment rules
@@ -2002,7 +2010,7 @@ void USceneComponent::DetachFromComponent(const FDetachmentTransformRules& Detac
 		// Make sure parent points to us if we're registered
 		ensureMsgf(!bRegistered || GetAttachParent()->GetAttachChildren().Contains(this), TEXT("Attempt to detach SceneComponent '%s' owned by '%s' from AttachParent '%s' while not attached."), *GetName(), (Owner ? *Owner->GetName() : TEXT("Unowned")), *GetAttachParent()->GetName());
 
-		if (DetachmentRules.bCallModify)
+		if (DetachmentRules.bCallModify && !HasAnyFlags(RF_Transient))
 		{
 			Modify();
 			GetAttachParent()->Modify();
@@ -2184,36 +2192,62 @@ void USceneComponent::UpdateChildTransforms(EUpdateTransformFlags UpdateTransfor
 #if ENABLE_NAN_DIAGNOSTIC
 	if (!GetComponentTransform().IsValid())
 	{
-		logOrEnsureNanError(TEXT("USceneComponent::UpdateChildTransforms found NaN/INF in ComponentToWorld: %s"), *ComponentToWorld.ToString());
+		logOrEnsureNanError(TEXT("USceneComponent::UpdateChildTransforms found NaN/INF in ComponentToWorld: %s"), *GetComponentTransform().ToString());
 	}
 #endif
 
-	EUpdateTransformFlags UpdateTransformFlagsFromParent = UpdateTransformFlags | EUpdateTransformFlags::PropagateFromParent;
-
-	for (USceneComponent* ChildComp : GetAttachChildren())
+	if (AttachChildren.Num() > 0)
 	{
-		if (ChildComp != nullptr)
+		const bool bOnlyUpdateIfUsingSocket = !!(UpdateTransformFlags & EUpdateTransformFlags::OnlyUpdateIfUsingSocket);
+
+		const EUpdateTransformFlags UpdateTransformNoSocketSkip = ~EUpdateTransformFlags::OnlyUpdateIfUsingSocket & UpdateTransformFlags;
+		const EUpdateTransformFlags UpdateTransformFlagsFromParent = UpdateTransformNoSocketSkip | EUpdateTransformFlags::PropagateFromParent;
+
+		for (USceneComponent* ChildComp : GetAttachChildren())
 		{
-			// Don't update the child if it uses a completely absolute (world-relative) scheme, unless it has never been updated.
-			if (!(ChildComp->bAbsoluteLocation && ChildComp->bAbsoluteRotation && ChildComp->bAbsoluteScale) || !ChildComp->bWorldToComponentUpdated)
+			if (ChildComp != nullptr)
 			{
-				ChildComp->UpdateComponentToWorld(UpdateTransformFlagsFromParent, Teleport);
+				// Update Child if it's never been updated.
+				if (!ChildComp->bComponentToWorldUpdated)
+				{
+					ChildComp->UpdateComponentToWorld(UpdateTransformFlagsFromParent, Teleport);
+				}
+				else
+				{
+					// If we're updating child only if he's using a socket. Skip if that's not the case.
+					if (bOnlyUpdateIfUsingSocket && (ChildComp->AttachSocketName == NAME_None))
+					{
+						continue;
+					}
+
+					// Don't update the child if it uses a completely absolute (world-relative) scheme.
+					if (ChildComp->bAbsoluteLocation && ChildComp->bAbsoluteRotation && ChildComp->bAbsoluteScale)
+					{
+						continue;
+					}
+
+					ChildComp->UpdateComponentToWorld(UpdateTransformFlagsFromParent, Teleport);
+				}
 			}
 		}
 	}
 }
 
+#if WITH_EDITORONLY_DATA
 void USceneComponent::Serialize(FArchive& Ar)
 {
 	Super::Serialize(Ar);
 
+#if WITH_EDITORONLY_DATA
 	// Copy from deprecated properties
 	if(Ar.UE4Ver() < VER_UE4_SCENECOMP_TRANSLATION_TO_LOCATION)
 	{
 		RelativeLocation = RelativeTranslation_DEPRECATED;
 		bAbsoluteLocation = bAbsoluteTranslation_DEPRECATED;
 	}
+#endif
 }
+#endif
 
 
 void USceneComponent::PostInterpChange(UProperty* PropertyThatChanged)
@@ -2534,7 +2568,7 @@ void USceneComponent::BeginDestroy()
 
 bool USceneComponent::InternalSetWorldLocationAndRotation(FVector NewLocation, const FQuat& RotationQuat, bool bNoPhysics, ETeleportType Teleport)
 {
-	checkSlow(bWorldToComponentUpdated);
+	checkSlow(bComponentToWorldUpdated);
 	FQuat NewRotationQuat(RotationQuat);
 
 #if ENABLE_NAN_DIAGNOSTIC

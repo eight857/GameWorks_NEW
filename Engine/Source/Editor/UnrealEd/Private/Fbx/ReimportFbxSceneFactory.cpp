@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Factories/ReimportFbxSceneFactory.h"
 #include "Misc/Paths.h"
@@ -1051,6 +1051,7 @@ EReimportResult::Type UReimportFbxSceneFactory::ImportSkeletalMesh(void* VoidRoo
 	//TODO support bBakePivotInVertex
 	bool Old_bBakePivotInVertex = GlobalImportSettings->bBakePivotInVertex;
 	GlobalImportSettings->bBakePivotInVertex = false;
+	GlobalImportSettings->bImportBoneTracks = true;
 	//if (GlobalImportSettings->bBakePivotInVertex && MeshInfo->PivotNodeUid == INVALID_UNIQUE_ID)
 	//{
 		//GlobalImportSettings->bBakePivotInVertex = false;
@@ -1174,12 +1175,8 @@ EReimportResult::Type UReimportFbxSceneFactory::ImportStaticMesh(void* VoidFbxIm
 				FbxImporter->FindAllLODGroupNode(AllNodeInLod, NodeParent, LODIndex);
 				FbxImporter->ImportStaticMeshAsSingle(Pkg, AllNodeInLod, StaticMeshFName, RF_Public | RF_Standalone, StaticMeshImportData, NewObject, LODIndex);
 			}
-			UStaticMesh *NewMesh = Cast<UStaticMesh>(NewObject);
-			if (NewMesh != nullptr)
-			{
-				FbxImporter->FindAllLODGroupNode(AllNodeInLod, NodeParent, 0);
-				FbxImporter->PostImportStaticMesh(NewMesh, AllNodeInLod);
-			}
+			FbxImporter->FindAllLODGroupNode(AllNodeInLod, NodeParent, 0);
+			FbxImporter->PostImportStaticMesh(NewObject, AllNodeInLod);
 		}
 	}
 	else
@@ -1232,6 +1229,7 @@ EReimportResult::Type UReimportFbxSceneFactory::ReimportSkeletalMesh(void* VoidF
 	//TODO support bBakePivotInVertex
 	bool Old_bBakePivotInVertex = GlobalImportSettings->bBakePivotInVertex;
 	GlobalImportSettings->bBakePivotInVertex = false;
+	GlobalImportSettings->bImportBoneTracks = true;
 	//if (GlobalImportSettings->bBakePivotInVertex && MeshInfo->PivotNodeUid == INVALID_UNIQUE_ID)
 	//{
 		//GlobalImportSettings->bBakePivotInVertex = false;
@@ -1361,7 +1359,7 @@ EReimportResult::Type UReimportFbxSceneFactory::ReimportSkeletalMesh(void* VoidF
 							}
 							else
 							{
-								DestSeq->RecycleAnimSequence();
+								DestSeq->CleanAnimSequenceForImport();
 							}
 							DestSeq->SetSkeleton(Mesh->Skeleton);
 							// since to know full path, reimport will need to do same

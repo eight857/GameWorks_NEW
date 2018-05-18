@@ -1,13 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
+#include "UObject/ScriptMacros.h"
 #include "UObject/Object.h"
 #include "Templates/SubclassOf.h"
 #include "Engine/EngineBaseTypes.h"
-#include "UObject/ScriptMacros.h"
+#include "Engine/NetworkDelegates.h"
 #include "GameInstance.generated.h"
 
 class AGameModeBase;
@@ -293,8 +294,10 @@ public:
 	/** Stop recording a replay if one is currently in progress */
 	virtual void StopRecordingReplay();
 
-	/** Start playing back a previously recorded replay. */
-	virtual void PlayReplay(const FString& InName, UWorld* WorldOverride = nullptr, const TArray<FString>& AdditionalOptions = TArray<FString>());
+	/** Start playing back a previously recorded replay.
+	 *	Return false if it fails to play.
+	*/
+	virtual bool PlayReplay(const FString& InName, UWorld* WorldOverride = nullptr, const TArray<FString>& AdditionalOptions = TArray<FString>());
 
 	/**
 	 * Adds a join-in-progress user to the set of users associated with the currently recording replay (if any)
@@ -310,6 +313,12 @@ public:
 	virtual void HandleGameNetControlMessage(class UNetConnection* Connection, uint8 MessageByte, const FString& MessageStr)
 	{}
 	
+	/** Handle setting up encryption keys. Games that override this MUST call the delegate when their own (possibly async) processing is complete. */
+	virtual void ReceivedNetworkEncryptionToken(const FString& EncryptionToken, const FOnEncryptionKeyResponse& Delegate);
+
+	/** Called when a client receives the EncryptionAck control message from the server, will generally enable encryption. */
+	virtual void ReceivedNetworkEncryptionAck(const FOnEncryptionKeyResponse& Delegate);
+
 	/** Call to preload any content before loading a map URL, used during seamless travel as well as map loading */
 	virtual void PreloadContentForURL(FURL InURL);
 
@@ -364,6 +373,11 @@ public:
 	void NotifyPreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel);
 	/** @return delegate fired when client travel occurs */
 	FOnPreClientTravel& OnNotifyPreClientTravel() { return NotifyPreClientTravelDelegates; }
+
+	/**
+	 * Calls HandleDisconnect on either the OnlineSession if it exists or the engine, to cause a travel back to the default map. The instance must have a world.
+	 */
+	virtual void ReturnToMainMenu();
 
 protected:
 	/** Called when the game instance is started either normally or through PIE. */

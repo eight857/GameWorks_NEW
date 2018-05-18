@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SSourceControlSubmit.h"
 #include "Misc/MessageDialog.h"
@@ -132,7 +132,7 @@ void SSourceControlSubmitWidget::Construct(const FArguments& InArgs)
 				.Text( NSLOCTEXT("SourceControl.SubmitPanel", "ChangeListDesc", "Changelist Description") )
 			]
 			+SVerticalBox::Slot()
-			.AutoHeight()
+			.FillHeight(.5f)
 			.Padding(FMargin(5, 0, 5, 5))
 			[
 				SNew(SBox)
@@ -226,6 +226,16 @@ void SSourceControlSubmitWidget::Construct(const FArguments& InArgs)
 	ParentFrame.Pin()->SetWidgetToFocusOnActivate(ChangeListDescriptionTextCtrl);
 }
 
+FReply SSourceControlSubmitWidget::OnKeyDown( const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent )
+{
+   // Pressing escape returns as if the user clicked cancel
+   if ( InKeyEvent.GetKey() == EKeys::Escape )
+   {
+      return CancelClicked();
+   }
+
+   return FReply::Unhandled();
+}
 
 TSharedRef<SWidget> SSourceControlSubmitWidget::GenerateWidgetForItemAndColumn(TSharedPtr<FSubmitItem> Item, const FName ColumnID) const
 {
@@ -475,8 +485,8 @@ void FSourceControlWindows::ChoosePackagesToCheckInCompleted(const TArray<UPacka
 	{
 		TArray<FString> PendingDeletePaths;
 		PendingDeletePaths.Add(FPaths::ConvertRelativePathToFull(FPaths::EngineContentDir()));
-		PendingDeletePaths.Add(FPaths::ConvertRelativePathToFull(FPaths::GameContentDir()));
-		PendingDeletePaths.Add(FPaths::ConvertRelativePathToFull(FPaths::GameConfigDir()));
+		PendingDeletePaths.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir()));
+		PendingDeletePaths.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectConfigDir()));
 		PendingDeletePaths.Add(FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()));
 
 		const bool bUseSourceControlStateCache = true;
@@ -563,8 +573,8 @@ void FSourceControlWindows::ChoosePackagesToCheckIn()
 			// make sure we update the SCC status of all packages (this could take a long time, so we will run it as a background task)
 			TArray<FString> Filenames;
 			Filenames.Add(FPaths::ConvertRelativePathToFull(FPaths::EngineContentDir()));
-			Filenames.Add(FPaths::ConvertRelativePathToFull(FPaths::GameContentDir()));
-			Filenames.Add(FPaths::ConvertRelativePathToFull(FPaths::GameConfigDir()));
+			Filenames.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir()));
+			Filenames.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectConfigDir()));
 			Filenames.Add(FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()));
 
 			ISourceControlProvider& SourceControlProvider = ISourceControlModule::Get().GetProvider();

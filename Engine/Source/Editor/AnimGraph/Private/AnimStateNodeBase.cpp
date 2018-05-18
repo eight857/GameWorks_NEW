@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AnimStateNodeBase.cpp
@@ -11,6 +11,7 @@
 #include "AnimationStateMachineGraph.h"
 #include "AnimationStateMachineSchema.h"
 #include "Kismet2/Kismet2NameValidators.h"
+#include "Kismet2/KismetEditorUtilities.h"
 /////////////////////////////////////////////////////
 // FAnimStateNodeNameValidator
 
@@ -33,6 +34,23 @@ public:
 			}
 		}
 	}
+
+	// Begin FStringSetNameValidator
+	virtual EValidatorResult IsValid(const FString& Name, bool bOriginal) override
+	{
+		EValidatorResult Result = FStringSetNameValidator::IsValid(Name, bOriginal);
+
+		if (Result == EValidatorResult::Ok)
+		{
+			if (Name.Len() > 100)
+			{
+				Result = EValidatorResult::TooLong;
+			}
+		}
+
+		return Result;
+	}
+	// End FStringSetNameValidator
 };
 
 /////////////////////////////////////////////////////
@@ -72,6 +90,19 @@ void UAnimStateNodeBase::PostPasteNode()
 UObject* UAnimStateNodeBase::GetJumpTargetForDoubleClick() const
 {
 	return GetBoundGraph();
+}
+
+bool UAnimStateNodeBase::CanJumpToDefinition() const
+{
+	return GetJumpTargetForDoubleClick() != nullptr;
+}
+
+void UAnimStateNodeBase::JumpToDefinition() const
+{
+	if (UObject* HyperlinkTarget = GetJumpTargetForDoubleClick())
+	{
+		FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(HyperlinkTarget);
+	}
 }
 
 bool UAnimStateNodeBase::CanCreateUnderSpecifiedSchema(const UEdGraphSchema* Schema) const

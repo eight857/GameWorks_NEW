@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -45,7 +45,7 @@ public:
 	*/
 	FORCEINLINE void* Allocate()
 	{
-#if USE_NIEVE_TLockFreeFixedSizeAllocator_TLSCacheBase
+#if USE_NIEVE_TLockFreeFixedSizeAllocator_TLSCacheBase || PLATFORM_HTML5
 		return FMemory::Malloc(SIZE);
 #else
 		FThreadLocalCache& TLS = GetTLS();
@@ -94,7 +94,7 @@ public:
 	*/
 	FORCEINLINE void Free(void *Item)
 	{
-#if USE_NIEVE_TLockFreeFixedSizeAllocator_TLSCacheBase
+#if USE_NIEVE_TLockFreeFixedSizeAllocator_TLSCacheBase || PLATFORM_HTML5
 		return FMemory::Free(Item);
 #else
 		NumUsed.Decrement();

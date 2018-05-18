@@ -1,6 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NetcodeUnitTest.h"
+
+#include "Misc/CommandLine.h"
 #include "Modules/ModuleManager.h"
 #include "Engine/World.h"
 
@@ -8,7 +10,9 @@
 
 #include "INetcodeUnitTest.h"
 #include "NUTUtil.h"
+#include "NUTUtilNet.h"
 #include "NUTUtilDebug.h"
+#include "NUTUtilReflection.h"
 #include "UnitTestEnvironment.h"
 
 
@@ -16,15 +20,10 @@
  * Globals
  */
 
-UNetConnection* GActiveReceiveUnitConnection = NULL;
 bool GIsInitializingActorChan = false;
-bool GSentBunch = false;
 
-ELogType GActiveLogTypeFlags = ELogType::None;
-
-#if !UE_BUILD_SHIPPING
-TMap<void*, InternalProcessEventCallback> ActiveProcessEventCallbacks;
-#endif
+/** Limits DumpRPCs to RPC's (partially) matching the specified names */
+static TArray<FString> DumpRPCMatches;
 
 
 /**
@@ -47,6 +46,8 @@ private:
 	static FDelegateHandle OnWorldCreatedDelegateHandle;
 #endif
 
+	static FDelegateHandle DumpRPCsHandle;
+
 public:
 	/**
 	 * Called upon loading of the NetcodeUnitTest library
@@ -55,7 +56,7 @@ public:
 	{
 		static bool bSetDelegate = false;
 
-		if (!bSetDelegate)
+		if (!bSetDelegate && FParse::Param(FCommandLine::Get(), TEXT("NUTServer")))
 		{
 			OnWorldCreatedDelegate = FWorldDelegates::FWorldInitializationEvent::FDelegate::CreateStatic(
 										&FNetcodeUnitTest::OnWorldCreated);
@@ -71,6 +72,28 @@ public:
 
 		FLogWidgetCommands::Register();
 		FUnitTestEnvironment::Register();
+
+
+		/**
+		 * Hooks all RPC calls, and dumps the function + full parameter list, to the log.
+		 * Optionally, can specify string matches for filtering RPC's, delimited with ','.
+		 *
+		 * Examples:
+		 *	-DumpRPCs
+		 *
+		 *	-DumpRPCs="RPC1,RPC2"
+		 */
+		FString MatchesStr;
+
+		if (FParse::Param(FCommandLine::Get(), TEXT("DumpRPCs")) || FParse::Value(FCommandLine::Get(), TEXT("DumpRPCs="), MatchesStr))
+		{
+			if (MatchesStr.Len() > 0)
+			{
+				MatchesStr.ParseIntoArray(DumpRPCMatches, TEXT(","));
+			}
+
+			DumpRPCsHandle = FProcessEventHook::Get().AddGlobalRPCHook(FOnProcessNetEvent::CreateStatic(&FNetcodeUnitTest::DumpRPC));
+		}
 
 		// Hack-override the log category name
 #if !NO_LOGGING
@@ -113,6 +136,12 @@ public:
 
 		FLogWidgetCommands::Unregister();
 		FUnitTestEnvironment::Unregister();
+
+		if (DumpRPCsHandle.IsValid())
+		{
+			FProcessEventHook::Get().RemoveGlobalRPCHook(DumpRPCsHandle);
+			DumpRPCsHandle.Reset();
+		}
 	}
 
 
@@ -122,7 +151,7 @@ public:
 	static void OnWorldCreated(UWorld* UnrealWorld, const UWorld::InitializationValues IVS)
 	{
 		// If NUTActor isn't already in RuntimeServerActors, add it now
-		if (GEngine != NULL)
+		if (GEngine != nullptr)
 		{
 			bool bNUTActorPresent = GEngine->RuntimeServerActors.ContainsByPredicate(
 				[](const FString& CurServerActor)
@@ -145,13 +174,38 @@ public:
 		FWorldDelegates::OnPreWorldInitialization.Remove(OnWorldCreatedDelegate);
 #endif
 	}
+
+	// @todo #JohnB: Presently this has a 'bug' (feature?) where it logs not just received RPC's, but sent RPC's as well.
+	static void DumpRPC(AActor* Actor, UFunction* Function, void* Parameters, bool& bBlockRPC)
+	{
+		FString FuncName = Function->GetName();
+		bool bContainsMatch = DumpRPCMatches.Num() == 0 || DumpRPCMatches.ContainsByPredicate(
+								[&FuncName](FString& CurEntry)
+								{
+									return FuncName.Contains(CurEntry);
+								});
+
+		if (bContainsMatch)
+		{
+			FString FuncParms = NUTUtilRefl::FunctionParmsToString(Function, Parameters);
+
+			UE_LOG(LogUnitTest, Log, TEXT("Received RPC '%s' for actor '%s'"), *FuncName, *Actor->GetFullName());
+
+			if (FuncParms.Len() > 0)
+			{
+				UE_LOG(LogUnitTest, Log, TEXT("     '%s' parameters: %s"), *FuncName, *FuncParms);
+			}
+		}
+	}
 };
 
-FWorldDelegates::FWorldInitializationEvent::FDelegate FNetcodeUnitTest::OnWorldCreatedDelegate = NULL;
+FWorldDelegates::FWorldInitializationEvent::FDelegate FNetcodeUnitTest::OnWorldCreatedDelegate = nullptr;
 
 #if TARGET_UE4_CL >= CL_DEPRECATEDEL
 FDelegateHandle FNetcodeUnitTest::OnWorldCreatedDelegateHandle;
 #endif
+
+FDelegateHandle FNetcodeUnitTest::DumpRPCsHandle;
 
 
 // Essential for getting the .dll to compile, and for the package to be loadable

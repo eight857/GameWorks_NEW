@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "StringTableCoreFwd.h"
@@ -106,7 +106,7 @@ private:
 
 /** Creates and registers a new string table instance, loading strings from the given file (the path is relative to the game content directory). */
 #define LOCTABLE_FROMFILE_GAME(ID, NAMESPACE, FILEPATH) \
-	FStringTableRegistry::Get().Internal_LocTableFromFile(TEXT(ID), TEXT(NAMESPACE), TEXT(FILEPATH), FPaths::GameContentDir())
+	FStringTableRegistry::Get().Internal_LocTableFromFile(TEXT(ID), TEXT(NAMESPACE), TEXT(FILEPATH), FPaths::ProjectContentDir())
 
 /** Add a string table entry with the given key and source string. */
 #define LOCTABLE_SETSTRING(ID, KEY, SRC) \

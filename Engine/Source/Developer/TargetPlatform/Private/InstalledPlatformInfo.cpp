@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "InstalledPlatformInfo.h"
 #include "Misc/MessageDialog.h"
@@ -49,7 +49,7 @@ FInstalledPlatformInfo::FInstalledPlatformInfo()
 void FInstalledPlatformInfo::ParsePlatformConfiguration(FString PlatformConfiguration)
 {
 	// Trim whitespace at the beginning.
-	PlatformConfiguration = PlatformConfiguration.Trim();
+	PlatformConfiguration.TrimStartInline();
 	// Remove brackets.
 	PlatformConfiguration.RemoveFromStart(TEXT("("));
 	PlatformConfiguration.RemoveFromEnd(TEXT(")"));

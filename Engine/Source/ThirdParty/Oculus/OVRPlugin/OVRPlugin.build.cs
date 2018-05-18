@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -8,11 +8,9 @@ public class OVRPlugin : ModuleRules
     {
         Type = ModuleType.External;
 
-		string SourceDirectory = UEBuildConfiguration.UEThirdPartySourceDirectory + "Oculus/OVRPlugin/OVRPlugin/";
+		string SourceDirectory = Target.UEThirdPartySourceDirectory + "Oculus/OVRPlugin/OVRPlugin/";
 
 		PublicIncludePaths.Add(SourceDirectory + "Include");
-
-        PublicIncludePaths.Add(SourceDirectory + "ExtIncludes");
 
         if (Target.Platform == UnrealTargetPlatform.Android)
 		{

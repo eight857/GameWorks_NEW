@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DetailPropertyRow.h"
 #include "Modules/ModuleManager.h"
@@ -11,6 +11,10 @@
 #include "StructurePropertyNode.h"
 #include "ItemPropertyNode.h"
 #include "ObjectPropertyNode.h"
+#include "DetailWidgetRow.h"
+
+const float FDetailWidgetRow::DefaultValueMinWidth = 125.0f;
+const float FDetailWidgetRow::DefaultValueMaxWidth = 125.0f;
 
 #define LOCTEXT_NAMESPACE	"DetailPropertyRow"
 
@@ -40,7 +44,7 @@ FDetailPropertyRow::FDetailPropertyRow(TSharedPtr<FPropertyNode> InPropertyNode,
 		{
 			// We are showing an entirely different object inline.  Generate a layout for it now.
 			ExternalObjectLayout = MakeShared<FDetailLayoutData>();
-			InParentCategory->GetDetailsView().UpdateSinglePropertyMap(InExternalRootNode, *ExternalObjectLayout);
+			InParentCategory->GetDetailsView()->UpdateSinglePropertyMap(InExternalRootNode, *ExternalObjectLayout, true);
 		}
 
 		if (PropertyNode->GetPropertyKeyNode().IsValid())
@@ -173,7 +177,7 @@ TSharedPtr<FAssetThumbnailPool> FDetailPropertyRow::GetThumbnailPool() const
 TSharedPtr<IPropertyUtilities> FDetailPropertyRow::GetPropertyUtilities() const
 {
 	TSharedPtr<FDetailCategoryImpl> ParentCategoryPinned = ParentCategory.Pin();
-	if (ParentCategoryPinned.IsValid())
+	if (ParentCategoryPinned.IsValid() && ParentCategoryPinned->IsParentLayoutValid())
 	{
 		return ParentCategoryPinned->GetParentLayout().GetPropertyUtilities();
 	}
@@ -296,7 +300,7 @@ void FDetailPropertyRow::GenerateChildrenForPropertyNode( TSharedPtr<FPropertyNo
 				// Only struct children can have custom visibility that is different from their parent.
 				else if ( !bStructProperty || LayoutBuilder.IsPropertyVisible( FPropertyAndParent(*ChildNode->GetProperty(), ParentProperty, Objects ) ) )
 				{	
-					TArray<TSharedRef<IDetailTreeNode>> PropNodes;
+					TArray<TSharedRef<FDetailTreeNode>> PropNodes;
 					bool bHasKeyNode = false;
 
 					// Create and initialize the child first
@@ -375,11 +379,9 @@ TSharedPtr<IPropertyTypeCustomization> FDetailPropertyRow::GetPropertyCustomizat
 		static FName NAME_PropertyEditor("PropertyEditor");
 		FPropertyEditorModule& PropertyEditorModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>(NAME_PropertyEditor);
 
-		IDetailsViewPrivate& DetailsView = InParentCategory->GetDetailsView();
+		IDetailsViewPrivate* DetailsView = InParentCategory->GetDetailsView();
 
-		TSharedRef<IDetailsView> DetailsViewPtr = StaticCastSharedRef<IDetailsView>(DetailsView.AsShared());
-
-		FPropertyTypeLayoutCallback LayoutCallback = PropertyEditorModule.GetPropertyTypeCustomization(Property, *PropHandle, DetailsViewPtr);
+		FPropertyTypeLayoutCallback LayoutCallback = PropertyEditorModule.GetPropertyTypeCustomization(Property, *PropHandle, DetailsView ? DetailsView->GetCustomPropertyTypeLayoutMap() : FCustomPropertyTypeLayoutMap() );
 		if (LayoutCallback.IsValid())
 		{
 			if (PropHandle->IsValidHandle())
@@ -457,7 +459,7 @@ void FDetailPropertyRow::MakeExternalPropertyRowCustomization(TSharedPtr<FStruct
 	}
 }
 
-void FDetailPropertyRow::MakeExternalPropertyRowCustomization(const TArray<UObject*>& InObjects, FName PropertyName, TSharedRef<FDetailCategoryImpl> ParentCategory, struct FDetailLayoutCustomization& OutCustomization)
+void FDetailPropertyRow::MakeExternalPropertyRowCustomization(const TArray<UObject*>& InObjects, FName PropertyName, TSharedRef<FDetailCategoryImpl> ParentCategory, struct FDetailLayoutCustomization& OutCustomization, TOptional<bool> bAllowChildrenOverride, TOptional<bool> bCreateCategoryNodesOverride)
 {
 	TSharedRef<FObjectPropertyNode> RootPropertyNode = MakeShared<FObjectPropertyNode>();
 
@@ -474,6 +476,15 @@ void FDetailPropertyRow::MakeExternalPropertyRowCustomization(const TArray<UObje
 	InitParams.bAllowChildren = false;
 	InitParams.bForceHiddenPropertyVisibility = FPropertySettings::Get().ShowHiddenProperties();
 	InitParams.bCreateCategoryNodes = PropertyName == NAME_None;
+
+	if (bAllowChildrenOverride.IsSet())
+	{
+		InitParams.bAllowChildren = bAllowChildrenOverride.GetValue();
+	}
+	if (bCreateCategoryNodesOverride.IsSet())
+	{
+		InitParams.bCreateCategoryNodes = bCreateCategoryNodesOverride.GetValue();
+	}
 
 	RootPropertyNode->InitNode(InitParams);
 
@@ -647,6 +658,7 @@ void FDetailPropertyRow::MakeValueWidget( FDetailWidgetRow& Row, const TSharedPt
 			.IsEnabled(IsEnabledAttrib)
 			.CustomResetToDefault(CustomResetToDefault);
 	};
+	
 
 	TSharedRef<SWidget> ResetWidget = ResetButton.IsValid() ? ResetButton.ToSharedRef() : SNullWidget::NullWidget;
 

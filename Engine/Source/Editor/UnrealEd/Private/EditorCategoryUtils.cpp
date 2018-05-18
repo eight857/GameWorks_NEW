@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EditorCategoryUtils.h"
 #include "IDocumentationPage.h"
@@ -269,7 +269,8 @@ FString FEditorCategoryUtils::GetCategoryDisplayString(const FString& Unsanitize
 				if (KeyLen > 0)
 				{
 					FString Key(KeyLen, *DisplayString + KeyIndex+1);
-					ReplacementStr = FEditorCategoryUtilsImpl::GetCategory(*Key.Trim()).ToString();
+					Key.TrimStartInline();
+					ReplacementStr = FEditorCategoryUtilsImpl::GetCategory(*Key).ToString();
 				}
 				DisplayString.ReplaceInline(*ToReplaceStr, *ReplacementStr);
 			}

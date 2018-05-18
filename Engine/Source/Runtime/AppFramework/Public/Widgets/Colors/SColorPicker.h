@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,8 +18,10 @@ class SColorThemesViewer;
 class SComboButton;
 class SThemeColorBlocksBar;
 
+
 /** Called when the color picker cancel button is pressed */
 DECLARE_DELEGATE_OneParam(FOnColorPickerCancelled, FLinearColor);
+
 
 /**
  * Enumerates color channels (do not reorder).
@@ -93,6 +95,7 @@ public:
 		, _DisplayInlineVersion(false)
 		, _OverrideColorPickerCreation(false)
 		, _ExpandAdvancedSection(false)
+		, _OptionalOwningDetailsView(nullptr)
 	{ }
 		
 		/** The color that is being targeted as a TAttribute */
@@ -155,6 +158,9 @@ public:
 		/** If true, the Advanced section will be expanded, regardless of the remembered state */
 		SLATE_ARGUMENT(bool, ExpandAdvancedSection)
 
+		/** Allows a details view to own the color picker so refreshing another details view doesn't close it */
+		SLATE_ATTRIBUTE(TSharedPtr<SWidget>, OptionalOwningDetailsView)
+
 	SLATE_END_ARGS()
 	
 	/** A default window size for the color picker which looks nice */
@@ -170,11 +176,26 @@ public:
 	 *
 	 * @param InArgs Declaration from which to construct the widget.
 	 */
-	void Construct(const FArguments& InArgs );
+	void Construct(const FArguments& InArgs);
+
+	/** Gets the (optionally set) owning details view of the current color picker */
+	TSharedPtr<SWidget> GetOptionalOwningDetailsView()
+	{
+		if (OptionalOwningDetailsView.IsValid())
+		{
+			return OptionalOwningDetailsView.Pin();
+		}
+		else
+		{
+			return nullptr;
+		}
+	}
+
 
 	/** Delegate to override color picker creation behavior */
 	DECLARE_DELEGATE_OneParam(FOnColorPickerCreationOverride, const TSharedRef<SColorPicker>&);
 	static FOnColorPickerCreationOverride OnColorPickerNonModalCreateOverride;
+
 	/** Delegate to override color picker destruction behavior */
 	DECLARE_DELEGATE(FOnColorPickerDestructionOverride);
 	static FOnColorPickerDestructionOverride OnColorPickerDestroyOverride;
@@ -188,11 +209,11 @@ protected:
 	void RestoreColors();
 
 	/** Set all the colors to this new color */
-	void SetColors( const FLinearColor& InColor );
+	void SetColors(const FLinearColor& InColor);
 
-	bool ApplyNewTargetColor( bool bForceUpdate = false );
+	bool ApplyNewTargetColor(bool bForceUpdate = false);
 
-	void GenerateDefaultColorPickerContent( bool bAdvancedSectionExpanded );
+	void GenerateDefaultColorPickerContent(bool bAdvancedSectionExpanded);
 	void GenerateInlineColorPickerContent();
 
 	FLinearColor GetCurrentColor() const
@@ -204,8 +225,8 @@ protected:
 	void DiscardColor();
 
 	/** Sets new color in ether RGB or HSV */
-	bool SetNewTargetColorRGB( const FLinearColor& NewValue, bool bForceUpdate = false );
-	bool SetNewTargetColorHSV( const FLinearColor& NewValue, bool bForceUpdate = false );
+	bool SetNewTargetColorRGB(const FLinearColor& NewValue, bool bForceUpdate = false);
+	bool SetNewTargetColorHSV(const FLinearColor& NewValue, bool bForceUpdate = false);
 
 	void UpdateColorPick();
 	void UpdateColorPickMouseUp();
@@ -224,7 +245,7 @@ protected:
 	 * @param Channel The color channel to create the widget for.
 	 * @return The new slider.
 	 */
-	TSharedRef<SWidget> MakeColorSlider( EColorPickerChannels Channel ) const;
+	TSharedRef<SWidget> MakeColorSlider(EColorPickerChannels Channel) const;
 
 	/**
 	 * Creates a color spin box widget for the specified channel.
@@ -232,7 +253,7 @@ protected:
 	 * @param Channel The color channel to create the widget for.
 	 * @return The new spin box.
 	 */
-	TSharedRef<SWidget> MakeColorSpinBox( EColorPickerChannels Channel ) const;
+	TSharedRef<SWidget> MakeColorSpinBox(EColorPickerChannels Channel) const;
 
 	/**
 	 * Creates the color preview box widget.
@@ -244,16 +265,16 @@ protected:
 private:
 
 	// Callback for the active timer to animate the color post-construct
-	EActiveTimerReturnType AnimatePostConstruct( double InCurrentTime, float InDeltaTime );
+	EActiveTimerReturnType AnimatePostConstruct(double InCurrentTime, float InDeltaTime);
 
 	// Callback for getting the end color of a color spin box gradient.
-	FLinearColor GetGradientEndColor( EColorPickerChannels Channel ) const;
+	FLinearColor GetGradientEndColor(EColorPickerChannels Channel) const;
 
 	// Callback for getting the start color of a color spin box gradient.
-	FLinearColor GetGradientStartColor( EColorPickerChannels Channel ) const;
+	FLinearColor GetGradientStartColor(EColorPickerChannels Channel) const;
 
 	// Callback for handling expansion of the 'Advanced' area.
-	void HandleAdvancedAreaExpansionChanged( bool Expanded );
+	void HandleAdvancedAreaExpansionChanged(bool Expanded);
 
 	// Callback for getting the visibility of the alpha channel portion in color blocks.
 	EVisibility HandleAlphaColorBlockVisibility() const;
@@ -262,28 +283,28 @@ private:
 	FReply HandleCancelButtonClicked();
 
 	// Callback for pressing a mouse button in the color area.
-	FReply HandleColorAreaMouseDown( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent );
+	FReply HandleColorAreaMouseDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent);
 
 	// Callback for clicking the color picker mode button.
 	FReply HandleColorPickerModeButtonClicked();
 
 	// Callback for getting the visibility of the given color picker mode.
-	EVisibility HandleColorPickerModeVisibility( EColorPickerModes Mode ) const;
+	EVisibility HandleColorPickerModeVisibility(EColorPickerModes Mode) const;
 
 	// Callback for getting the end color of a color slider.
-	FLinearColor HandleColorSliderEndColor( EColorPickerChannels Channel ) const;
+	FLinearColor HandleColorSliderEndColor(EColorPickerChannels Channel) const;
 
 	// Callback for getting the start color of a color slider.
-	FLinearColor HandleColorSliderStartColor( EColorPickerChannels Channel ) const;
+	FLinearColor HandleColorSliderStartColor(EColorPickerChannels Channel) const;
 
 	// Callback for value changes in the color spectrum picker.
-	void HandleColorSpectrumValueChanged( FLinearColor NewValue );
+	void HandleColorSpectrumValueChanged(FLinearColor NewValue);
 
 	// Callback for getting the value of a color spin box.
-	float HandleColorSpinBoxValue( EColorPickerChannels Channel ) const;
+	float HandleColorSpinBoxValue(EColorPickerChannels Channel) const;
 
 	// Callback for value changes in a color spin box.
-	void HandleColorSpinBoxValueChanged( float NewValue, EColorPickerChannels Channel );
+	void HandleColorSpinBoxValueChanged(float NewValue, EColorPickerChannels Channel);
 
 	// Callback for completed eye dropper interactions.
 	void HandleEyeDropperButtonComplete(bool bCancelled);
@@ -301,7 +322,7 @@ private:
 	void HandleHexLinearInputTextCommitted(const FText& Text, ETextCommit::Type CommitType);
 
 	// Callback for changing the HSV value of the current color.
-	void HandleHSVColorChanged( FLinearColor NewValue );
+	void HandleHSVColorChanged(FLinearColor NewValue);
 
 	// Callback for when interactive user input begins.
 	void HandleInteractiveChangeBegin();
@@ -310,34 +331,34 @@ private:
 	void HandleInteractiveChangeEnd();
 
 	// Callback for when interactive user input ends.
-	void HandleInteractiveChangeEnd( float NewValue );
+	void HandleInteractiveChangeEnd(float NewValue);
 
 	// Callback for clicking the new color preview block.
-	FReply HandleNewColorBlockMouseButtonDown( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent, bool bCheckAlpha );
+	FReply HandleNewColorBlockMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent, bool bCheckAlpha);
 
 	// Callback for clicking the OK button.
 	FReply HandleOkButtonClicked();
 
 	// Callback for clicking the old color preview block.
-	FReply HandleOldColorBlockMouseButtonDown( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent, bool bCheckAlpha );
+	FReply HandleOldColorBlockMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent, bool bCheckAlpha);
 
 	// Callback for checking whether sRGB colors should be rendered.
 	bool HandleColorPickerUseSRGB() const;
 
 	// Callback for when the parent window has been closed.
-	void HandleParentWindowClosed( const TSharedRef<SWindow>& Window );
+	void HandleParentWindowClosed(const TSharedRef<SWindow>& Window);
 
 	// Callback for changing the RGB value of the current color.
-	void HandleRGBColorChanged( FLinearColor NewValue );
+	void HandleRGBColorChanged(FLinearColor NewValue);
 
 	// Callback for changing the checked state of the sRGB check box.
-	void HandleSRGBCheckBoxCheckStateChanged( ECheckBoxState InIsChecked );
+	void HandleSRGBCheckBoxCheckStateChanged(ECheckBoxState InIsChecked);
 
 	// Callback for determining whether the sRGB check box should be checked.
 	ECheckBoxState HandleSRGBCheckBoxIsChecked() const;
 
 	// Callback for selecting a color in the color theme bar.
-	void HandleThemeBarColorSelected( FLinearColor NewValue );
+	void HandleThemeBarColorSelected(FLinearColor NewValue);
 
 	// Callback for getting the theme bar's color theme.
 	TSharedPtr<class FColorTheme> HandleThemeBarColorTheme() const;
@@ -371,7 +392,7 @@ private:
 	/** Color start point to animate from */
 	FLinearColor ColorBegin;
 
-	// Holds the color picker's mode.
+	/** Holds the color picker's mode. */
 	EColorPickerModes CurrentMode;
 
 	/** Time, used for color animation */
@@ -449,7 +470,6 @@ private:
 	/** Is true if the color picker creation behavior can be overridden */
 	bool bValidCreationOverrideExists;
 
-
 private:
 
 	/** Invoked when a new value is selected on the color wheel */
@@ -461,8 +481,6 @@ private:
 	/** Invoked when the color picker cancel button is pressed */
 	FOnColorPickerCancelled OnColorPickerCancelled;
 
-
-
 	/** Invoked when a slider drag, color wheel drag or dropper grab starts */
 	FSimpleDelegate OnInteractivePickBegin;
 
@@ -471,6 +489,9 @@ private:
 
 	/** Invoked when the color picker window closes. */
 	FOnWindowClosed OnColorPickerWindowClosed;
+
+	/** Allows a details view to own the color picker so refreshing another details view doesn't close it */
+	TWeakPtr<SWidget> OptionalOwningDetailsView;
 
 private:
 
@@ -538,6 +559,10 @@ struct FColorPickerArgs
 	/** Overrides the initial color set on the color picker. */
 	FLinearColor InitialColorOverride;
 
+	/** Allows a details view to own the color picker so refreshing another details view doesn't close it */
+	TSharedPtr<SWidget> OptionalOwningDetailsView;
+
+	/** Default constructor. */
 	FColorPickerArgs()
 		: bIsModal(false)
 		, ParentWidget(nullptr)
@@ -558,17 +583,18 @@ struct FColorPickerArgs
 		, OnInteractivePickBegin()
 		, OnInteractivePickEnd()
 		, InitialColorOverride()
+		, OptionalOwningDetailsView(nullptr)
 	{ }
 };
 
+/** Get a pointer to the static color picker, or nullptr if it does not exist. */
+APPFRAMEWORK_API TSharedPtr<SColorPicker> GetColorPicker();
+
+/** Open up the static color picker, destroying any previously existing one. */
+APPFRAMEWORK_API bool OpenColorPicker(const FColorPickerArgs& Args);
 
 /**
- * Opens up the static color picker, destroying any previously existing one.
- */
-APPFRAMEWORK_API bool OpenColorPicker( const FColorPickerArgs& Args );
-
-/**
- * Destroys the current color picker. Necessary if the values the color picker
+ * Destroy the current color picker. Necessary if the values the color picker
  * currently targets become invalid.
  */
 APPFRAMEWORK_API void DestroyColorPicker();

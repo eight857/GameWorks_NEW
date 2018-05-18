@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreTypes.h"
@@ -57,6 +57,20 @@ struct CORE_API FRenderingObjectVersion
 		FixedMeshUVDensity,
 
 		AddedbUseShowOnlyList,
+
+		VolumetricLightmaps,
+
+		MaterialAttributeLayerParameters,
+
+		StoreReflectionCaptureBrightnessForCooking,
+
+		// FModelVertexBuffer does serialize a regular TArray instead of a TResourceArray
+		ModelVertexBufferSerialization,
+
+		ReplaceLightAsIfStatic,
+
+		// Added per FShaderType permutation id.
+		ShaderPermutationId,
 
 		// -----<new versions can be added above this line>-------------------------------------------------
 		VersionPlusOne,

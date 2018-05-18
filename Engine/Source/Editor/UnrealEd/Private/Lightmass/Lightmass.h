@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Lightmass.h: lightmass import/export definitions.
@@ -10,6 +10,7 @@
 #include "Misc/Guid.h"
 #include "GameFramework/WorldSettings.h"
 #include "Lightmass/LightmassCharacterIndirectDetailVolume.h"
+#include "Lightmass/VolumetricLightmapDensityVolume.h"
 #include "StaticLightingSystem/StaticLightingPrivate.h"
 #include "Lightmass/LightmassImportanceVolume.h"
 #include "Components/LightmassPortalComponent.h"
@@ -42,6 +43,7 @@ namespace Lightmass
 	struct FDebugLightingInputData;
 	struct FMaterialData;
 	struct FMaterialElementData;
+	class FVolumetricLightmapSettings;
 }
 
 struct FLightmassMaterialExportSettings
@@ -124,12 +126,21 @@ public:
 	/** Guids of visibility tasks. */
 	TArray<FGuid> VisibilityBucketGuids;
 
+	TMap<FGuid, int32> VolumetricLightmapTaskGuids;
+
+	TArray<AVolumetricLightmapDensityVolume*> VolumetricLightmapDensityVolumes;
+
 private:
+
+	void SetVolumetricLightmapSettings(Lightmass::FVolumetricLightmapSettings& OutSettings);
+
 	void WriteToChannel( FLightmassStatistics& Stats, FGuid& DebugMappingGuid );
 	bool WriteToMaterialChannel(FLightmassStatistics& Stats);
 
 	/** Exports visibility Data. */
 	void WriteVisibilityData(int32 Channel);
+
+	void WriteVolumetricLightmapData(int32 Channel);
 
 	void WriteLights( int32 Channel );
 
@@ -233,6 +244,8 @@ private:
 	TArray<const FLandscapeStaticLightingMesh*> LandscapeLightingMeshes;
 	TArray<FLandscapeStaticLightingTextureMapping*> LandscapeTextureMappings;
 
+	TArray<class FStaticLightingGlobalVolumeMapping*> VolumeMappings;
+
 	// materials
 	TArray<UMaterialInterface*> Materials;
 	TMap<UMaterialInterface*, FLightmassMaterialExportSettings> MaterialExportSettings;
@@ -256,6 +269,7 @@ private:
 	friend class FLightmassProcessor;
 	friend class FLandscapeStaticLightingMesh;
 	friend class FLandscapeStaticLightingTextureMapping;
+	friend class FStaticLightingGlobalVolumeMapping;
 };
 
 /** Lightmass Importer class */
@@ -632,6 +646,8 @@ protected:
 	/** List of completed visibility tasks. */
 	TListThreadSafe<FGuid>									CompletedVisibilityTasks;
 
+	TListThreadSafe<FGuid>									CompletedVolumetricLightmapTasks;
+
 	/** Positive if the mesh area light data task is complete. */
 	static volatile int32										MeshAreaLightDataTaskCompleted;
 
@@ -665,6 +681,10 @@ protected:
 
 	/** Imports volume lighting samples from Lightmass and adds them to the appropriate levels. */
 	void	ImportVolumeSamples();
+	
+	void	ImportIrradianceTasks(bool& bGenerateSkyShadowing, TArray<struct FImportedVolumetricLightmapTaskData>& TaskDataArray);
+
+	void	ImportVolumetricLightmap();
 
 	/** Imports precomputed visibility */
 	void	ImportPrecomputedVisibility();
@@ -696,10 +716,19 @@ protected:
 
 	/** Reads in a TArray from the given channel. */
 	template<class T>
-	void ReadArray(int32 Channel, TArray<T>& Array);
+	void ReadArray(int32 Channel, TArray<T>& Array)
+	{
+		int32 ArrayNum = 0;
+		Swarm.ReadChannel(Channel, &ArrayNum, sizeof(ArrayNum));
+		if (ArrayNum > 0)
+		{
+			Array.Empty(ArrayNum);
+			Array.AddZeroed(ArrayNum);
+			Swarm.ReadChannel(Channel, Array.GetData(), Array.GetTypeSize() * ArrayNum);
+		}
+	}
 
-	/** Fills out GDebugStaticLightingInfo with the output from Lightmass */
-	void	ImportDebugOutput();
+	void ImportDebugOutputStruct(int32 Channel);
 
 	void ProcessAlertMessages();
 

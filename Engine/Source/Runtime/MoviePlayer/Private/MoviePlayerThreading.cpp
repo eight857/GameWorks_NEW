@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MoviePlayerThreading.h"
 #include "HAL/Runnable.h"
@@ -6,6 +6,7 @@
 #include "Misc/ScopeLock.h"
 #include "Framework/Application/SlateApplication.h"
 #include "DefaultGameMoviePlayer.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 FThreadSafeCounter FSlateLoadingSynchronizationMechanism::LoadingThreadInstanceCounter;
 
@@ -72,7 +73,7 @@ void FSlateLoadingSynchronizationMechanism::DestroySlateThread()
 
 		while (MainLoop.IsLocked())
 		{
-			FPlatformMisc::PumpMessages(false);
+			FPlatformApplicationMisc::PumpMessages(false);
 
 			FPlatformProcess::Sleep(0.1f);
 		}
@@ -120,8 +121,8 @@ void FSlateLoadingSynchronizationMechanism::SlateThreadRunMainLoop()
 
 	while (IsSlateMainLoopRunning())
 	{
-		const double CurrentTime = FPlatformTime::Seconds();
-		const double DeltaTime = CurrentTime - LastTime;
+		double CurrentTime = FPlatformTime::Seconds();
+		double DeltaTime = CurrentTime - LastTime;
 
 		// 60 fps max
 		const double MaxTickRate = 1.0/60.0f;
@@ -131,6 +132,8 @@ void FSlateLoadingSynchronizationMechanism::SlateThreadRunMainLoop()
 		if( TimeToWait > 0 )
 		{
 			FPlatformProcess::Sleep(TimeToWait);
+			CurrentTime = FPlatformTime::Seconds();
+			DeltaTime = CurrentTime - LastTime;
 		}
 
 		if (FSlateApplication::IsInitialized() && !IsSlateDrawPassEnqueued())
@@ -171,7 +174,7 @@ uint32 FSlateLoadingThreadTask::Run()
 	SyncMechanism->SlateThreadRunMainLoop();
 
 	// Tear down the slate loading thread ID
-	GSlateLoadingThreadId = 0;
+	FPlatformAtomics::InterlockedExchange((int32*)&GSlateLoadingThreadId, 0);
 
 	return 0;
 }

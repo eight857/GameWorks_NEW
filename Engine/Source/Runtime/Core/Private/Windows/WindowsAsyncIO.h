@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -176,7 +176,7 @@ public:
 	uint8* GetContainedSubblock(uint8* UserSuppliedMemory, int64 InOffset, int64 InBytesToRead)
 	{
 		if (InOffset >= Offset && InOffset + InBytesToRead <= Offset + BytesToRead &&
-			this->PollCompletion())
+			this->PollCompletion() && Memory)
 		{
 			check(Memory);
 			if (!UserSuppliedMemory)
@@ -300,6 +300,7 @@ public:
 		FScopeLock Lock(&LiveRequestsCritical);
 		check(!LiveRequests.Num()); // must delete all requests before you delete the handle
 #endif
+		CloseHandle(FileHandle);
 	}
 	void RemoveRequest(FWindowsReadRequest* Req)
 	{

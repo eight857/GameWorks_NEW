@@ -3,13 +3,12 @@ Shortcut:
 Description: Creates the source file for a basic unit test.
 
 Source:
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnitTests/$FILE_BASE$.h"
 
-#include "$UnitTestProject$PCH.h"
-
 #include "UnitTestEnvironment.h"
+#include "MinimalClient.h"
 
 
 /**
@@ -33,13 +32,15 @@ U$FILE_BASE$::U$FILE_BASE$(const FObjectInitializer& ObjectInitializer)
 	UnitTestTimeout = 60;
 
 
-	UnitTestFlags |= (EUnitTestFlags::LaunchServer | $end$);
+	SetFlags<EUnitTestFlags::LaunchServer | $end$,>();
 }
 
 void U$FILE_BASE$::InitializeEnvironmentSettings()
 {
 	BaseServerURL = UnitEnv->GetDefaultMap(UnitTestFlags);
 	BaseServerParameters = UnitEnv->GetDefaultServerParameters();
+
+	UnitEnv->InitializeUnitTasks();
 }
 
 void U$FILE_BASE$::ExecuteClientUnitTest()

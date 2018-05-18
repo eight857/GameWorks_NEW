@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -127,6 +127,9 @@ private:
 	/** Called via UEditorEngine::GetActorRecordingStateEvent to check to see whether we need to record actor state */
 	void GetActorRecordingState( bool& bIsRecording ) const;
 
+	/** Called when an actor label has changed */
+	void OnActorLabelChanged(AActor* ChangedActor);
+
 	/** Called when sequencer has been evaluated */
 	void OnSequencerEvaluated();
 
@@ -139,11 +142,14 @@ private:
 	/** Called when allow edits mode has changed */
 	void OnAllowEditsModeChanged(EAllowEditsMode AllowEditsMode);
 
-	/** Called when the user begins scrubbing */
-	void OnBeginScrubbing();
+	/** Called when the user begins playing/scrubbing */
+	void OnBeginDeferUpdates();
 
-	/** Called when the user stops scrubbing */
-	void OnEndScrubbing();
+	/** Called when the user stops playing/scrubbing */
+	void OnEndDeferUpdates();
+
+	/** Called to determine whether a binding is visible in the tree view */
+	bool IsBindingVisible(const FMovieSceneBinding& InBinding);
 
 	void OnPropertyEditorOpened();
 
@@ -207,5 +213,5 @@ private:
 
 	TSharedPtr<class FDetailKeyframeHandlerWrapper> KeyFrameHandler;
 
-	bool bScrubbing;
+	bool bDeferUpdates;
 };

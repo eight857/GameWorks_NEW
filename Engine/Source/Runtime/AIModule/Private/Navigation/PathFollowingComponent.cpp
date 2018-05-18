@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Navigation/PathFollowingComponent.h"
 #include "UObject/Package.h"
@@ -17,7 +17,6 @@
 #include "AI/Navigation/NavLinkCustomInterface.h"
 #include "Navigation/MetaNavMeshPath.h"
 #include "AIConfig.h"
-
 
 #if UE_BUILD_TEST || UE_BUILD_SHIPPING
 #define SHIPPING_STATIC static
@@ -644,7 +643,7 @@ void UPathFollowingComponent::SetMovementComponent(UNavMovementComponent* MoveCo
 	if (MoveComp)
 	{
 		const FNavAgentProperties& NavAgentProps = MoveComp->GetNavAgentPropertiesRef();
-		MyDefaultAcceptanceRadius = NavAgentProps.AgentRadius;
+		MyDefaultAcceptanceRadius = NavAgentProps.AgentRadius * 0.1f;
 		MoveComp->PathFollowingComp = this;
 
 		UWorld* MyWorld = GetWorld();
@@ -798,7 +797,7 @@ int32 UPathFollowingComponent::DetermineStartingPathPoint(const FNavigationPath*
 
 void UPathFollowingComponent::SetDestinationActor(const AActor* InDestinationActor)
 {
-	DestinationActor = InDestinationActor;
+	DestinationActor = MakeWeakObjectPtr(const_cast<AActor*>(InDestinationActor));
 	DestinationAgent = Cast<const INavAgentInterface>(InDestinationActor);
 	
 	const AActor* OwnerActor = GetOwner();
@@ -873,6 +872,9 @@ void UPathFollowingComponent::UpdatePathSegment()
 		return;
 	}
 
+	const FVector CurrentLocation = MovementComp->GetActorFeetLocation();
+	const bool bCanUpdateState = HasMovementAuthority();
+
 	if (!Path->IsValid())
 	{
 		if (!Path->IsWaitingForRepath())
@@ -880,6 +882,15 @@ void UPathFollowingComponent::UpdatePathSegment()
 			UE_VLOG(this, LogPathFollowing, Log, TEXT("Aborting move due to path being invalid and not waiting for repath"));
 			OnPathFinished(EPathFollowingResult::Aborted, FPathFollowingResultFlags::InvalidPath);
 			return;
+		}
+		else if (HasStartedNavLinkMove() && bCanUpdateState && Status == EPathFollowingStatus::Moving)
+		{
+			// pawn needs to get off navlink to unlock path updates (AAIController::ShouldPostponePathUpdates)
+			if (HasReachedCurrentTarget(CurrentLocation))
+			{
+				OnSegmentFinished();
+				SetNextMoveSegment();
+			}
 		}
 		else
 		{
@@ -897,8 +908,6 @@ void UPathFollowingComponent::UpdatePathSegment()
 	const FAIRequestID MoveRequestId = GetCurrentRequestId();
 
 	// if agent has control over its movement, check finish conditions
-	const FVector CurrentLocation = MovementComp->GetActorFeetLocation();
-	const bool bCanUpdateState = HasMovementAuthority();
 	if (bCanUpdateState && Status == EPathFollowingStatus::Moving)
 	{
 		const int32 LastSegmentEndIndex = Path->GetPathPoints().Num() - 1;
@@ -1161,7 +1170,7 @@ bool UPathFollowingComponent::HasReachedInternal(const FVector& GoalLocation, fl
 	const FVector ToGoal = GoalLocation - AgentLocation;
 
 	const float Dist2DSq = ToGoal.SizeSquared2D();
-	const float UseRadius = FMath::Max(RadiusThreshold, GoalRadius + (AgentRadius * AgentRadiusMultiplier));
+	const float UseRadius = RadiusThreshold + GoalRadius + (AgentRadius * AgentRadiusMultiplier);
 	if (Dist2DSq > FMath::Square(UseRadius))
 	{
 		return false;
@@ -1217,19 +1226,12 @@ float UPathFollowingComponent::GetFinalAcceptanceRadius(const FNavigationPath& P
 
 		const float PathEndToGoalDistance = FVector::Dist(PathEndOverride ? *PathEndOverride : PathInstance.GetEndLocation(), OriginalGoalLocation);
 		const float Remaining = AcceptanceRadius - PathEndToGoalDistance;
-
-		if (Remaining <= MyDefaultAcceptanceRadius)
-		{
-			// goal is more than AcceptanceRadius from the end of the path
-			// so we just need to do regular path following, with default 
-			// acceptance radius
-			return  MyDefaultAcceptanceRadius;
-		}
-		else
-		{
-			return Remaining;
-		}
+		
+		// if goal is more than AcceptanceRadius from the end of the path
+		// we just need to do regular path following, with default radius value
+		return FMath::Max(Remaining, MyDefaultAcceptanceRadius);
 	}
+
 	return AcceptanceRadius;
 }
 

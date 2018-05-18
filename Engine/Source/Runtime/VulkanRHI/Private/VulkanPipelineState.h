@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	VulkanPipelineState.h: Vulkan pipeline state definitions.
@@ -13,6 +13,7 @@
 #include "VulkanGlobalUniformBuffer.h"
 #include "VulkanPipeline.h"
 #include "VulkanRHIPrivate.h"
+#include "ArrayView.h"
 
 class FVulkanComputePipeline;
 
@@ -22,13 +23,32 @@ class FVulkanCommonPipelineState : public VulkanRHI::FDeviceChild
 public:
 	FVulkanCommonPipelineState(FVulkanDevice* InDevice)
 		: VulkanRHI::FDeviceChild(InDevice)
+#if !VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
 		, DSRingBuffer(InDevice)
+#endif
 	{
 	}
 
 protected:
+#if VULKAN_USE_DESCRIPTOR_POOL_MANAGER
+	inline void Bind(VkCommandBuffer CmdBuffer, VkPipelineLayout PipelineLayout, VkPipelineBindPoint BindPoint)
+	{
+		VulkanRHI::vkCmdBindDescriptorSets(CmdBuffer,
+			BindPoint,
+			PipelineLayout,
+			0, DescriptorSetHandles.Num(), DescriptorSetHandles.GetData(),
+			0, nullptr);
+	}
+#endif
 	FVulkanDescriptorSetWriteContainer DSWriteContainer;
-	FVulkanDescriptorSetRingBuffer DSRingBuffer;
+#if !VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
+	FOLDVulkanDescriptorSetRingBuffer DSRingBuffer;
+#endif
+
+#if VULKAN_USE_DESCRIPTOR_POOL_MANAGER
+	FVulkanTypedDescriptorPoolSet* CurrentDescriptorPoolSet = nullptr;
+	TArray<VkDescriptorSet> DescriptorSetHandles;
+#endif
 };
 
 
@@ -44,11 +64,20 @@ public:
 	void Reset()
 	{
 		PackedUniformBuffersDirty = PackedUniformBuffersMask;
+#if VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
+#else
 		DSRingBuffer.Reset();
+#endif
 		DSWriter.ResetDirty();
 	}
 
-	inline void SetUAVBufferViewState(uint32 BindPoint, FVulkanBufferView* View)
+	inline void SetStorageBuffer(uint32 BindPoint, VkBuffer Buffer, uint32 Offset, uint32 Size, VkBufferUsageFlags UsageFlags)
+	{
+		check((UsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) == VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+		DSWriter.WriteStorageBuffer(BindPoint, Buffer, Offset, Size);
+	}
+
+	inline void SetUAVTexelBufferViewState(uint32 BindPoint, FVulkanBufferView* View)
 	{
 		check(View && (View->Flags & VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT) == VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT);
 		DSWriter.WriteStorageTexelBuffer(BindPoint, View);
@@ -72,9 +101,10 @@ public:
 		DSWriter.WriteUniformTexelBuffer(BindPoint, View);
 	}
 
-	inline void SetSRVTextureView(uint32 BindPoint, const FVulkanTextureView& TextureView)
+	inline void SetSRVTextureView(uint32 BindPoint, const FVulkanTextureView& TextureView, VkImageLayout Layout)
 	{
-		DSWriter.WriteImage(BindPoint, TextureView.View, VK_IMAGE_LAYOUT_GENERAL);
+		ensure(Layout == VK_IMAGE_LAYOUT_GENERAL);
+		DSWriter.WriteImage(BindPoint, TextureView.View, Layout);
 	}
 
 	inline void SetSamplerState(uint32 BindPoint, FVulkanSamplerState* Sampler)
@@ -95,23 +125,43 @@ public:
 
 	inline void SetUniformBuffer(uint32 BindPoint, const FVulkanUniformBuffer* UniformBuffer)
 	{
-		//#todo-rco
-		ensure(0);
+		if ((UniformBuffersWithDataMask & (1ULL << (uint64)BindPoint)) != 0)
+		{
+			DSWriter.WriteUniformBuffer(BindPoint, UniformBuffer->GetHandle(), UniformBuffer->GetOffset(), UniformBuffer->GetSize());
+		}
 	}
 
+#if VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
+	TArrayView<VkDescriptorSet> UpdateDescriptorSets(FVulkanCommandListContext* CmdListContext, FVulkanCmdBuffer* CmdBuffer, FVulkanGlobalUniformPool* GlobalUniformPool);
+
+	inline void BindDescriptorSets(VkCommandBuffer CmdBuffer, const TArrayView<VkDescriptorSet>& DescriptorSets)
+	{
+		VulkanRHI::vkCmdBindDescriptorSets(CmdBuffer,
+			VK_PIPELINE_BIND_POINT_COMPUTE,
+			ComputePipeline->GetLayout().GetPipelineLayout(),
+			0, DescriptorSets.Num(), DescriptorSets.GetData(),
+			0, nullptr);
+	}
+#else
 	bool UpdateDescriptorSets(FVulkanCommandListContext* CmdListContext, FVulkanCmdBuffer* CmdBuffer, FVulkanGlobalUniformPool* GlobalUniformPool);
 
 	inline void BindDescriptorSets(VkCommandBuffer CmdBuffer)
 	{
+#if VULKAN_USE_DESCRIPTOR_POOL_MANAGER
+		Bind(CmdBuffer, ComputePipeline->GetLayout().GetPipelineLayout(), VK_PIPELINE_BIND_POINT_COMPUTE);
+#else
 		check(DSRingBuffer.CurrDescriptorSets);
 		DSRingBuffer.CurrDescriptorSets->Bind(CmdBuffer, ComputePipeline->GetLayout().GetPipelineLayout(), VK_PIPELINE_BIND_POINT_COMPUTE);
+#endif
 	}
+#endif
 
 protected:
 	FPackedUniformBuffers PackedUniformBuffers;
 	uint64 PackedUniformBuffersMask;
 	uint64 PackedUniformBuffersDirty;
 	FVulkanDescriptorSetWriter DSWriter;
+	uint64 UniformBuffersWithDataMask;
 
 	FVulkanComputePipeline* ComputePipeline;
 
@@ -131,15 +181,21 @@ public:
 		BSS->Release();
 	}
 
-	inline void SetUAVBufferViewState(EShaderFrequency Stage, uint32 BindPoint, FVulkanBufferView* View)
+	inline void SetStorageBuffer(EShaderFrequency Stage, uint32 BindPoint, VkBuffer Buffer, uint32 Offset, uint32 Size, VkBufferUsageFlags UsageFlags)
+	{
+		check((UsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) == VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+		DSWriter[Stage].WriteStorageBuffer(BindPoint, Buffer, Offset, Size);
+	}
+
+	inline void SetUAVTexelBufferViewState(EShaderFrequency Stage, uint32 BindPoint, FVulkanBufferView* View)
 	{
 		check(View && (View->Flags & VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT) == VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT);
 		DSWriter[Stage].WriteStorageTexelBuffer(BindPoint, View);
 	}
 
-	inline void SetUAVTextureView(EShaderFrequency Stage, uint32 BindPoint, const FVulkanTextureView& TextureView)
+	inline void SetUAVTextureView(EShaderFrequency Stage, uint32 BindPoint, const FVulkanTextureView& TextureView, VkImageLayout Layout)
 	{
-		DSWriter[Stage].WriteStorageImage(BindPoint, TextureView.View, VK_IMAGE_LAYOUT_GENERAL);
+		DSWriter[Stage].WriteStorageImage(BindPoint, TextureView.View, Layout);
 	}
 
 	inline void SetTexture(EShaderFrequency Stage, uint32 BindPoint, const FVulkanTextureBase* TextureBase)
@@ -155,14 +211,14 @@ public:
 		DSWriter[Stage].WriteUniformTexelBuffer(BindPoint, View);
 	}
 
-	inline void SetSRVTextureView(EShaderFrequency Stage, uint32 BindPoint, const FVulkanTextureView& TextureView)
+	inline void SetSRVTextureView(EShaderFrequency Stage, uint32 BindPoint, const FVulkanTextureView& TextureView, VkImageLayout Layout)
 	{
-		DSWriter[Stage].WriteImage(BindPoint, TextureView.View, VK_IMAGE_LAYOUT_GENERAL);
+		DSWriter[Stage].WriteImage(BindPoint, TextureView.View, Layout);
 	}
 
 	inline void SetSamplerState(EShaderFrequency Stage, uint32 BindPoint, FVulkanSamplerState* Sampler)
 	{
-		check(Sampler);
+		check(Sampler && Sampler->Sampler != VK_NULL_HANDLE);
 		DSWriter[Stage].WriteSampler(BindPoint, Sampler->Sampler);
 	}
 
@@ -176,29 +232,50 @@ public:
 		PackedUniformBuffers[Stage].SetEmulatedUniformBufferIntoPacked(BindPoint, ConstantData, PackedUniformBuffersDirty[Stage]);
 	}
 
-	inline void SetUniformBuffer(uint32 BindPoint, const FVulkanUniformBuffer* UniformBuffer)
+	inline void SetUniformBuffer(EShaderFrequency Stage, uint32 BindPoint, const FVulkanUniformBuffer* UniformBuffer)
 	{
-		//#todo-rco
-		ensure(0);
+		if ((UniformBuffersWithDataMask[Stage] & (1ULL << (uint64)BindPoint)) != 0)
+		{
+			DSWriter[Stage].WriteUniformBuffer(BindPoint, UniformBuffer->GetHandle(), UniformBuffer->GetOffset(), UniformBuffer->GetSize());
+		}
 	}
 
+#if VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
+	TArrayView<VkDescriptorSet> UpdateDescriptorSets(FVulkanCommandListContext* CmdListContext, FVulkanCmdBuffer* CmdBuffer, FVulkanGlobalUniformPool* GlobalUniformPool);
+
+	inline void BindDescriptorSets(VkCommandBuffer CmdBuffer, const TArrayView<VkDescriptorSet>& DescriptorSets)
+	{
+		VulkanRHI::vkCmdBindDescriptorSets(CmdBuffer,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			GfxPipeline->Pipeline->GetLayout().GetPipelineLayout(),
+			0, DescriptorSets.Num(), DescriptorSets.GetData(),
+			0, nullptr);
+	}
+#else
 	bool UpdateDescriptorSets(FVulkanCommandListContext* CmdListContext, FVulkanCmdBuffer* CmdBuffer, FVulkanGlobalUniformPool* GlobalUniformPool);
 
 	inline void BindDescriptorSets(VkCommandBuffer CmdBuffer)
 	{
+#if VULKAN_USE_DESCRIPTOR_POOL_MANAGER
+		Bind(CmdBuffer, GfxPipeline->Pipeline->GetLayout().GetPipelineLayout(), VK_PIPELINE_BIND_POINT_GRAPHICS);
+#else
 		check(DSRingBuffer.CurrDescriptorSets);
 		DSRingBuffer.CurrDescriptorSets->Bind(CmdBuffer, GfxPipeline->Pipeline->GetLayout().GetPipelineLayout(), VK_PIPELINE_BIND_POINT_GRAPHICS);
+#endif
 	}
+#endif
 
 	void Reset()
 	{
 		FMemory::Memcpy(PackedUniformBuffersDirty, PackedUniformBuffersMask);
+#if VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
+#else
 		DSRingBuffer.Reset();
+#endif
 		for (int32 Index = 0; Index < SF_Compute; ++Index)
 		{
 			DSWriter[Index].ResetDirty();
 		}
-		;
 	}
 
 	inline void Verify()
@@ -232,6 +309,7 @@ protected:
 	FPackedUniformBuffers PackedUniformBuffers[SF_Compute];
 	uint64 PackedUniformBuffersMask[SF_Compute];
 	uint64 PackedUniformBuffersDirty[SF_Compute];
+	uint64 UniformBuffersWithDataMask[SF_Compute];
 	FVulkanDescriptorSetWriter DSWriter[SF_Compute];
 
 	FVulkanGraphicsPipelineState* GfxPipeline;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*
  * Component to handle the vehicle simulation for an actor
@@ -14,11 +14,14 @@
 #include "VehicleWheel.generated.h"
 
 class UPhysicalMaterial;
+class FPhysXVehicleManager;
 
+#if WITH_PHYSX
 namespace physx
 {
 	class PxShape;
 }
+#endif // WITH_PHYSX
 
 UENUM()
 enum EWheelSweepType
@@ -207,6 +210,7 @@ class PHYSXVEHICLES_API UVehicleWheel : public UObject
 
 	// Our wheelshape
 	physx::PxShape*									WheelShape;
+#endif // WITH_PHYSX
 
 	/**
 	 * Initialize this wheel instance
@@ -244,6 +248,9 @@ protected:
 	 */
 	FVector GetPhysicsLocation();
 
+private:
+#if WITH_PHYSX
+	FPhysXVehicleManager* GetVehicleManager() const;
 #endif // WITH_PHYSX
 
 public:

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -47,7 +47,7 @@ public:
 	void SerializeNameMap();
 	void SerializeImportMap(TArray<FObjectImport>& OutImportMap);
 	void SerializeExportMap(TArray<FObjectExport>& OutExportMap);
-	void SerializeStringAssetReferencesMap(TArray<FString>& OutStringAssetReferencesMap);
+	void SerializeSoftPackageReferenceList(TArray<FName>& OutSoftPackageReferenceList);
 	void SerializeSearchableNamesMap(FPackageDependencyData& OutDependencyData);
 
 	/** Returns flags the asset package was saved with */

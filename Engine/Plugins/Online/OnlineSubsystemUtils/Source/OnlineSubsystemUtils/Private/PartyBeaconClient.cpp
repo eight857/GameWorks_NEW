@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PartyBeaconClient.h"
 #include "OnlineSubsystemUtils.h"
@@ -146,7 +146,7 @@ bool APartyBeaconClient::RequestReservation(const FOnlineSessionSearchResult& De
 			if (SessionInt.IsValid())
 			{
 				FString ConnectInfo;
-				if (SessionInt->GetResolvedConnectString(DesiredHost, BeaconPort, ConnectInfo))
+				if (SessionInt->GetResolvedConnectString(DesiredHost, NAME_BeaconPort, ConnectInfo))
 				{
 					FString SessionId = DesiredHost.Session.SessionInfo->GetSessionId().ToString();
 					return RequestReservation(ConnectInfo, SessionId, RequestingPartyLeader, PartyMembers);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ShadowProjectionCommon.usf: Contains functions that uniformly filter a depth buffer.
@@ -222,9 +222,15 @@ float CubemapHardwarePCF(float3 WorldPosition, float3 LightPosition, float Light
 
 /** Textures and parameters needed for Fourier opacity maps. */
 Texture2D TranslucencyShadowTransmission0;
-SamplerState TranslucencyShadowTransmission0Sampler;
 Texture2D TranslucencyShadowTransmission1;
-SamplerState TranslucencyShadowTransmission1Sampler;
+
+#if SUPPORTS_INDEPENDENT_SAMPLERS
+	#define TranslucencyShadowTransmission0Sampler View.SharedBilinearClampedSampler
+	#define TranslucencyShadowTransmission1Sampler View.SharedBilinearClampedSampler
+#else
+	SamplerState TranslucencyShadowTransmission0Sampler;
+	SamplerState TranslucencyShadowTransmission1Sampler;
+#endif
 
 /** These have been tweaked to minimize ringing while not losing too much high frequency in the captured opacity function. */
 static const float RingingSuppressionFactor = 1;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	RHI.cpp: Render Hardware Interface implementation.
@@ -35,7 +35,8 @@ DEFINE_STAT(STAT_GetOrCreatePSO);
 static FAutoConsoleVariable CVarUseVulkanRealUBs(
 	TEXT("r.Vulkan.UseRealUBs"),
 	0,
-	TEXT("If true, enable using emulated uniform buffers on Vulkan ES2 mode."),
+	TEXT("0: Emulate uniform buffers on Vulkan SM4/SM5 [default]\n")
+	TEXT("1: Use real uniform buffers"),
 	ECVF_ReadOnly
 	);
 
@@ -113,6 +114,10 @@ void FRHIResource::FlushPendingDeletes()
 	check(IsInRenderingThread());
 	FRHICommandListExecutor::GetImmediateCommandList().ImmediateFlush(EImmediateFlushType::FlushRHIThread);
 	FRHICommandListExecutor::CheckNoOutstandingCmdLists();
+	if (GDynamicRHI)
+	{
+		GDynamicRHI->RHIPerFrameRHIFlushComplete();
+	}
 
 	auto Delete = [](TArray<FRHIResource*>& ToDelete)
 	{
@@ -216,6 +221,11 @@ static TAutoConsoleVariable<float> GGPUHitchThresholdCVar(
 	100.0f,
 	TEXT("Threshold for detecting hitches on the GPU (in milliseconds).")
 	);
+static TAutoConsoleVariable<int32> GCVarRHIRenderPass(
+	TEXT("r.RHIRenderPasses"),
+	0,
+	TEXT(""),
+	ECVF_Default);
 
 static TAutoConsoleVariable<int32> CVarGPUCrashDebugging(
 	TEXT("r.GPUCrashDebugging"),
@@ -223,6 +233,7 @@ static TAutoConsoleVariable<int32> CVarGPUCrashDebugging(
 	TEXT("Enable vendor specific GPU crash analysis tools"),
 	ECVF_ReadOnly
 	);
+
 
 namespace RHIConfig
 {
@@ -264,6 +275,8 @@ TRHIGlobal<bool> GSupportsRenderTargetFormat_PF_FloatRGBA(true);
 bool GSupportsShaderFramebufferFetch = false;
 bool GSupportsShaderDepthStencilFetch = false;
 bool GSupportsTimestampRenderQueries = false;
+bool GRHISupportsGPUTimestampBubblesRemoval = false;
+bool GRHISupportsFrameCyclesBubblesRemoval = false;
 bool GHardwareHiddenSurfaceRemoval = false;
 bool GRHISupportsAsyncTextureCreation = false;
 bool GSupportsQuads = false;
@@ -298,7 +311,7 @@ bool GSupportsEfficientAsyncCompute = false;
 bool GRHISupportsBaseVertexIndex = true;
 TRHIGlobal<bool> GRHISupportsInstancing(true);
 bool GRHISupportsFirstInstance = false;
-bool GRHIRequiresEarlyBackBufferRenderTarget = true;
+bool GRHISupportsDynamicResolution = false;
 bool GRHISupportsRHIThread = false;
 bool GRHISupportsRHIOnTaskThread = false;
 bool GRHISupportsParallelRHIExecute = false;
@@ -306,12 +319,15 @@ bool GSupportsHDR32bppEncodeModeIntrinsic = false;
 bool GSupportsParallelOcclusionQueries = false;
 bool GSupportsRenderTargetWriteMask = false;
 bool GSupportsTransientResourceAliasing = false;
+bool GRHIRequiresRenderTargetForPixelShaderUAVs = false;
 
 bool GRHISupportsMSAADepthSampleAccess = false;
 bool GRHISupportsResolveCubemapFaces = false;
 
 bool GRHISupportsHDROutput = false;
 EPixelFormat GRHIHDRDisplayOutputFormat = PF_FloatRGBA;
+
+uint64 GRHIPresentCounter = 1;
 
 /** Whether we are profiling GPU hitches. */
 bool GTriggerGPUHitchProfile = false;
@@ -391,7 +407,6 @@ static FName NAME_PCD3D_ES3_1(TEXT("PCD3D_ES31"));
 static FName NAME_PCD3D_ES2(TEXT("PCD3D_ES2"));
 static FName NAME_GLSL_150(TEXT("GLSL_150"));
 static FName NAME_SF_PS4(TEXT("SF_PS4"));
-static FName NAME_SF_XBOXONE_D3D11(TEXT("SF_XBOXONE_D3D11"));
 static FName NAME_SF_XBOXONE_D3D12(TEXT("SF_XBOXONE_D3D12"));
 static FName NAME_GLSL_430(TEXT("GLSL_430"));
 static FName NAME_GLSL_150_ES2(TEXT("GLSL_150_ES2"));
@@ -412,7 +427,7 @@ static FName NAME_VULKAN_SM4_UB(TEXT("SF_VULKAN_SM4_UB"));
 static FName NAME_VULKAN_SM4(TEXT("SF_VULKAN_SM4"));
 static FName NAME_VULKAN_SM5_UB(TEXT("SF_VULKAN_SM5_UB"));
 static FName NAME_VULKAN_SM5(TEXT("SF_VULKAN_SM5"));
-static FName NAME_SF_METAL_SM4(TEXT("SF_METAL_SM4"));
+static FName NAME_SF_METAL_SM5_NOTESS(TEXT("SF_METAL_SM5_NOTESS"));
 static FName NAME_SF_METAL_MACES3_1(TEXT("SF_METAL_MACES3_1"));
 static FName NAME_SF_METAL_MACES2(TEXT("SF_METAL_MACES2"));
 static FName NAME_GLSL_SWITCH(TEXT("GLSL_SWITCH"));
@@ -434,8 +449,6 @@ FName LegacyShaderPlatformToShaderFormat(EShaderPlatform Platform)
 		return NAME_GLSL_150;
 	case SP_PS4:
 		return NAME_SF_PS4;
-	case SP_XBOXONE_D3D11:
-		return NAME_SF_XBOXONE_D3D11;
 	case SP_XBOXONE_D3D12:
 		return NAME_SF_XBOXONE_D3D12;
 	case SP_OPENGL_SM5:
@@ -459,8 +472,8 @@ FName LegacyShaderPlatformToShaderFormat(EShaderPlatform Platform)
 		return NAME_SF_METAL_MRT;
 	case SP_METAL_MRT_MAC:
 		return NAME_SF_METAL_MRT_MAC;
-	case SP_METAL_SM4:
-		return NAME_SF_METAL_SM4;
+	case SP_METAL_SM5_NOTESS:
+		return NAME_SF_METAL_SM5_NOTESS;
 	case SP_METAL_SM5:
 		return NAME_SF_METAL_SM5;
 	case SP_METAL_MACES3_1:
@@ -472,15 +485,9 @@ FName LegacyShaderPlatformToShaderFormat(EShaderPlatform Platform)
 	case SP_OPENGL_ES3_1_ANDROID:
 		return NAME_GLSL_ES3_1_ANDROID;
 	case SP_VULKAN_SM4:
-	{
-		static auto* CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.Vulkan.UseRealUBs"));
-		return (CVar && CVar->GetValueOnAnyThread() != 0) ? NAME_VULKAN_SM4_UB : NAME_VULKAN_SM4;
-	}
+		return (CVarUseVulkanRealUBs->GetInt() != 0) ? NAME_VULKAN_SM4_UB : NAME_VULKAN_SM4;
 	case SP_VULKAN_SM5:
-	{
-		static auto* CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.Vulkan.UseRealUBs"));
-		return (CVar && CVar->GetValueOnAnyThread() != 0) ? NAME_VULKAN_SM5_UB : NAME_VULKAN_SM5;
-	}
+		return (CVarUseVulkanRealUBs->GetInt() != 0) ? NAME_VULKAN_SM5_UB : NAME_VULKAN_SM5;
 	case SP_VULKAN_PCES3_1:
 		return NAME_VULKAN_ES3_1;
 	case SP_VULKAN_ES3_1_ANDROID:
@@ -504,7 +511,6 @@ EShaderPlatform ShaderFormatToLegacyShaderPlatform(FName ShaderFormat)
 	if (ShaderFormat == NAME_PCD3D_ES2)				return SP_PCD3D_ES2;
 	if (ShaderFormat == NAME_GLSL_150)				return SP_OPENGL_SM4;
 	if (ShaderFormat == NAME_SF_PS4)				return SP_PS4;
-	if (ShaderFormat == NAME_SF_XBOXONE_D3D11)		return SP_XBOXONE_D3D11;
 	if (ShaderFormat == NAME_SF_XBOXONE_D3D12)		return SP_XBOXONE_D3D12;
 	if (ShaderFormat == NAME_GLSL_430)				return SP_OPENGL_SM5;
 	if (ShaderFormat == NAME_GLSL_150_ES2)			return SP_OPENGL_PCES2;
@@ -524,12 +530,12 @@ EShaderPlatform ShaderFormatToLegacyShaderPlatform(FName ShaderFormat)
 	if (ShaderFormat == NAME_VULKAN_ES3_1)			return SP_VULKAN_PCES3_1;
 	if (ShaderFormat == NAME_VULKAN_SM4_UB)			return SP_VULKAN_SM4;
 	if (ShaderFormat == NAME_VULKAN_SM5_UB)			return SP_VULKAN_SM5;
-	if (ShaderFormat == NAME_SF_METAL_SM4)			return SP_METAL_SM4;
+	if (ShaderFormat == NAME_SF_METAL_SM5_NOTESS)	return SP_METAL_SM5_NOTESS;
 	if (ShaderFormat == NAME_SF_METAL_MACES3_1)		return SP_METAL_MACES3_1;
 	if (ShaderFormat == NAME_SF_METAL_MACES2)		return SP_METAL_MACES2;
 	if (ShaderFormat == NAME_GLSL_ES3_1_ANDROID)	return SP_OPENGL_ES3_1_ANDROID;
-	if (ShaderFormat == NAME_GLSL_SWITCH)				return SP_SWITCH;
-	if (ShaderFormat == NAME_GLSL_SWITCH_FORWARD)		return SP_SWITCH_FORWARD;
+	if (ShaderFormat == NAME_GLSL_SWITCH)			return SP_SWITCH;
+	if (ShaderFormat == NAME_GLSL_SWITCH_FORWARD)	return SP_SWITCH_FORWARD;
 	
 	return SP_NumPlatforms;
 }
@@ -572,33 +578,44 @@ RHI_API const TCHAR* RHIVendorIdToString()
 
 RHI_API uint32 RHIGetShaderLanguageVersion(const EShaderPlatform Platform)
 {
-	static int32 MaxShaderVersion = -1;
-	if (MaxShaderVersion < 0)
+	uint32 Version = 0;
+	if (IsMetalPlatform(Platform))
 	{
-		MaxShaderVersion = 0;
-		if (Platform == SP_METAL_SM5)
+		if (IsPCPlatform(Platform))
 		{
-			if(!GConfig->GetInt(TEXT("/Script/MacTargetPlatform.MacTargetSettings"), TEXT("MaxShaderLanguageVersion"), MaxShaderVersion, GEngineIni))
+			static int32 MaxShaderVersion = -1;
+			if (MaxShaderVersion < 0)
 			{
-				MaxShaderVersion = 1;
+				MaxShaderVersion = 2;
+				if(!GConfig->GetInt(TEXT("/Script/MacTargetPlatform.MacTargetSettings"), TEXT("MaxShaderLanguageVersion"), MaxShaderVersion, GEngineIni))
+				{
+					MaxShaderVersion = 2;
+				}
 			}
+			Version = (uint32)MaxShaderVersion;
 		}
 		else
 		{
-			if(!GConfig->GetInt(TEXT("/Script/IOSRuntimeSettings.IOSRuntimeSettings"), TEXT("MaxShaderLanguageVersion"), MaxShaderVersion, GEngineIni))
+			static int32 MaxShaderVersion = -1;
+			if (MaxShaderVersion < 0)
 			{
 				MaxShaderVersion = 0;
+				if(!GConfig->GetInt(TEXT("/Script/IOSRuntimeSettings.IOSRuntimeSettings"), TEXT("MaxShaderLanguageVersion"), MaxShaderVersion, GEngineIni))
+				{
+					MaxShaderVersion = 0;
+				}
 			}
+			Version = (uint32)MaxShaderVersion;
 		}
 	}
-	return (uint32)MaxShaderVersion;
+	return Version;
 }
 
 RHI_API bool RHISupportsTessellation(const EShaderPlatform Platform)
 {
 	if (IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && !IsMetalPlatform(Platform))
 	{
-		return (Platform == SP_PCD3D_SM5) || (Platform == SP_XBOXONE_D3D12) || (Platform == SP_XBOXONE_D3D11) || (Platform == SP_OPENGL_SM5) || (Platform == SP_OPENGL_ES31_EXT)/* || (Platform == SP_VULKAN_SM5)*/;
+		return (Platform == SP_PCD3D_SM5) || (Platform == SP_XBOXONE_D3D12) || (Platform == SP_OPENGL_SM5) || (Platform == SP_OPENGL_ES31_EXT)/* || (Platform == SP_VULKAN_SM5)*/;
 	}
     // For Metal we can only support tessellation if we are willing to sacrifice backward compatibility with OS versions.
     // As such it becomes an opt-in project setting.
@@ -615,7 +632,7 @@ RHI_API bool RHISupportsPixelShaderUAVs(const EShaderPlatform Platform)
 	{
 		return true;
 	}
-	else if (Platform == SP_METAL_SM5)
+	else if (Platform == SP_METAL_SM5 || Platform == SP_METAL_SM5_NOTESS || Platform == SP_METAL_MRT || Platform == SP_METAL_MRT_MAC)
 	{
 		return (RHIGetShaderLanguageVersion(Platform) >= 2);
 	}
@@ -653,4 +670,58 @@ bool RHIGetPreviewFeatureLevel(ERHIFeatureLevel::Type& PreviewFeatureLevelOUT)
 		return false;
 	}
 	return true;
+}
+
+RHI_API void FRHIRenderPassInfo::ConvertToRenderTargetsInfo(FRHISetRenderTargetsInfo& OutRTInfo) const
+{
+	for (int32 Index = 0; Index < MaxSimultaneousRenderTargets; ++Index)
+	{
+		if (!ColorRenderTargets[Index].RenderTarget)
+		{
+			break;
+		}
+
+		OutRTInfo.ColorRenderTarget[Index].Texture = ColorRenderTargets[Index].RenderTarget;
+		ERenderTargetLoadAction LoadAction = GetLoadAction(ColorRenderTargets[Index].Action);
+		OutRTInfo.ColorRenderTarget[Index].LoadAction = LoadAction;
+		OutRTInfo.ColorRenderTarget[Index].StoreAction = GetStoreAction(ColorRenderTargets[Index].Action);
+		OutRTInfo.ColorRenderTarget[Index].ArraySliceIndex = ColorRenderTargets[Index].ArraySlice;
+		OutRTInfo.ColorRenderTarget[Index].MipIndex = ColorRenderTargets[Index].MipIndex;
+		++OutRTInfo.NumColorRenderTargets;
+
+		OutRTInfo.bClearColor |= (LoadAction == ERenderTargetLoadAction::EClear);
+	}
+
+	ERenderTargetActions DepthActions = GetDepthActions(DepthStencilRenderTarget.Action);
+	ERenderTargetActions StencilActions = GetStencilActions(DepthStencilRenderTarget.Action);
+	ERenderTargetLoadAction DepthLoadAction = GetLoadAction(DepthActions);
+	ERenderTargetStoreAction DepthStoreAction = GetStoreAction(DepthActions);
+	ERenderTargetLoadAction StencilLoadAction = GetLoadAction(StencilActions);
+	ERenderTargetStoreAction StencilStoreAction = GetStoreAction(StencilActions);
+
+	if (bDEPRECATEDHasEDS)
+	{
+		OutRTInfo.DepthStencilRenderTarget = FRHIDepthRenderTargetView(DepthStencilRenderTarget.DepthStencilTarget,
+			DepthLoadAction,
+			GetStoreAction(DepthActions),
+			StencilLoadAction,
+			GetStoreAction(StencilActions),
+			DEPRECATED_EDS);
+	}
+	else
+	{
+		OutRTInfo.DepthStencilRenderTarget = FRHIDepthRenderTargetView(DepthStencilRenderTarget.DepthStencilTarget,
+			DepthLoadAction,
+			GetStoreAction(DepthActions),
+			StencilLoadAction,
+			GetStoreAction(StencilActions));
+	}
+	OutRTInfo.bClearDepth = (DepthLoadAction == ERenderTargetLoadAction::EClear);
+	OutRTInfo.bClearStencil = (StencilLoadAction == ERenderTargetLoadAction::EClear);
+}
+
+RHI_API bool RHIUseRenderPasses()
+{
+	static auto* RenderPassCVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.RHIRenderPasses"));
+	return RenderPassCVar && RenderPassCVar->GetValueOnRenderThread() > 0;
 }

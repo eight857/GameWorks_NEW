@@ -1,8 +1,9 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.IO;
 using System.Collections.Generic;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {

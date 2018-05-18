@@ -176,12 +176,17 @@ public:
 
 	void Visualise(FRHICommandList& RHICmdList, const FViewInfo& View) const;
 
+	// Copy LpvWriteUniformBufferParams into RsmUniformBuffer for parallel RSM draw-call submission
+	// NOTE: Should only be called before rendering RSMs and once per frame
+	void SetRsmUniformBuffer();
+
 	const FIntVector& GetGridOffset() const { return mGridOffset; }
 
 	const FLpvReadUniformBufferParameters& GetReadUniformBufferParams()		{ return LpvReadUniformBufferParams; }
 	const FLpvWriteUniformBufferParameters& GetWriteUniformBufferParams()	{ return *LpvWriteUniformBufferParams; }
 
 	FLpvWriteUniformBufferRef GetWriteUniformBuffer() const				{ return (FLpvWriteUniformBufferRef)LpvWriteUniformBuffer; }
+	FLpvWriteUniformBufferRef GetRsmUniformBuffer() const				{ return (FLpvWriteUniformBufferRef)RsmRenderUniformBuffer; }
 
 	FTextureRHIParamRef GetLpvBufferSrv( int i )						{ return LpvVolumeTextures[ 1-mWriteBufferIndex ][i]->GetRenderTargetItem().ShaderResourceTexture; }
 
@@ -243,6 +248,7 @@ public:
 	bool								GeometryVolumeGenerated; 
 
 	FLpvWriteUniformBuffer				LpvWriteUniformBuffer;
+	FLpvWriteUniformBuffer				RsmRenderUniformBuffer;
 
 	bool								bInitialized;
 
@@ -259,6 +265,5 @@ bool UseLightPropagationVolumeRT(ERHIFeatureLevel::Type InFeatureLevel);
 
 static inline bool IsLPVSupported(EShaderPlatform Platform)
 {
-	//@todo-rco: This is requires until we add support for byte/append consume buffers on hlslcc
-	return !IsHlslccShaderPlatform(Platform);
+	return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && (IsD3DPlatform(Platform, true) || IsConsolePlatform(Platform) || IsMetalPlatform(Platform));
 }

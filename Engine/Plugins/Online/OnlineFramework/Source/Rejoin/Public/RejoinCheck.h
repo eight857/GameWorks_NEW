@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "Engine/EngineTypes.h"
@@ -131,13 +131,11 @@ public:
 	ERejoinStatus GetStatus() const;
 #endif
 
-	/** @return true if possibly a match to rejoin */
-	bool IsRejoinAvailable() const
-	{
-		ERejoinStatus CurrentStatus = GetStatus();
-		return (CurrentStatus != ERejoinStatus::NoMatchToRejoin &&
-				CurrentStatus != ERejoinStatus::NoMatchToRejoin_MatchEnded);
-	}
+	/** @return True if the rejoin check has completed and does not need to be rerun. */
+	bool HasCompletedCheck() const;
+
+	/** @return True if it's possible that there's a match to rejoin */
+	bool IsRejoinAvailable() const;
 
 protected: 
 

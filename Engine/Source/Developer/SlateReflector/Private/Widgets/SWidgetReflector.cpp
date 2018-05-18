@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/SWidgetReflector.h"
 #include "Rendering/DrawElements.h"
@@ -842,8 +842,27 @@ TSharedRef<SDockTab> SWidgetReflector::SpawnWidgetHierarchyTab(const FSpawnTabAr
 						]
 
 						+SHeaderRow::Column(SReflectorTreeWidgetItem::NAME_Visibility)
-						.DefaultLabel(LOCTEXT("Visibility", "Visibility" ))
 						.FixedWidth(125.0f)
+						.HAlignHeader(HAlign_Center)
+						.VAlignHeader(VAlign_Center)
+						.HeaderContent()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("Visibility", "Visibility" ))
+							.ToolTipText(LOCTEXT("VisibilityTooltip", "Visibility"))
+						]
+
+						+ SHeaderRow::Column(SReflectorTreeWidgetItem::NAME_Focusable)
+						.DefaultLabel(LOCTEXT("Focusable", "Focusable?"))
+						.FixedWidth(125.0f)
+						.HAlignHeader(HAlign_Center)
+						.VAlignHeader(VAlign_Center)
+						.HeaderContent()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("Focusable", "Focusable?"))
+							.ToolTipText(LOCTEXT("FocusableTooltip", "Focusability (Note that for hit-test directional navigation to work it must be Focusable and \"Visible\"!)"))
+						]
 
 						+SHeaderRow::Column(SReflectorTreeWidgetItem::NAME_Clipping)
 						.DefaultLabel(LOCTEXT("Clipping", "Clipping" ))

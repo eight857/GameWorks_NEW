@@ -1,7 +1,7 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
-	OpenGLWindowsLoader.cpp: Manual loading of OpenGL functions from DLL.
+	OpenGLLinux.cpp: OpenGL context management on Linux
 =============================================================================*/
 
 #include "Linux/OpenGLLinux.h"
@@ -10,6 +10,7 @@
 #include "SDL.h"
 #include "OpenGLDrvPrivate.h"
 #include "ComponentReregisterContext.h"
+#include "Linux/LinuxPlatformApplicationMisc.h"
 
 /*------------------------------------------------------------------------------
 	OpenGL function pointers.
@@ -19,6 +20,7 @@ namespace GLFuncPointers	// see explanation in OpenGLLinux.h why we need the nam
 {
 	ENUM_GL_ENTRYPOINTS_ALL(DEFINE_GL_ENTRYPOINTS);
 };
+#undef DEFINE_GL_ENTRYPOINTS
 
 typedef SDL_Window*		SDL_HWindow;
 typedef SDL_GLContext	SDL_HGLContext;
@@ -26,19 +28,19 @@ typedef SDL_GLContext	SDL_HGLContext;
 /*------------------------------------------------------------------------------
 	OpenGL context management.
 ------------------------------------------------------------------------------*/
-static void _ContextMakeCurrent( SDL_HWindow hWnd, SDL_HGLContext hGLDC )
+void Linux_ContextMakeCurrent( SDL_HWindow hWnd, SDL_HGLContext hGLDC )
 {
 	GLint Result = SDL_GL_MakeCurrent( hWnd, hGLDC );
 	if (Result != 0)
 	{
 		// this is a warning and not error, since Slate sometimes destroys windows before
 		// releasing RHI resources associated with them. This code can result in leaks - proper resolution is tracked as UE-7388
-		FString SdlError(ANSI_TO_TCHAR(SDL_GetError()));
+		FString SdlError(UTF8_TO_TCHAR(SDL_GetError()));
 		UE_LOG(LogLinux, Warning, TEXT("SDL_GL_MakeCurrent() failed, SDL error: '%s'"), *SdlError );
 	}
 }
 
-static SDL_HGLContext _GetCurrentContext()
+SDL_HGLContext Linux_GetCurrentContext()
 {
 	return SDL_GL_GetCurrentContext();
 }
@@ -75,7 +77,7 @@ public:
 			}
 			// no need to glFlush() on Windows, it does flush by itself before switching contexts
 
-			_ContextMakeCurrent( Context->hWnd, Context->hGLContext );
+			Linux_ContextMakeCurrent( Context->hWnd, Context->hGLContext );
 		}
 	}
 
@@ -84,13 +86,13 @@ public:
 		if (!bSameDCAndContext)
 		{
 			glFlush();	// not needed on Windows, it does flush by itself before switching contexts
-			if	( hPreGLContext )
+			if (hPreGLContext)
 			{
-				_ContextMakeCurrent( hPreWnd, hPreGLContext );
+				Linux_ContextMakeCurrent( hPreWnd, hPreGLContext );
 			}
 			else
 			{
-				_ContextMakeCurrent( NULL, NULL );
+				Linux_ContextMakeCurrent( NULL, NULL );
 			}
 		}
 
@@ -104,12 +106,12 @@ private:
 
 
 
-void _DeleteQueriesForCurrentContext( SDL_HGLContext hGLContext );
+void Linux_DeleteQueriesForCurrentContext( SDL_HGLContext hGLContext );
 
 /**
  * Create a dummy window used to construct OpenGL contexts.
  */
-static void _PlatformCreateDummyGLWindow( FPlatformOpenGLContext *OutContext )
+void Linux_PlatformCreateDummyGLWindow( FPlatformOpenGLContext *OutContext )
 {
 	static bool bInitializedWindowClass = false;
 
@@ -119,8 +121,15 @@ static void _PlatformCreateDummyGLWindow( FPlatformOpenGLContext *OutContext )
 											SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_HIDDEN | SDL_WINDOW_SKIP_TASKBAR );
 	if (DummyWindow == nullptr)
 	{
-		UE_LOG(LogLinux, Fatal, TEXT("Cannot create dummy GL window for shared context."));
+		FString SdlError(UTF8_TO_TCHAR(SDL_GetError()));
+
+		FText ErrorMessage = FText::Format(NSLOCTEXT("Renderer", "LinuxCannotCreatePlatformWindow", "Cannot create OpenGL-enabled SDL window. SDL error: '{0}'."), FText::FromString(SdlError));
+		FPlatformMisc::MessageBoxExt(EAppMsgType::Ok,
+			*ErrorMessage.ToString(),
+			*(NSLOCTEXT("Renderer", "LinuxCannotCreatePlatformWindowTitle", "Cannot create SDL window.").ToString()));
+		FPlatformMisc::RequestExit(true);
 		// unreachable
+		return;
 	}
 	else
 	{
@@ -135,17 +144,17 @@ static void _PlatformCreateDummyGLWindow( FPlatformOpenGLContext *OutContext )
  * Determine OpenGL Context version based on command line arguments
  */
 
-static bool IsOpenGL3Forced()
+bool IsOpenGL3Forced()
 {
 	return FParse::Param(FCommandLine::Get(),TEXT("opengl3"));
 }
 
-static bool IsOpenGL4Forced()
+bool IsOpenGL4Forced()
 {
 	return FParse::Param(FCommandLine::Get(),TEXT("opengl4"));
 }
 
-static void PlatformOpenGLVersionFromCommandLine(int& OutMajorVersion, int& OutMinorVersion)
+void PlatformOpenGLVersionFromCommandLine(int& OutMajorVersion, int& OutMinorVersion)
 {
 	bool bGL3 = IsOpenGL3Forced();
 	bool bGL4 = IsOpenGL4Forced();
@@ -178,7 +187,7 @@ static void PlatformOpenGLVersionFromCommandLine(int& OutMajorVersion, int& OutM
 /**
  * Enable/Disable debug context from the commandline
  */
-static bool _PlatformOpenGLDebugCtx()
+bool Linux_PlatformOpenGLDebugCtx()
 {
 #if UE_BUILD_DEBUG
 	return ! FParse::Param(FCommandLine::Get(),TEXT("openglNoDebug"));
@@ -190,7 +199,7 @@ static bool _PlatformOpenGLDebugCtx()
 /**
  * Create a core profile OpenGL context.
  */
-static void _PlatformCreateOpenGLContextCore(FPlatformOpenGLContext* OutContext)
+void Linux_PlatformCreateOpenGLContextCore(FPlatformOpenGLContext* OutContext)
 {
 	check( OutContext );
 
@@ -203,7 +212,7 @@ static void _PlatformCreateOpenGLContextCore(FPlatformOpenGLContext* OutContext)
 	OutContext->hGLContext = SDL_GL_CreateContext( OutContext->hWnd );
 	if (OutContext->hGLContext == nullptr)
 	{
-		FString SdlError(ANSI_TO_TCHAR(SDL_GetError()));
+		FString SdlError(UTF8_TO_TCHAR(SDL_GetError()));
 		
 		// ignore errors getting version, it will be clear from the logs
 		int OpenGLMajorVersion = -1;
@@ -211,7 +220,7 @@ static void _PlatformCreateOpenGLContextCore(FPlatformOpenGLContext* OutContext)
 		SDL_GL_GetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, &OpenGLMajorVersion );
 		SDL_GL_GetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, &OpenGLMinorVersion );
 		
-		UE_LOG(LogInit, Error, TEXT("_PlatformCreateOpenGLContextCore - Could not create OpenGL %d.%d context, SDL error: '%s'"),
+		UE_LOG(LogInit, Error, TEXT("Linux_PlatformCreateOpenGLContextCore - Could not create OpenGL %d.%d context, SDL error: '%s'"),
 				OpenGLMajorVersion, OpenGLMinorVersion,
 				*SdlError
 			);
@@ -244,8 +253,8 @@ struct FPlatformOpenGLDevice
 
 		verifyf(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0) == 0, TEXT("SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0) failed: %s\n."), UTF8_TO_TCHAR(SDL_GetError()));
 
-		_PlatformCreateDummyGLWindow( &SharedContext );
-		_PlatformCreateOpenGLContextCore( &SharedContext );
+		Linux_PlatformCreateDummyGLWindow( &SharedContext );
+		Linux_PlatformCreateOpenGLContextCore( &SharedContext );
 
 		if (SharedContext.hGLContext == nullptr)
 		{
@@ -267,12 +276,13 @@ struct FPlatformOpenGLDevice
 
 		verifyf(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1) == 0, TEXT("SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1) failed: %s\n."), UTF8_TO_TCHAR(SDL_GetError()));
 
-		_ContextMakeCurrent( SharedContext.hWnd, SharedContext.hGLContext );
+		Linux_ContextMakeCurrent( SharedContext.hWnd, SharedContext.hGLContext );
 
-		_PlatformCreateDummyGLWindow( &RenderingContext );
-		_PlatformCreateOpenGLContextCore( &RenderingContext );
+		Linux_PlatformCreateDummyGLWindow( &RenderingContext );
+		Linux_PlatformCreateOpenGLContextCore( &RenderingContext );
 
-		check	( RenderingContext.hGLContext )
+		check( RenderingContext.hGLContext );
+
 		{
 			FScopeContext ScopeContext( &RenderingContext );
 			InitDebugContext();
@@ -286,7 +296,7 @@ struct FPlatformOpenGLDevice
 	{
 		check( NumUsedContexts==0 );
 
-		_ContextMakeCurrent( NULL, NULL );
+		Linux_ContextMakeCurrent( NULL, NULL );
 
 		OnQueryInvalidation();
 		PlatformReleaseOpenGLContext( this,&RenderingContext );
@@ -326,7 +336,7 @@ FPlatformOpenGLContext* PlatformCreateOpenGLContext(FPlatformOpenGLDevice* Devic
 	{
 		FScopeContext Scope(&(Device->SharedContext));
 		verifyf(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1) == 0, TEXT("SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1) failed: %s\n."), UTF8_TO_TCHAR(SDL_GetError()));
-		_PlatformCreateOpenGLContextCore( Context );
+		Linux_PlatformCreateOpenGLContextCore( Context );
 	}
 
 	check( Context->hGLContext );
@@ -350,7 +360,7 @@ void PlatformReleaseOpenGLContext( FPlatformOpenGLDevice* Device, FPlatformOpenG
 		{
 			FScopeContext ScopeContext( Context );
 
-			_DeleteQueriesForCurrentContext( Context->hGLContext );
+			Linux_DeleteQueriesForCurrentContext( Context->hGLContext );
 			glBindVertexArray(0);
 			glDeleteVertexArrays(1, &Context->VertexArrayObject);
 
@@ -584,12 +594,12 @@ void PlatformRenderingContextSetup(FPlatformOpenGLDevice* Device)
 {
 	check( Device && Device->RenderingContext.hWnd && Device->RenderingContext.hGLContext );
 
-	if ( _GetCurrentContext() )
+	if ( Linux_GetCurrentContext() )
 	{
 		glFlush();
 	}
 
-	_ContextMakeCurrent( Device->RenderingContext.hWnd, Device->RenderingContext.hGLContext );
+	Linux_ContextMakeCurrent( Device->RenderingContext.hWnd, Device->RenderingContext.hGLContext );
 }
 
 void PlatformSharedContextSetup(FPlatformOpenGLDevice* Device)
@@ -597,84 +607,30 @@ void PlatformSharedContextSetup(FPlatformOpenGLDevice* Device)
 	check( Device && Device->SharedContext.hWnd && Device->SharedContext.hGLContext );
 
 	// no need to glFlush() on Windows, it does flush by itself before switching contexts
-	if ( _GetCurrentContext() )
+	if ( Linux_GetCurrentContext() )
 	{
 		glFlush();
 	}
 
-	_ContextMakeCurrent( Device->SharedContext.hWnd, Device->SharedContext.hGLContext );
+	Linux_ContextMakeCurrent( Device->SharedContext.hWnd, Device->SharedContext.hGLContext );
 }
 
 
 void PlatformNULLContextSetup()
 {
-	if ( _GetCurrentContext() )
+	if ( Linux_GetCurrentContext() )
 	{
 		glFlush();
 	}
 
-	_ContextMakeCurrent( NULL, NULL );
+	Linux_ContextMakeCurrent( NULL, NULL );
 }
 
-
-#if 0
-static void __GetBestFullscreenResolution( SDL_HWindow hWnd, int32 *pWidth, int32 *pHeight )
-{
-	uint32 InitializedMode = false;
-	uint32 BestWidth = 0;
-	uint32 BestHeight = 0;
-	uint32 ModeIndex = 0;
-
-	int32 dsp_idx = SDL_GetWindowDisplayIndex( hWnd );
-	if ( dsp_idx < 0 )
-	{	dsp_idx = 0;	}
-
-	SDL_DisplayMode dsp_mode;
-	FMemory::Memzero( &dsp_mode, sizeof(SDL_DisplayMode) );
-
-	while ( !SDL_GetDisplayMode( dsp_idx, ModeIndex++, &dsp_mode ) )
-	{
-		bool IsEqualOrBetterWidth  = FMath::Abs((int32)dsp_mode.w - (int32)(*pWidth))  <= FMath::Abs((int32)BestWidth  - (int32)(*pWidth ));
-		bool IsEqualOrBetterHeight = FMath::Abs((int32)dsp_mode.h - (int32)(*pHeight)) <= FMath::Abs((int32)BestHeight - (int32)(*pHeight));
-		if	(!InitializedMode || (IsEqualOrBetterWidth && IsEqualOrBetterHeight))
-		{
-			BestWidth = dsp_mode.w;
-			BestHeight = dsp_mode.h;
-			InitializedMode = true;
-		}
-	}
-
-	check(InitializedMode);
-
-	*pWidth  = BestWidth;
-	*pHeight = BestHeight;
-}
-
-
-static void __SetBestFullscreenDisplayMode( SDL_HWindow hWnd, int32 *pWidth, int32 *pHeight )
-{
-	SDL_DisplayMode dsp_mode;
-
-	dsp_mode.w = *pWidth;
-	dsp_mode.h = *pHeight;
-	dsp_mode.format = SDL_PIXELFORMAT_ARGB8888;
-	dsp_mode.refresh_rate = 60;
-	dsp_mode.driverdata = NULL;
-
-	__GetBestFullscreenResolution( hWnd, &dsp_mode.w, &dsp_mode.h );
-	SDL_SetWindowDisplayMode( hWnd, &dsp_mode );
-
-	*pWidth  = dsp_mode.w;
-	*pHeight = dsp_mode.h;
-}
-#endif
 
 
 /**
  * Resize the GL context.
  */
-static int gResizeC = 0;
-
 void PlatformResizeGLContext(	FPlatformOpenGLDevice* Device,
 								FPlatformOpenGLContext* Context,
 								uint32 SizeX, uint32 SizeY,
@@ -683,80 +639,38 @@ void PlatformResizeGLContext(	FPlatformOpenGLDevice* Device,
 								GLenum BackBufferTarget,
 								GLuint BackBufferResource)
 {
-//	printf( "--------------------------------------------------------\n" );
-//	printf("Ariel - PlatformResizeGLContext - Start - %03d\n", gResizeC );
-
+	FScopeLock ScopeLock(Device->ContextUsageGuard);
 	{
-		FScopeLock ScopeLock(Device->ContextUsageGuard);
+		FScopeContext ScopeContext(Context);
 
-#if 0
-		SDL_HWindow h_wnd = Context->hWnd;
-
-		int32 closest_w = SizeX;
-		int32 closest_h = SizeY;
-
-		if	( bFullscreen )
+		if (Context->ViewportFramebuffer == 0)
 		{
-
-			SDL_SetWindowPosition( h_wnd, 0, 0 );
-			__SetBestFullscreenDisplayMode( h_wnd, &closest_w, &closest_h );
-
-			SDL_SetWindowBordered( h_wnd, SDL_FALSE );
-			SDL_SetWindowFullscreen( h_wnd, SDL_WINDOW_FULLSCREEN );
-
+			glGenFramebuffers(1, &Context->ViewportFramebuffer);
 		}
-		else 
-		if	( bWasFullscreen )
-		{
-			SDL_SetWindowFullscreen( h_wnd, 0 );
-			SDL_SetWindowBordered( h_wnd, SDL_TRUE );
-			SDL_SetWindowSize( h_wnd, SizeX, SizeY );
-		}
-#endif
+		glBindFramebuffer(GL_FRAMEBUFFER, Context->ViewportFramebuffer);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, BackBufferTarget, BackBufferResource, 0);
+		FOpenGL::CheckFrameBuffer();
 
-		{
-			FScopeContext ScopeContext(Context);
+		glViewport( 0, 0, SizeX, SizeY );			
 
-			if (Context->ViewportFramebuffer == 0)
-			{
-				glGenFramebuffers(1, &Context->ViewportFramebuffer);
-			}
-			glBindFramebuffer(GL_FRAMEBUFFER, Context->ViewportFramebuffer);
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, BackBufferTarget, BackBufferResource, 0);
-#if UE_BUILD_DEBUG
-			glReadBuffer(GL_COLOR_ATTACHMENT0);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-#endif
-			FOpenGL::CheckFrameBuffer();
-
-			glViewport( 0, 0, SizeX, SizeY );			
-		//	printf( "      - NewVPW = %d, NewVPH = %d\n", SizeX, SizeY );
-
-			static GLfloat ZeroColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-			glClearBufferfv(GL_COLOR, 0, ZeroColor );
-		}
-
-
-		//	bool b_need_reattach = bFullscreen || bWasFullscreen;
-		if	( bFullscreen )
-		{
-			//	Deregister all components
-			//	this line will fix the geometry missing and color distortion bug on Linux/Nvidia machine
-			//	it detach all the components and re attach all the components
-			FGlobalComponentReregisterContext RecreateComponents;
-		}
-		else
-		if	( bWasFullscreen )
-		{
-			FGlobalComponentReregisterContext RecreateComponents;
-		}
+		static GLfloat ZeroColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+		glClearBufferfv(GL_COLOR, 0, ZeroColor );
 	}
 
-//	printf("Ariel - PlatformResizeGLContext - End - %03d\n", gResizeC );
-	gResizeC++;
+
+	if (bFullscreen)
+	{
+		//	Deregister all components
+		//	this line will fix the geometry missing and color distortion bug on Linux/Nvidia machine
+		//	it detach all the components and re attach all the components
+		FGlobalComponentReregisterContext RecreateComponents;
+	}
+	else if	(bWasFullscreen)
+	{
+		FGlobalComponentReregisterContext RecreateComponents;
+	}
 }
 
-//		int dip_num = SDL_GetNumVideoDisplays();
 void PlatformGetSupportedResolution(uint32 &Width, uint32 &Height)
 {
 	uint32 InitializedMode = false;
@@ -764,17 +678,17 @@ void PlatformGetSupportedResolution(uint32 &Width, uint32 &Height)
 	uint32 BestHeight = 0;
 	uint32 ModeIndex = 0;
 
-	SDL_DisplayMode dsp_mode;
-	FMemory::Memzero( &dsp_mode, sizeof(SDL_DisplayMode) );
+	SDL_DisplayMode DisplayMode;
+	FMemory::Memzero( &DisplayMode, sizeof(DisplayMode) );
 
-	while ( !SDL_GetDisplayMode( 0, ModeIndex++, &dsp_mode ) )
+	while ( !SDL_GetDisplayMode( 0, ModeIndex++, &DisplayMode ) )
 	{
-		bool IsEqualOrBetterWidth = FMath::Abs((int32)dsp_mode.w - (int32)Width) <= FMath::Abs((int32)BestWidth - (int32)Width);
-		bool IsEqualOrBetterHeight = FMath::Abs((int32)dsp_mode.h - (int32)Height) <= FMath::Abs((int32)BestHeight - (int32)Height);
+		bool IsEqualOrBetterWidth = FMath::Abs((int32)DisplayMode.w - (int32)Width) <= FMath::Abs((int32)BestWidth - (int32)Width);
+		bool IsEqualOrBetterHeight = FMath::Abs((int32)DisplayMode.h - (int32)Height) <= FMath::Abs((int32)BestHeight - (int32)Height);
 		if	(!InitializedMode || (IsEqualOrBetterWidth && IsEqualOrBetterHeight))
 		{
-			BestWidth = dsp_mode.w;
-			BestHeight = dsp_mode.h;
+			BestWidth = DisplayMode.w;
+			BestHeight = DisplayMode.h;
 			InitializedMode = true;
 		}
 	}
@@ -810,7 +724,7 @@ bool PlatformGetAvailableResolutions( FScreenResolutionArray& Resolutions, bool 
 	SDL_DisplayMode DisplayMode;
 	FMemory::Memzero(&DisplayMode, sizeof(SDL_DisplayMode));
 
-	while ( !SDL_GetDisplayMode( 0, ModeIndex++, &DisplayMode ) )
+	while (!SDL_GetDisplayMode( 0, ModeIndex++, &DisplayMode ))
 	{
 		if (((int32)DisplayMode.w >= MinAllowableResolutionX) &&
 			((int32)DisplayMode.w <= MaxAllowableResolutionX) &&
@@ -822,8 +736,7 @@ bool PlatformGetAvailableResolutions( FScreenResolutionArray& Resolutions, bool 
 			if (bIgnoreRefreshRate == false)
 			{
 				if (((int32)DisplayMode.refresh_rate < MinAllowableRefreshRate) ||
-					((int32)DisplayMode.refresh_rate > MaxAllowableRefreshRate)
-					)
+					((int32)DisplayMode.refresh_rate > MaxAllowableRefreshRate))
 				{
 					continue;
 				}
@@ -862,7 +775,6 @@ bool PlatformGetAvailableResolutions( FScreenResolutionArray& Resolutions, bool 
 
 void PlatformRestoreDesktopDisplayMode()
 {
-//	printf( "ArielPlatform - RestoreDesktopDisplayMode\n" );
 }
 
 
@@ -871,9 +783,9 @@ bool PlatformInitOpenGL()
 	static bool bInitialized = false;
 	static bool bOpenGLSupported = false;
 
-	if (!FPlatformMisc::PlatformInitMultimedia()) //	will not initialize more than once
+	if (!FLinuxPlatformApplicationMisc::InitSDL()) //	will not initialize more than once
 	{
-		UE_LOG(LogInit, Error, TEXT("PlatformInitOpenGL() : PlatformInitMultimedia() failed, cannot initialize OpenGL."));
+		UE_LOG(LogInit, Error, TEXT("PlatformInitOpenGL() : InitSDL() failed, cannot initialize OpenGL."));
 		// unreachable
 		return false;
 	}
@@ -887,7 +799,12 @@ bool PlatformInitOpenGL()
 	{
 		if (SDL_GL_LoadLibrary(NULL))
 		{
-			UE_LOG(LogLinux, Fatal, TEXT("Unable to dynamically load libGL: %s\n."), UTF8_TO_TCHAR(SDL_GetError()));
+			FPlatformMisc::MessageBoxExt(EAppMsgType::Ok,
+				*FString::Printf(TEXT("%s. SDL error: \"%s\""), *(NSLOCTEXT("Renderer", "LinuxCannotLoadLibGLText", "Unable to dynamically load libGL").ToString()), UTF8_TO_TCHAR(SDL_GetError())),
+				*(NSLOCTEXT("Renderer", "LinuxInsufficientDriversTitle", "Insufficient drivers or hardware").ToString()));
+			FPlatformMisc::RequestExit(true);
+			// unreachable
+			return false;
 		}
 
 		int MajorVersion = 0;
@@ -895,7 +812,7 @@ bool PlatformInitOpenGL()
 
 		int DebugFlag = 0;
 
-		if ( _PlatformOpenGLDebugCtx() )
+		if (Linux_PlatformOpenGLDebugCtx())
 		{
 			DebugFlag = SDL_GL_CONTEXT_DEBUG_FLAG;
 		}
@@ -931,13 +848,13 @@ bool PlatformInitOpenGL()
 
 		// Create a dummy context to verify opengl support.
 		FPlatformOpenGLContext DummyContext;
-		_PlatformCreateDummyGLWindow(&DummyContext);
-		_PlatformCreateOpenGLContextCore(&DummyContext );	
+		Linux_PlatformCreateDummyGLWindow(&DummyContext);
+		Linux_PlatformCreateOpenGLContextCore(&DummyContext );	
 
 		if (DummyContext.hGLContext)
 		{
 			bOpenGLSupported = true;
-			_ContextMakeCurrent(DummyContext.hWnd, DummyContext.hGLContext);
+			Linux_ContextMakeCurrent(DummyContext.hWnd, DummyContext.hGLContext);
 		}
 		else
 		{
@@ -950,18 +867,20 @@ bool PlatformInitOpenGL()
 			#define GET_GL_ENTRYPOINTS(Type,Func) GLFuncPointers::Func = reinterpret_cast<Type>(SDL_GL_GetProcAddress(#Func));
 			ENUM_GL_ENTRYPOINTS(GET_GL_ENTRYPOINTS);
 			ENUM_GL_ENTRYPOINTS_OPTIONAL(GET_GL_ENTRYPOINTS);
-		
+			#undef GET_GL_ENTRYPOINTS
+
 			// Check that all of the entry points have been initialized.
 			bool bFoundAllEntryPoints = true;
 			#define CHECK_GL_ENTRYPOINTS(Type,Func) if (Func == NULL) { bFoundAllEntryPoints = false; UE_LOG(LogRHI, Fatal, TEXT("Failed to find entry point for %s"), TEXT(#Func)); }
 			ENUM_GL_ENTRYPOINTS(CHECK_GL_ENTRYPOINTS);
+			#undef CHECK_GL_ENTRYPOINTS
 			checkf(bFoundAllEntryPoints, TEXT("Failed to find all OpenGL entry points."));
 		}
 
 		// The dummy context can now be released.
 		if (DummyContext.hGLContext)
 		{
-			_ContextMakeCurrent(NULL,NULL);
+			Linux_ContextMakeCurrent(NULL,NULL);
 			SDL_GL_DeleteContext(DummyContext.hGLContext);
 		}
 		check(DummyContext.bReleaseWindowOnDestroy);
@@ -975,7 +894,7 @@ bool PlatformInitOpenGL()
 
 bool PlatformOpenGLContextValid()
 {
-	return ( _GetCurrentContext() != NULL );
+	return ( Linux_GetCurrentContext() != NULL );
 }
 
 int32 PlatformGlGetError()
@@ -985,17 +904,17 @@ int32 PlatformGlGetError()
 
 EOpenGLCurrentContext PlatformOpenGLCurrentContext( FPlatformOpenGLDevice* Device )
 {
-	SDL_HGLContext hGLContext = _GetCurrentContext();
+	SDL_HGLContext hGLContext = Linux_GetCurrentContext();
 
-	if	( hGLContext == Device->RenderingContext.hGLContext )	// most common case
+	if (LIKELY(hGLContext == Device->RenderingContext.hGLContext))	// most common case
 	{
 		return CONTEXT_Rendering;
 	}
-	else if	( hGLContext == Device->SharedContext.hGLContext )
+	else if	(hGLContext == Device->SharedContext.hGLContext)
 	{
 		return CONTEXT_Shared;
 	}
-	else if	( hGLContext )
+	else if	(hGLContext)
 	{
 		return CONTEXT_Other;
 	}
@@ -1044,7 +963,7 @@ void PlatformGetNewRenderQuery( GLuint* OutQuery, uint64* OutQueryContext )
 		check( OutQuery && OutQueryContext );
 #endif
 
-		SDL_HGLContext hGLContext = _GetCurrentContext();
+		SDL_HGLContext hGLContext = Linux_GetCurrentContext();
 		check( hGLContext );
 
 		GLuint NewQuery = 0;
@@ -1077,7 +996,7 @@ void PlatformGetNewRenderQuery( GLuint* OutQuery, uint64* OutQueryContext )
 
 void PlatformReleaseRenderQuery( GLuint Query, uint64 QueryContext )
 {
-	SDL_HGLContext hGLContext = _GetCurrentContext();
+	SDL_HGLContext hGLContext = Linux_GetCurrentContext();
 	if( (uint64)hGLContext == QueryContext )
 	{
 		FOpenGL::DeleteQueries(1, &Query );
@@ -1098,34 +1017,31 @@ void PlatformReleaseRenderQuery( GLuint Query, uint64 QueryContext )
 
 bool PlatformContextIsCurrent( uint64 QueryContext )
 {
-	return (uint64)_GetCurrentContext() == QueryContext;
+	return (uint64)Linux_GetCurrentContext() == QueryContext;
 }
 
 FRHITexture* PlatformCreateBuiltinBackBuffer( FOpenGLDynamicRHI* OpenGLRHI, uint32 SizeX, uint32 SizeY )
 {
-	return NULL;
+	return nullptr;
 }
 
-void _DeleteQueriesForCurrentContext( SDL_HGLContext hGLContext )
+void Linux_DeleteQueriesForCurrentContext( SDL_HGLContext hGLContext )
 {
 	if( !ReleasedQueriesGuard )
 	{
 		ReleasedQueriesGuard = new FCriticalSection;
 	}
 
+	FScopeLock Lock(ReleasedQueriesGuard);
+	for( int32 Index = 0; Index < ReleasedQueries.Num(); ++Index )
 	{
-		FScopeLock Lock(ReleasedQueriesGuard);
-		for( int32 Index = 0; Index < ReleasedQueries.Num(); ++Index )
+		if( ReleasedQueries[Index].hGLContext == hGLContext )
 		{
-			if( ReleasedQueries[Index].hGLContext == hGLContext )
-			{
-				FOpenGL::DeleteQueries(1,&ReleasedQueries[Index].Query);
-				ReleasedQueries.RemoveAtSwap(Index);
-				--Index;
-			}
+			FOpenGL::DeleteQueries(1,&ReleasedQueries[Index].Query);
+			ReleasedQueries.RemoveAtSwap(Index);
+			--Index;
 		}
 	}
-
 }
 
 void FLinuxOpenGL::ProcessExtensions( const FString& ExtensionsString )
@@ -1137,13 +1053,11 @@ void FLinuxOpenGL::ProcessExtensions( const FString& ExtensionsString )
 	if ( VendorName.Contains(TEXT("ATI ")) )
 	{
 		// Workaround for AMD driver not handling GL_SRGB8_ALPHA8 in glTexStorage2D() properly (gets treated as non-sRGB)
-		glTexStorage1D = NULL;
-		glTexStorage2D = NULL;
-		glTexStorage3D = NULL;
+		// FIXME: obsolete ? this was the case in <= 2014
+		glTexStorage1D = nullptr;
+		glTexStorage2D = nullptr;
+		glTexStorage3D = nullptr;
 
 		FOpenGLBase::bSupportsCopyImage  = false;
 	}
 }
-
-
-

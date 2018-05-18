@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/ScaleBox.h"
 #include "Components/ScaleBoxSlot.h"
@@ -19,7 +19,6 @@ UScaleBox::UScaleBox(const FObjectInitializer& ObjectInitializer)
 	Stretch = EStretch::ScaleToFit;
 	UserSpecifiedScale = 1.0f;
 	IgnoreInheritedScale = false;
-	bSingleLayoutPass = false;
 }
 
 void UScaleBox::ReleaseSlateResources(bool bReleaseChildren)

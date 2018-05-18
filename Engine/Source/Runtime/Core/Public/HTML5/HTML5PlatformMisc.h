@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 /*=============================================================================================
@@ -12,16 +12,18 @@
 #include "HTML5/HTML5SystemIncludes.h"
 #include <emscripten/emscripten.h>
 
+#if UE_BUILD_SHIPPING
+#define UE_DEBUG_BREAK() ((void)0)
+#else
+#define UE_DEBUG_BREAK() (FHTML5Misc::DebugBreakInternal())
+#endif
+
 /**
  * HTML5 implementation of the misc OS functions
  */
 struct CORE_API FHTML5Misc : public FGenericPlatformMisc
 {
 	static void PlatformInit();
-	static void PlatformPostInit();
-	static class GenericApplication* CreateApplication();
-	static uint32 GetKeyMap(uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings);
-	static uint32 GetCharKeyMap(uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings);
 	static const TCHAR* GetPlatformFeaturesModuleName();
 	static FString GetDefaultLocale();
 	static void SetCrashHandler(void (* CrashHandler)(const FGenericCrashContext& Context));
@@ -49,32 +51,34 @@ struct CORE_API FHTML5Misc : public FGenericPlatformMisc
 	}
 
 	/** Break into the debugger, if IsDebuggerPresent returns true, otherwise do nothing  */
-	FORCEINLINE static void DebugBreak()
+	FORCEINLINE static void DebugBreakInternal()
 	{
 		if (IsDebuggerPresent())
 		{
-#if PLATFORM_HTML5_WIN32
-			__debugbreak();
-#else
 			emscripten_log(255, "DebugBreak() called!");
 			EM_ASM(
 				var callstack = new Error;
 				throw callstack.stack;
 			);
-#endif
 		}
 	}
 
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreak is deprecated. Use the UE_DEBUG_BREAK() macro instead.")
+	FORCEINLINE static void DebugBreak()
+	{
+		UE_DEBUG_BREAK();
+	}
+
 	/** Break into debugger. Returning false allows this function to be used in conditionals. */
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreakReturningFalse is deprecated. Use the (UE_DEBUG_BREAK(), false) expression instead.")
 	FORCEINLINE static bool DebugBreakReturningFalse()
 	{
-#if !UE_BUILD_SHIPPING
-		DebugBreak();
-#endif
+		UE_DEBUG_BREAK();
 		return false;
 	}
 
 	/** Prompts for remote debugging if debugger is not attached. Regardless of result, breaks into debugger afterwards. Returns false for use in conditionals. */
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreakAndPromptForRemoteReturningFalse() is deprecated.")
 	static FORCEINLINE bool DebugBreakAndPromptForRemoteReturningFalse(bool bIsEnsure = false)
 	{
 #if !UE_BUILD_SHIPPING
@@ -83,18 +87,13 @@ struct CORE_API FHTML5Misc : public FGenericPlatformMisc
 			PromptForRemoteDebugging(bIsEnsure);
 		}
 
-		DebugBreak();
+		UE_DEBUG_BREAK();
 #endif
 
 		return false;
 	}
 
-	FORCEINLINE static void LocalPrint( const TCHAR* Str )
-	{
-		wprintf(TEXT("%ls"), Str);
-	}
-
-	static const void PreLoadMap(FString&, FString&, void*);
+	static void LocalPrint(const TCHAR* Str);
 };
 
 typedef FHTML5Misc FPlatformMisc;

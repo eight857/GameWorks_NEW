@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -32,6 +32,8 @@ public:
 
 	/** Creates a FVREditorFloatingUI using a UMG user widget, and sets up safe defaults */
 	void SetUMGWidget(class UVREditorUISystem& InitOwner, const VREditorPanelID& InID, class TSubclassOf<class UVREditorBaseUserWidget> InitUserWidgetClass, const FIntPoint InitResolution, const float InitScale, const EDockedTo InitDockedTo);
+
+	virtual void TickManually(float DeltaTime) override;
 
 	/** @return Returns true if the UI is visible (or wants to be visible -- it might be transitioning */
 	bool IsUIVisible() const
@@ -73,7 +75,11 @@ public:
 	virtual void SetTransform( const FTransform& Transform ) override;
 
 	/** AActor overrides */
+	virtual void BeginDestroy() override;
 	virtual void Destroyed() override;
+
+	void CleanupWidgetReferences();
+
 	virtual bool IsEditorOnly() const final
 	{
 		return true;
@@ -179,5 +185,5 @@ private:
 	/** Null out the widget when hidden. */
 	bool bClearWidgetOnHide;
 
-};
 
+};

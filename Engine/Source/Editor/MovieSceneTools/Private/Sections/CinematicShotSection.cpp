@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sections/CinematicShotSection.h"
 #include "Sections/MovieSceneCinematicShotSection.h"
@@ -85,6 +85,24 @@ void FCinematicShotSection::ResizeSection(ESequencerSectionResizeMode ResizeMode
 	}
 
 	FViewportThumbnailSection::ResizeSection(ResizeMode, ResizeTime);
+}
+
+void FCinematicShotSection::BeginSlipSection()
+{
+	BeginResizeSection();
+}
+
+void FCinematicShotSection::SlipSection(float SlipTime)
+{
+	float StartOffset = (SlipTime - InitialStartTimeDuringResize) / SectionObject.Parameters.TimeScale;
+	StartOffset += InitialStartOffsetDuringResize;
+
+	// Ensure start offset is not less than 0
+	StartOffset = FMath::Max(StartOffset, 0.f);
+
+	SectionObject.Parameters.StartOffset = StartOffset;
+
+	FViewportThumbnailSection::SlipSection(SlipTime);
 }
 
 void FCinematicShotSection::Tick(const FGeometry& AllottedGeometry, const FGeometry& ClippedGeometry, const double InCurrentTime, const float InDeltaTime)
@@ -246,7 +264,7 @@ void FCinematicShotSection::BuildSectionContextMenu(FMenuBuilder& MenuBuilder, c
 
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("NewTake", "New Take"),
-			FText::Format(LOCTEXT("NewTakeTooltip", "Create a new take for {0}"), SectionObject.GetShotDisplayName()),
+			FText::Format(LOCTEXT("NewTakeTooltip", "Create a new take for {0}"), FText::FromString(SectionObject.GetShotDisplayName())),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateSP(CinematicShotTrackEditor.Pin().ToSharedRef(), &FCinematicShotTrackEditor::NewTake, &SectionObject))
 		);
@@ -260,21 +278,21 @@ void FCinematicShotSection::BuildSectionContextMenu(FMenuBuilder& MenuBuilder, c
 
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("DuplicateShot", "Duplicate Shot"),
-			FText::Format(LOCTEXT("DuplicateShotTooltip", "Duplicate {0} to create a new shot"), SectionObject.GetShotDisplayName()),
+			FText::Format(LOCTEXT("DuplicateShotTooltip", "Duplicate {0} to create a new shot"), FText::FromString(SectionObject.GetShotDisplayName())),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateSP(CinematicShotTrackEditor.Pin().ToSharedRef(), &FCinematicShotTrackEditor::DuplicateShot, &SectionObject))
 		);
 
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("RenderShot", "Render Shot"),
-			FText::Format(LOCTEXT("RenderShotTooltip", "Render shot movie"), SectionObject.GetShotDisplayName()),
+			FText::Format(LOCTEXT("RenderShotTooltip", "Render shot movie"), FText::FromString(SectionObject.GetShotDisplayName())),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateSP(CinematicShotTrackEditor.Pin().ToSharedRef(), &FCinematicShotTrackEditor::RenderShot, &SectionObject))
 		);
 
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("RenameShot", "Rename Shot"),
-			FText::Format(LOCTEXT("RenameShotTooltip", "Rename {0}"), SectionObject.GetShotDisplayName()),
+			FText::Format(LOCTEXT("RenameShotTooltip", "Rename {0}"), FText::FromString(SectionObject.GetShotDisplayName())),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateSP(this, &FCinematicShotSection::EnterRename))
 		);
@@ -304,7 +322,7 @@ void FCinematicShotSection::AddTakesMenu(FMenuBuilder& MenuBuilder)
 
 FText FCinematicShotSection::HandleThumbnailTextBlockText() const
 {
-	return SectionObject.GetShotDisplayName();
+	return FText::FromString(SectionObject.GetShotDisplayName());
 }
 
 
@@ -316,7 +334,7 @@ void FCinematicShotSection::HandleThumbnailTextBlockTextCommitted(const FText& N
 
 		const FScopedTransaction Transaction(LOCTEXT("SetShotName", "Set Shot Name"));
 	
-		SectionObject.SetShotDisplayName(NewShotName);
+		SectionObject.SetShotDisplayName(NewShotName.ToString());
 	}
 }
 

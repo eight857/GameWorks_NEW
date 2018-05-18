@@ -1,4 +1,4 @@
-﻿INTSourceChangelist:3260683
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title:HTTP Streamer REST API
 Crumbs: %ROOT%, Engine, Engine/Replay, Engine/Replay/Streamers
@@ -22,11 +22,13 @@ HTTP Streamer の REST API には、ゲーム サーバーからリプレイ サ
 
 #### Syntax
 
-<!-- From StartStreaming(): -->
+[COMMENT:none]
+ From StartStreaming(): 
+[/COMMENT]
 
 	<Server URL>replay/<Session Name Override>?app=<Replay Version AppString>&version=<Replay Network Version>&cl=<Replay CL>&friendlyName=<Platform Friendly Name>
+	#### Details
 
-#### Details
 
 [REGION:simpletable]
 | アイテム | 値 |
@@ -48,7 +50,7 @@ HTTP Streamer の REST API には、ゲーム サーバーからリプレイ サ
 
 #### Response
 
-文字列 "sessionId" が定義された JSON データを含む `FNetworkReplayStartUploadingResponse` を求めています。将来、HTTP Streamer からの通信で **Session Name** として使用されます。オプションの <Session Name Override> を指定すると戻される "sessionId" および最終的な <Session Name> は同じ値になります。これはセッション名を要求するゲームのやり方です。
+文字列 "sessionId" が定義された JSON データを含む `FNetworkReplayStartUploadingResponse` を求めています。将来、HTTP Streamer からの通信で **Session Name** として使用されます。オプションの `<Session Name Override>` を指定すると戻される "sessionId" および最終的な `<Session Name>` は同じ値になります。これはセッション名を要求するゲームのやり方です。
 
 | 名前 | 種類 | 内容 |
 | --- | --- | --- |
@@ -60,11 +62,13 @@ HTTP Streamer の REST API には、ゲーム サーバーからリプレイ サ
 
 #### Syntax
 
-<!-- From UploadHeader(): -->
+[COMMENT:none]
+ From UploadHeader(): 
+[/COMMENT]
 
 	<Server URL>replay/<Session Name>/file/replay.header?numChunks=<Stream Chunk Index>&time=<Total Demo Time In MS>
+	#### Details
 
-#### Details
 
 [REGION:simpletable]
 | アイテム | 値 |
@@ -96,7 +100,9 @@ HTTP Streamer の REST API には、ゲーム サーバーからリプレイ サ
 
 #### Syntax
 
-<!-- From FlushStream(): -->
+[COMMENT:none]
+ From FlushStream(): 
+[/COMMENT]
 
 	<Server URL>replay/<Session Name>/file/stream.<Stream Chunk Index>?numChunks=<Total Chunks>&time=<Total Demo Time In MS>&mTime1=<Start Time In MS>&mTime2=<End Time In MS>&absSize=<Total Uploaded Bytes>
 
@@ -132,7 +138,9 @@ HTTP Streamer の REST API には、ゲーム サーバーからリプレイ サ
 
 #### Syntax
 
-<!-- From AddOrUpdateEvent(): -->
+[COMMENT:none]
+ From AddOrUpdateEvent(): 
+[/COMMENT]
 
 	<Server URL>replay/<Session Name>/event?group=<Group Name>&time1=<Event Time In MS>&time2=<Event Time In MS>&meta=<Meta Tag>&incrementSize=false
 ~~~
@@ -164,11 +172,13 @@ HTTP Streamer の REST API には、ゲーム サーバーからリプレイ サ
 
 #### Syntax
 
-<!-- From StopUploading(): -->
+[COMMENT:none]
+ From StopUploading(): 
+[/COMMENT]
 
 	<Server URL>replay/<Session Name>/stopUploading?numChunks=<Total Num Chunks>&time=<Total Time In MS>&absSize=<Total Bytes Uploaded>
+	#### Details
 
-#### Details
 
 [REGION:simpletable]
 | アイテム | 値 |
@@ -195,11 +205,13 @@ HTTP Streamer の REST API には、ゲーム サーバーからリプレイ サ
 
 #### Syntax
 
-<!-- From StartStreaming(): -->
+[COMMENT:none]
+ From StartStreaming(): 
+[/COMMENT]
 
 	<Server URL>replay/<Session Name>/startDownloading?user=<User Name>
+			#### Details
 
-#### Details
 
 [REGION:simpletable]
 | アイテム | 値 |
@@ -231,11 +243,13 @@ HTTP Streamer の REST API には、ゲーム サーバーからリプレイ サ
 
 #### Syntax
 
-<!-- From DownloadHeader(): -->
+[COMMENT:none]
+ From DownloadHeader(): 
+[/COMMENT]
 
 	<Server URL>replay/<Session Name>/file/replay.header
+				#### Details
 
-#### Details
 
 [REGION:simpletable]
 | アイテム | 値 |
@@ -259,11 +273,13 @@ HTTP Streamer の REST API には、ゲーム サーバーからリプレイ サ
 
 #### Syntax
 
-<!-- From EnumerateCheckpoints(): -->
-
+[COMMENT:none]
+ From EnumerateCheckpoints(): 
+[/COMMENT]
 	<Server URL>replay/<Session Name>/event?group=checkpoint
 
-#### Details
+				#### Details
+
 
 [REGION:simpletable]
 | アイテム | 値 |
@@ -302,11 +318,13 @@ HTTP Streamer の REST API には、ゲーム サーバーからリプレイ サ
 
 #### Syntax
 
-<!-- From ConditionallyDownloadNextChunk(): -->
+[COMMENT:none]
+ From ConditionallyDownloadNextChunk(): 
+[/COMMENT]
 
 	<Server URL>replay/<Session Name>/file/stream.<Stream Chunk Index>
+					#### Details
 
-#### Details
 
 [REGION:simpletable]
 | アイテム | 値 |
@@ -349,11 +367,13 @@ DemoNetDriver から直接呼び出すことができまるため、ゲーム �
 
 #### Syntax
 
-<!-- From EnumerateEvents(): -->
-	
+[COMMENT:none]
+ From EnumerateEvents(): 
+[/COMMENT]
 	<Server URL>replay/<Session Name>/event?group=<Group Name>"
-						
-#### Details
+
+						#### Details
+
 
 [REGION:simpletable]
 | アイテム | 値 |
@@ -381,14 +401,16 @@ DemoNetDriver から直接呼び出すことができまるため、ゲーム �
 
 #### Syntax
 
-<!-- From RefreshViewer(): -->
-
+[COMMENT:none]
+ From RefreshViewer(): 
+[/COMMENT]
 	<Server URL>replay/<Session Name>/viewer/<Viewer Name>
+
 ~~~
 	<Server URL>replay/<Session Name>/viewer/<Viewer Name>?final=<Final Heartbeat>
+							#### Details
 
 
-#### Details
 [REGION:simpletable]
 | アイテム | 値 |
 | ---- | ----- |
@@ -411,11 +433,13 @@ DemoNetDriver から直接呼び出すことができまるため、ゲーム �
 
 #### Syntax
 
-<!-- From EnumerateStreams(): -->
+[COMMENT:none]
+ From EnumerateStreams(): 
+[/COMMENT]
 
 	<Server URL>replay?app=<Replay Version AppString>&cl=<Replay CL>&version=<Replay Network Version>&meta=<Meta Tag>&user=<User Name>&recent=<In Recent Viewer>"
-								
-#### Details
+								#### Details
+
 
 [REGION:simpletable]
 | アイテム | 値 |
@@ -445,7 +469,7 @@ JSON-形式の文字列のコンテンツでの応答が求められます。
 | replays | Array | この表の他のすべてのフィールドからなるエレメントを含みます。 |
 | AppName | String | リプレイがアップロードされたときに送信された **Replay Version AppString**。リクエストと共に送信したパラメータと一致します。 |
 | SessionName | String | リプレイの名前 (GUID) |
-| FriendlyName | String | リプレイのアップロード時に与えられた <Platform Friendly Name> |
+| FriendlyName | String | リプレイのアップロード時に与えられた `<Platform Friendly Name>` |
 | Timestamp | DateTime | リプレイに関連付けられた日時 (すなわち、このゲームが行われたとき) |
 | SizeInBytes | Integer | リプレイのバイト単位の合計サイズ |
 | DemoTimeInMs | Integer | リプレイのミリ秒単位の実行の長さ |
@@ -460,11 +484,13 @@ JSON-形式の文字列のコンテンツでの応答が求められます。
 
 #### Syntax
 
-<!-- From SearchEvents(): -->
+[COMMENT:none]
+ From SearchEvents(): 
+[/COMMENT]
 
 	<ServerURL>event?group=<Event Group>
-								
-#### Details
+								#### Details
+
 
 [REGION:simpletable]
 | アイテム | 値 |
@@ -489,7 +515,7 @@ JSON-形式の文字列のコンテンツでの応答が求められます。
 | replays | Array | この表の他のすべてのフィールドからなるエレメントを含みます。 |
 | AppName | String | リプレイがアップロードされたときに送信された **Replay Version AppString** です。 |
 | SessionName | String | リプレイの名前 (GUID) |
-| FriendlyName | String | リプレイのアップロード時に与えられた <Platform Friendly Name> |
+| FriendlyName | String | リプレイのアップロード時に与えられた `<Platform Friendly Name>` |
 | Timestamp | DateTime | リプレイに関連付けられた日時 (すなわち、このゲームが行われたとき) |
 | SizeInBytes | Integer | リプレイのバイト単位の合計サイズ |
 | DemoTimeInMs | Integer | リプレイのミリ秒単位の実行の長さ |
@@ -504,11 +530,13 @@ JSON-形式の文字列のコンテンツでの応答が求められます。
 
 #### Syntax
 
-<!-- From RequestEventData(): -->
-	
+[COMMENT:none]
+ From RequestEventData(): 
+[/COMMENT]
 	<Server URL>event/<Event Name>
-								
-#### Details
+
+								#### Details
+
 
 [REGION:simpletable]
 | アイテム | 値 |

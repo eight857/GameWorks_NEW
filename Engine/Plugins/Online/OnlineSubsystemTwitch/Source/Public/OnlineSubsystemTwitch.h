@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -63,13 +63,6 @@ public:
 	virtual ~FOnlineSubsystemTwitch() = default;
 
 	/**
-	 * Is Twitch available for use
-	 *
-	 * @return true if Twitch functionality is available, false otherwise
-	 */
-	static bool IsEnabled();
-
-	/**
 	 * Get the twitch login service configuration
 	 *
 	 * @return login service instance associated with the subsystem
@@ -100,9 +93,6 @@ private:
 
 	/** Interface for external UI services on Twitch */
 	FOnlineExternalUITwitchPtr TwitchExternalUIInterface;
-
-	/** The client id given to us by Twitch */
-	FString ClientId;
 
 	/** Twitch API version */
 	FString TwitchApiVersion;

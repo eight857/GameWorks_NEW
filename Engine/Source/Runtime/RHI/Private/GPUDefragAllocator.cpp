@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GPUDefragAllocator.h"
 #include "HAL/FileManager.h"
@@ -222,6 +222,9 @@ void* FGPUDefragAllocator::Allocate(int64 AllocationSize, int32 Alignment, TStat
 	AllocatedChunk->Stat = InStat;
 
 	check(IsAligned(AllocatedChunk->Base, Alignment));
+
+	LLM(FLowLevelMemTracker::Get().OnLowLevelAlloc(ELLMTracker::Default, AllocatedChunk->Base, AllocationSize));
+
 	return AllocatedChunk->Base;
 }
 
@@ -351,6 +354,13 @@ void* GBestFitAllocatorFreePointer = nullptr;
 */
 void FGPUDefragAllocator::Free(void* Pointer)
 {
+#if ENABLE_LOW_LEVEL_MEM_TRACKER
+	if (Pointer)
+	{
+		FLowLevelMemTracker::Get().OnLowLevelFree(ELLMTracker::Default, Pointer);
+	}
+#endif
+
 	SCOPE_SECONDS_COUNTER(TimeSpentInAllocator);
 	FScopeLock Lock(&SynchronizationObject);
 

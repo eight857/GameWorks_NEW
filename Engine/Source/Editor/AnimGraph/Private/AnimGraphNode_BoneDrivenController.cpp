@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimGraphNode_BoneDrivenController.h"
 #include "SceneManagement.h"
@@ -480,7 +480,7 @@ FText UAnimGraphNode_BoneDrivenController::ComponentTypeToText(EComponentType::T
 
 EVisibility UAnimGraphNode_BoneDrivenController::AreNonCurveMappingValuesVisible(IDetailLayoutBuilder* DetailLayoutBuilder)
 {
-	TArray<TWeakObjectPtr<UObject>> SelectedObjectsList = DetailLayoutBuilder->GetDetailsView().GetSelectedObjects();
+	const TArray<TWeakObjectPtr<UObject>>& SelectedObjectsList = DetailLayoutBuilder->GetSelectedObjects();
 	for(TWeakObjectPtr<UObject> Object : SelectedObjectsList)
 	{
 		if(UAnimGraphNode_BoneDrivenController* BoneDrivenController = Cast<UAnimGraphNode_BoneDrivenController>(Object.Get()))
@@ -497,7 +497,7 @@ EVisibility UAnimGraphNode_BoneDrivenController::AreNonCurveMappingValuesVisible
 
 EVisibility UAnimGraphNode_BoneDrivenController::AreRemappingValuesVisible(IDetailLayoutBuilder* DetailLayoutBuilder)
 {
-	TArray<TWeakObjectPtr<UObject>> SelectedObjectsList = DetailLayoutBuilder->GetDetailsView().GetSelectedObjects();
+	const TArray<TWeakObjectPtr<UObject>>& SelectedObjectsList = DetailLayoutBuilder->GetSelectedObjects();
 	for(TWeakObjectPtr<UObject> Object : SelectedObjectsList)
 	{
 		if(UAnimGraphNode_BoneDrivenController* BoneDrivenController = Cast<UAnimGraphNode_BoneDrivenController>(Object.Get()))
@@ -514,7 +514,7 @@ EVisibility UAnimGraphNode_BoneDrivenController::AreRemappingValuesVisible(IDeta
 
 EVisibility UAnimGraphNode_BoneDrivenController::AreTargetBonePropertiesVisible(IDetailLayoutBuilder* DetailLayoutBuilder)
 {
-	TArray<TWeakObjectPtr<UObject>> SelectedObjectsList = DetailLayoutBuilder->GetDetailsView().GetSelectedObjects();
+	const TArray<TWeakObjectPtr<UObject>>& SelectedObjectsList = DetailLayoutBuilder->GetSelectedObjects();
 	for(TWeakObjectPtr<UObject> Object : SelectedObjectsList)
 	{
 		if(UAnimGraphNode_BoneDrivenController* BoneDrivenController = Cast<UAnimGraphNode_BoneDrivenController>(Object.Get()))
@@ -531,7 +531,7 @@ EVisibility UAnimGraphNode_BoneDrivenController::AreTargetBonePropertiesVisible(
 
 EVisibility UAnimGraphNode_BoneDrivenController::AreTargetCurvePropertiesVisible(IDetailLayoutBuilder* DetailLayoutBuilder)
 {
-	TArray<TWeakObjectPtr<UObject>> SelectedObjectsList = DetailLayoutBuilder->GetDetailsView().GetSelectedObjects();
+	TArray<TWeakObjectPtr<UObject>> SelectedObjectsList = DetailLayoutBuilder->GetSelectedObjects();
 	for(TWeakObjectPtr<UObject> Object : SelectedObjectsList)
 	{
 		if(UAnimGraphNode_BoneDrivenController* BoneDrivenController = Cast<UAnimGraphNode_BoneDrivenController>(Object.Get()))

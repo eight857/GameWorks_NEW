@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -13,9 +13,10 @@ public class BuildPatchTool : ModuleRules
 		PrivateIncludePaths.Add("Programs/BuildPatchTool/Private");
 
 		PrivateDependencyModuleNames.AddRange(
-			new string[] 
+			new string[]
 			{
 				"Core",
+				"ApplicationCore",
 				"BuildPatchServices",
 				"Projects",
 				// The below items are not strictly needed by BPT, but core appears to need them during initialization
@@ -25,5 +26,17 @@ public class BuildPatchTool : ModuleRules
 				"StreamingFile"
 			}
 		);
+
+
+		if (Target.Configuration != UnrealTargetConfiguration.Shipping)
+		{
+			PrivateDependencyModuleNames.AddRange(
+				new string[] {
+					"Messaging",
+					"AutomationWorker",
+					"AutomationController"
+				}
+			);
+		}
 	}
 }

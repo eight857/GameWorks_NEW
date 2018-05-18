@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "RuntimeAssetCacheAsyncWorker.h"
 #include "RuntimeAssetCachePluginInterface.h"
@@ -62,9 +62,11 @@ void FRuntimeAssetCacheAsyncWorker::DoWork()
 	}
 	else
 	{
-		while (Metadata->IsBuilding())
+		if (Metadata->IsBuilding())
 		{
-			FPlatformProcess::SleepNoStats(0.0f);
+			// Another worker is building this asset.
+			Data = nullptr;
+			return;
 		}
 
 		Metadata = FRuntimeAssetCacheBackend::Get().GetCachedData(BucketName, *CacheKey, Data, DataSize);

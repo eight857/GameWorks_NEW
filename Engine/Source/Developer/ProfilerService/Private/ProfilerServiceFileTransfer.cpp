@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "HAL/FileManager.h"
@@ -12,7 +12,7 @@
 #include "ProfilerServiceManager.h"
 
 
-FFileTransferRunnable::FFileTransferRunnable(FMessageEndpointPtr& InMessageEndpoint)
+FFileTransferRunnable::FFileTransferRunnable(TSharedPtr<FMessageEndpoint, ESPMode::ThreadSafe>& InMessageEndpoint)
 	: Runnable(nullptr)
 	, WorkEvent(FPlatformProcess::GetSynchEventFromPool(true))
 	, MessageEndpoint(InMessageEndpoint)

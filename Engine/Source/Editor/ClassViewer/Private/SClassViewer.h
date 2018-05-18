@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,7 +14,7 @@
 #include "Widgets/Views/STreeView.h"
 #include "Settings/ClassViewerSettings.h"
 #include "Engine/EngineTypes.h"
-#include "Misc/StringClassReference.h"
+#include "UObject/SoftObjectPath.h"
 
 class FClassViewerNode;
 class FMenuBuilder;
@@ -113,10 +113,7 @@ private:
 	bool MenuBlueprintBasesOnly_IsChecked() const;
 
 	/** Fills in the filter menu. */
-	void FillFilterEntries( FMenuBuilder& MenuBuilder );
-
-	/** Fills the tree entries menu. */
-	void FillTreeEntries( FMenuBuilder& MenuBuilder );
+	TSharedRef<SWidget> FillFilterEntries();
 
 	/** 
 	 *	Sets all expansion states in the tree.
@@ -221,7 +218,7 @@ private:
 	void HandleSettingChanged(FName PropertyName);
 
 	/** Accessor for the classnames that have been marked as internal only in settings */
-	void GetInternalOnlyClasses(TArray<FStringClassReference>& Classes);
+	void GetInternalOnlyClasses(TArray<FSoftClassPath>& Classes);
 	
 	/** Accessor for the class paths that have been marked as internal only in settings */
 	void GetInternalOnlyPaths(TArray<FDirectoryPath>& Paths);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TextLocalizationResourceGenerator.h"
 #include "TextLocalizationResource.h"
@@ -113,8 +113,8 @@ bool FTextLocalizationResourceGenerator::GenerateLocResAndUpdateLiveEntriesFromC
 	}
 	else
 	{
-		SourcePath = FPaths::Combine(*FPaths::GameDir(), *SourcePath);
-		DestinationPath = FPaths::Combine(*FPaths::GameDir(), *DestinationPath);
+		SourcePath = FPaths::Combine(*FPaths::ProjectDir(), *SourcePath);
+		DestinationPath = FPaths::Combine(*FPaths::ProjectDir(), *DestinationPath);
 	}
 
 	TArray<FString> CulturesToGenerate;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "IOSApsalar.h"
 #include "IOSApsalarProvider.h"
@@ -228,7 +228,7 @@ void FAnalyticsProviderApsalar::RecordEvent(const FString& EventName, const TArr
 			for	(auto Attr : Attributes)
 			{
 				NSString* AttrName = [NSString stringWithFString : Attr.AttrName];
-				NSString* AttrValue = [NSString stringWithFString : Attr.AttrValue];
+				NSString* AttrValue = [NSString stringWithFString : Attr.ToString()];
 				[AttributesDict setValue:AttrValue forKey:AttrName];
 			}
 			[Apsalar event:ConvertedEventName withArgs:AttributesDict];

@@ -1,15 +1,20 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
-#include "Misc/Guid.h"
+#include "CoreTypes.h"
+#include "Containers/Map.h"
+#include "Delegates/IDelegateInstance.h"
 #include "IMessageContext.h"
-#include "IMessageRpcCall.h"
 #include "IMessageRpcClient.h"
+#include "Misc/Guid.h"
+#include "Templates/SharedPointer.h"
 
 class FMessageEndpoint;
+class IMessageRpcCall;
+
 struct FMessageRpcProgress;
+
 
 /**
  * Implements an RPC client.

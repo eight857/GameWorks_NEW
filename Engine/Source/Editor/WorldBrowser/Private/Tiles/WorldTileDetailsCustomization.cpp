@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "Tiles/WorldTileDetailsCustomization.h"
 #include "Misc/PackageName.h"
 #include "Widgets/Layout/SBox.h"
@@ -29,7 +29,7 @@ static FString GetWorldRoot(TWeakPtr<FWorldTileCollectionModel> WorldModel)
 	}
 	else
 	{
-		return FPackageName::FilenameToLongPackageName(FPaths::GameContentDir());
+		return FPackageName::FilenameToLongPackageName(FPaths::ProjectContentDir());
 	}
 }
 

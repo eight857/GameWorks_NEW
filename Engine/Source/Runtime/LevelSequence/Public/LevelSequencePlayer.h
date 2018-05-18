@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -58,13 +58,13 @@ struct FLevelSequencePlayerSnapshot
 	GENERATED_BODY()
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="General")
-	FText MasterName;
+	FString MasterName;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="General")
 	float MasterTime;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="General")
-	FText CurrentShotName;
+	FString CurrentShotName;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="General")
 	float CurrentShotLocalTime;
@@ -74,6 +74,9 @@ struct FLevelSequencePlayerSnapshot
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="General")
 	FLevelSequenceSnapshotSettings Settings;
+
+	UPROPERTY()
+	FMovieSceneSequenceID ShotID;
 };
 
 /**
@@ -139,14 +142,13 @@ protected:
 
 	//~ UMovieSceneSequencePlayer interface
 	virtual bool CanPlay() const override;
+	virtual void OnStartedPlaying() override;
 	virtual void OnStopped() override;
 
 public:
 
 	/** Populate the specified array with any given event contexts for the specified world */
 	static void GetEventContexts(UWorld& InWorld, TArray<UObject*>& OutContexts);
-
-	virtual void BeginPlay() override;
 
 	/**
 	 * Set an array of additional actors that will receive events triggerd from this sequence player

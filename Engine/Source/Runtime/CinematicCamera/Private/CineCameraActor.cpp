@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CineCameraActor.h"
 #include "DrawDebugHelpers.h"
@@ -66,10 +66,16 @@ void ACineCameraActor::Tick(float DeltaTime)
 			// more complex component hierarchies will require different handling here
 			FVector const LookatLoc = GetLookatLocation();
 			FVector const ToLookat = LookatLoc - GetActorLocation();
-			FRotator const FinalRot = 
+			FRotator FinalRot = 
 				bResetInterplation
 				? ToLookat.Rotation()
 				: FMath::RInterpTo(LookatTrackingSettings.LastLookatTrackingRotation, ToLookat.Rotation(), DeltaTime, LookatTrackingSettings.LookAtTrackingInterpSpeed);
+
+			if (LookatTrackingSettings.bAllowRoll)
+			{
+				FinalRot.Roll = GetActorRotation().Roll;
+			}
+
 			SetActorRotation(FinalRot);
 
 			// we store this ourselves in case other systems try to change our rotation, and end fighting the interpolation

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MacPlatformProcess.mm: Mac implementations of Process functions
@@ -6,7 +6,7 @@
 
 #include "Mac/MacCriticalSection.h"
 #include "Misc/App.h"
-#include "MacApplication.h"
+#include "Misc/DateTime.h"
 #include <mach-o/dyld.h>
 #include <libproc.h>
 

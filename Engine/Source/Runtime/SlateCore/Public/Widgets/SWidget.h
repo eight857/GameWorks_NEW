@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -20,6 +20,7 @@
 #include "Input/PopupMethodReply.h"
 #include "Types/ISlateMetaData.h"
 #include "Types/WidgetActiveTimerDelegate.h"
+#include "SlateGlobals.h"
 
 class FActiveTimerHandle;
 class FArrangedChildren;
@@ -33,6 +34,8 @@ class FWidgetPath;
 class IToolTip;
 class SWidget;
 struct FSlateBrush;
+
+DECLARE_DWORD_COUNTER_STAT_EXTERN(TEXT("STAT_SlateVeryVerboseStatGroupTester"), STAT_SlateVeryVerboseStatGroupTester, STATGROUP_SlateVeryVerbose, SLATECORE_API);
 
 /** Delegate type for handling mouse events */
 DECLARE_DELEGATE_RetVal_TwoParams(
@@ -167,7 +170,7 @@ class IToolTip;
  * 
  * SLATE_ATTRIBUTE(ECheckBoxState, IsChecked)
  *
- * DEPRECATED(4.3, "Please use IsChecked(TAttribute<ECheckBoxState>)")
+ * DEPRECATED(4.xx, "Please use IsChecked(TAttribute<ECheckBoxState>)")
  * FArguments& IsChecked(bool InIsChecked)
  * {
  * 		_IsChecked = InIsChecked ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
@@ -218,11 +221,12 @@ public:
 	 * Construct a SWidget based on initial parameters.
 	 */
 	void Construct(
-		const TAttribute<FText> & InToolTipText,
-		const TSharedPtr<IToolTip> & InToolTip,
-		const TAttribute< TOptional<EMouseCursor::Type> > & InCursor,
-		const TAttribute<bool> & InEnabledState,
-		const TAttribute<EVisibility> & InVisibility,
+		const TAttribute<FText>& InToolTipText,
+		const TSharedPtr<IToolTip>& InToolTip,
+		const TAttribute< TOptional<EMouseCursor::Type> >& InCursor,
+		const TAttribute<bool>& InEnabledState,
+		const TAttribute<EVisibility>& InVisibility,
+		const float InRenderOpacity,
 		const TAttribute<TOptional<FSlateRenderTransform>>& InTransform,
 		const TAttribute<FVector2D>& InTransformPivot,
 		const FName& InTag,
@@ -230,20 +234,20 @@ public:
 		const EWidgetClipping InClipping,
 		const TArray<TSharedRef<ISlateMetaData>>& InMetaData);
 
-	void SWidgetConstruct( const TAttribute<FText> & InToolTipText,
-		const TSharedPtr<IToolTip> & InToolTip,
-		const TAttribute< TOptional<EMouseCursor::Type> > & InCursor,
-		const TAttribute<bool> & InEnabledState,
-		const TAttribute<EVisibility> & InVisibility,
+	void SWidgetConstruct(const TAttribute<FText>& InToolTipText,
+		const TSharedPtr<IToolTip>& InToolTip,
+		const TAttribute< TOptional<EMouseCursor::Type> >& InCursor,
+		const TAttribute<bool>& InEnabledState,
+
+
+		const TAttribute<EVisibility>& InVisibility,
+		const float InRenderOpacity,
 		const TAttribute<TOptional<FSlateRenderTransform>>& InTransform,
 		const TAttribute<FVector2D>& InTransformPivot,
 		const FName& InTag,
 		const bool InForceVolatile,
 		const EWidgetClipping InClipping,
-		const TArray<TSharedRef<ISlateMetaData>>& InMetaData)
-	{
-		Construct(InToolTipText, InToolTip, InCursor, InEnabledState, InVisibility, InTransform, InTransformPivot, InTag, InForceVolatile, InClipping, InMetaData);
-	}
+		const TArray<TSharedRef<ISlateMetaData>>& InMetaData);
 
 	//
 	// GENERAL EVENTS
@@ -706,14 +710,14 @@ public:
 	{
 #if STATS
 		// this is done to avoid even registering stats for a disabled group (unless we plan on using it later)
-		if (FThreadStats::IsCollectingData())
-		{
-			if (!StatID.IsValidStat())
-			{
-				CreateStatID();
-			}
-			return StatID;
-		}
+        if (FThreadStats::IsCollectingData(GET_STATID(STAT_SlateVeryVerboseStatGroupTester)))
+        {
+            if (!StatID.IsValidStat())
+            {
+                CreateStatID();
+            }
+            return StatID;
+        }
 #endif
 		return TStatId(); // not doing stats at the moment, or ever
 	}
@@ -969,6 +973,19 @@ protected:
 	}
 
 public:
+
+	/** @return the render opacity of the widget. */
+	FORCEINLINE float GetRenderOpacity() const
+	{
+		return RenderOpacity;
+	}
+
+	/** @param InOpacity The opacity of the widget during rendering. */
+	FORCEINLINE void SetRenderOpacity(float InRenderOpacity)
+	{
+		RenderOpacity = InRenderOpacity;
+		Invalidate(EInvalidateWidget::Layout);
+	}
 
 	/** @return the render transform of the widget. */
 	FORCEINLINE const TOptional<FSlateRenderTransform>& GetRenderTransform() const
@@ -1318,23 +1335,23 @@ private:
 
 protected:
 	/** Dtor ensures that active timer handles are UnRegistered with the SlateApplication. */
-	~SWidget();
+	virtual ~SWidget();
 
 protected:
 	/** Is this widget hovered? */
-	bool bIsHovered : 1;
+	uint8 bIsHovered : 1;
 
 	/** Can the widget ever be ticked. */
-	bool bCanTick : 1;
+	uint8 bCanTick : 1;
 
 	/** Can the widget ever support keyboard focus */
-	bool bCanSupportFocus : 1;
+	uint8 bCanSupportFocus : 1;
 
 	/**
 	 * Can the widget ever support children?  This will be false on SLeafWidgets, 
 	 * rather than setting this directly, you should probably inherit from SLeafWidget.
 	 */
-	bool bCanHaveChildren : 1;
+	uint8 bCanHaveChildren : 1;
 
 	/**
 	  * Some widgets might be a complex hierarchy of child widgets you never see.  Some of those widgets
@@ -1342,7 +1359,15 @@ protected:
 	  * so even though it may be set to clip, this flag is used to inform painting that this widget doesn't
 	  * really do the clipping.
 	  */
-	bool bClippingProxy : 1;
+	uint8 bClippingProxy : 1;
+
+#if SLATE_DEFERRED_DESIRED_SIZE
+	/** Has the desired size of the widget been cached? */
+	uint8 bCachedDesiredSize : 1;
+
+	/** Are we currently updating the desired size? */
+	mutable uint8 bUpdatingDesiredSize : 1;
+#endif
 
 private:
 
@@ -1350,16 +1375,16 @@ private:
 	 * Whether this widget is a "tool tip force field".  That is, tool-tips should never spawn over the area
 	 * occupied by this widget, and will instead be repelled to an outside edge
 	 */
-	bool bToolTipForceFieldEnabled : 1;
+	uint8 bToolTipForceFieldEnabled : 1;
 
 	/** Should we be forcing this widget to be volatile at all times and redrawn every frame? */
-	bool bForceVolatile : 1;
+	uint8 bForceVolatile : 1;
 
 	/** The last cached volatility of this widget.  Cached so that we don't need to recompute volatility every frame. */
-	bool bCachedVolatile : 1;
+	uint8 bCachedVolatile : 1;
 
 	/** If we're owned by a volatile widget, we need inherit that volatility and use as part of our volatility, but don't cache it. */
-	mutable bool bInheritedVolatility : 1;
+	mutable uint8 bInheritedVolatility : 1;
 
 protected:
 	/**
@@ -1407,6 +1432,9 @@ protected:
 	/** Is this widget visible, hidden or collapsed */
 	TAttribute< EVisibility > Visibility;
 
+	/** The opacity of the widget.  Automatically applied during rendering. */
+	float RenderOpacity;
+
 	/** Render transform of this widget. TOptional<> to allow code to skip expensive overhead if there is no render transform applied. */
 	TAttribute< TOptional<FSlateRenderTransform> > RenderTransform;
 
@@ -1414,13 +1442,6 @@ protected:
 	TAttribute< FVector2D > RenderTransformPivot;
 
 protected:
-#if SLATE_DEFERRED_DESIRED_SIZE
-	/** Has the desired size of the widget been cached? */
-	bool bCachedDesiredSize : 1;
-
-	/** Are we currently updating the desired size? */
-	mutable bool bUpdatingDesiredSize : 1;
-#endif
 
 	/** Debugging information on the type of widget we're creating for the Widget Reflector. */
 	FName TypeOfWidget;

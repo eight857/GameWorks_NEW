@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "USDImportOptions.h"
 #include "UnrealType.h"
@@ -9,6 +9,16 @@ UUSDImportOptions::UUSDImportOptions(const FObjectInitializer& ObjectInitializer
 	MeshImportType = EUsdMeshImportType::StaticMesh;
 	bApplyWorldTransformToGeometry = true;
 
+}
+
+void UUSDImportOptions::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	if (PropertyChangedEvent.ChangeType != EPropertyChangeType::Interactive)
+	{
+		SaveConfig();
+	}
 }
 
 UUSDSceneImportOptions::UUSDSceneImportOptions(const FObjectInitializer& ObjectInitializer)
@@ -24,10 +34,7 @@ UUSDSceneImportOptions::UUSDSceneImportOptions(const FObjectInitializer& ObjectI
 
 void UUSDSceneImportOptions::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
-	if (PropertyChangedEvent.ChangeType != EPropertyChangeType::Interactive)
-	{
-		SaveConfig();
-	}
+	Super::PostEditChangeProperty(PropertyChangedEvent);
 }
 
 bool UUSDSceneImportOptions::CanEditChange(const UProperty* InProperty) const

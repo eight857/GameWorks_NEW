@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CinematicViewport/SCinematicTransportRange.h"
 #include "Rendering/DrawElements.h"
@@ -8,6 +8,7 @@
 #include "Styles/LevelSequenceEditorStyle.h"
 #include "MovieScene.h"
 #include "ISequencer.h"
+#include "CommonMovieSceneTools.h"
 
 #define LOCTEXT_NAMESPACE "SCinematicTransportRange"
 
@@ -95,7 +96,13 @@ void SCinematicTransportRange::Tick(const FGeometry& AllottedGeometry, const dou
 	ISequencer* Sequencer = GetSequencer();
 	if (Sequencer)
 	{
-		Sequencer->GetKeysFromSelection(ActiveKeyCollection);
+		TRange<float> WorkingRange = Sequencer->GetFocusedMovieSceneSequence()->GetMovieScene()->GetEditorData().WorkingRange;
+
+		// Anything within 3 pixel's worth of time is a duplicate as far as we're concerned
+		FTimeToPixel TimeToPixelConverter(AllottedGeometry, WorkingRange);
+		const float DuplicateThreshold = (TimeToPixelConverter.PixelToTime(3.f) - TimeToPixelConverter.PixelToTime(0.f));
+
+		Sequencer->GetKeysFromSelection(ActiveKeyCollection, DuplicateThreshold);
 	}
 }
 

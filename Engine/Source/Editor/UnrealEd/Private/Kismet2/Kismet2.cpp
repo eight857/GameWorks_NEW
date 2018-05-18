@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CoreMinimal.h"
@@ -14,7 +14,7 @@
 #include "UObject/GarbageCollection.h"
 #include "UObject/Class.h"
 #include "UObject/Package.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "UObject/MetaData.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/UnrealType.h"
@@ -79,7 +79,6 @@
 #include "Editor/UnrealEd/Public/PackageTools.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
-#include "Developer/BlueprintProfiler/Public/BlueprintProfilerModule.h"
 #include "Engine/InheritableComponentHandler.h"
 
 DECLARE_CYCLE_STAT(TEXT("Compile Blueprint"), EKismetCompilerStats_CompileBlueprint, STATGROUP_KismetCompiler);
@@ -402,9 +401,7 @@ TMultiMap<void*, FKismetEditorUtilities::FOnBlueprintCreatedData> FKismetEditorU
 /** Create the correct event graphs for this blueprint */
 void FKismetEditorUtilities::CreateDefaultEventGraphs(UBlueprint* Blueprint)
 {
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-
-	UEdGraph* Ubergraph = FBlueprintEditorUtils::CreateNewGraph(Blueprint, K2Schema->GN_EventGraph, UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+	UEdGraph* Ubergraph = FBlueprintEditorUtils::CreateNewGraph(Blueprint, UEdGraphSchema_K2::GN_EventGraph, UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
 	Ubergraph->bAllowDeletion = false; //@TODO: Really, just want to make sure we never drop below 1, not that you cannot delete any particular one!
 	FBlueprintEditorUtils::AddUbergraphPage(Blueprint, Ubergraph);
 
@@ -435,8 +432,6 @@ UBlueprint* FKismetEditorUtilities::CreateBlueprint(UClass* ParentClass, UObject
 	NewBP->bLegacyNeedToPurgeSkelRefs = false;
 	NewBP->GenerateNewGuid();
 
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-
 	// Create SimpleConstructionScript and UserConstructionScript
 	if (FBlueprintEditorUtils::SupportsConstructionScript(NewBP))
 	{ 
@@ -454,7 +449,7 @@ UBlueprint* FKismetEditorUtilities::CreateBlueprint(UClass* ParentClass, UObject
 		NewBP->SimpleConstructionScript->SetFlags(RF_Transactional);
 		NewBP->LastEditedDocuments.Add(NewBP->SimpleConstructionScript);
 
-		UEdGraph* UCSGraph = FBlueprintEditorUtils::CreateNewGraph(NewBP, K2Schema->FN_UserConstructionScript, UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+		UEdGraph* UCSGraph = FBlueprintEditorUtils::CreateNewGraph(NewBP, UEdGraphSchema_K2::FN_UserConstructionScript, UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
 		FBlueprintEditorUtils::AddFunctionGraph(NewBP, UCSGraph, /*bIsUserCreated=*/ false, AActor::StaticClass());
 
 		// If the blueprint is derived from another blueprint, add in a super-call automatically
@@ -464,15 +459,15 @@ UBlueprint* FKismetEditorUtilities::CreateBlueprint(UClass* ParentClass, UObject
 			UK2Node_FunctionEntry* UCSEntry = CastChecked<UK2Node_FunctionEntry>(UCSGraph->Nodes[0]);
 			FGraphNodeCreator<UK2Node_CallParentFunction> FunctionNodeCreator(*UCSGraph);
 			UK2Node_CallParentFunction* ParentFunctionNode = FunctionNodeCreator.CreateNode();
-			ParentFunctionNode->FunctionReference.SetExternalMember(K2Schema->FN_UserConstructionScript, NewBP->ParentClass);
+			ParentFunctionNode->FunctionReference.SetExternalMember(UEdGraphSchema_K2::FN_UserConstructionScript, NewBP->ParentClass);
 			ParentFunctionNode->NodePosX = 200;
 			ParentFunctionNode->NodePosY = 0;
 			ParentFunctionNode->AllocateDefaultPins();
 			FunctionNodeCreator.Finalize();
 
 			// Wire up the new node
-			UEdGraphPin* ExecPin = UCSEntry->FindPin(K2Schema->PN_Then);
-			UEdGraphPin* SuperPin = ParentFunctionNode->FindPin(K2Schema->PN_Execute);
+			UEdGraphPin* ExecPin = UCSEntry->FindPin(UEdGraphSchema_K2::PN_Then);
+			UEdGraphPin* SuperPin = ParentFunctionNode->FindPin(UEdGraphSchema_K2::PN_Execute);
 			ExecPin->MakeLinkTo(SuperPin);
 		}
 
@@ -494,7 +489,7 @@ UBlueprint* FKismetEditorUtilities::CreateBlueprint(UClass* ParentClass, UObject
 		if (RootAnimBP == NULL)
 		{
 			// Only allow an anim graph if there isn't one in a parent blueprint
-			UEdGraph* NewGraph = FBlueprintEditorUtils::CreateNewGraph(AnimBP, K2Schema->GN_AnimGraph, UAnimationGraph::StaticClass(), UAnimationGraphSchema::StaticClass());
+			UEdGraph* NewGraph = FBlueprintEditorUtils::CreateNewGraph(AnimBP, UEdGraphSchema_K2::GN_AnimGraph, UAnimationGraph::StaticClass(), UAnimationGraphSchema::StaticClass());
 			FBlueprintEditorUtils::AddDomainSpecificGraph(NewBP, NewGraph);
 			NewBP->LastEditedDocuments.Add(NewGraph);
 			NewGraph->bAllowDeletion = false;
@@ -643,8 +638,6 @@ UK2Node_Event* FKismetEditorUtilities::AddDefaultEventNode(UBlueprint* InBluepri
 		NewEventNode->PostPlacedNewNode();
 		NewEventNode->SetFlags(RF_Transactional);
 		NewEventNode->AllocateDefaultPins();
-		NewEventNode->DisableNode();
-		NewEventNode->NodeComment = LOCTEXT("DisabledNodeComment", "This node is disabled and will not be called.\nDrag off pins to build functionality.").ToString();
 		NewEventNode->bCommentBubblePinned = true;
 		NewEventNode->bCommentBubbleVisible = true;
 		NewEventNode->NodePosY = InOutNodePosY;
@@ -670,19 +663,17 @@ UK2Node_Event* FKismetEditorUtilities::AddDefaultEventNode(UBlueprint* InBluepri
 					ParentPin->MakeLinkTo(EventPin);
 				}
 			}
-			ParentFunctionNode->GetExecPin()->MakeLinkTo(NewEventNode->FindPin(Schema->PN_Then));
+			ParentFunctionNode->GetExecPin()->MakeLinkTo(NewEventNode->FindPin(UEdGraphSchema_K2::PN_Then));
 
 			ParentFunctionNode->NodePosX = FunctionFromNode.Node->NodePosX + FunctionFromNode.Node->NodeWidth + 200;
 			ParentFunctionNode->NodePosY = FunctionFromNode.Node->NodePosY;
 			UEdGraphSchema_K2::SetNodeMetaData(ParentFunctionNode, FNodeMetadata::DefaultGraphNode);
 			FunctionNodeCreator.Finalize();
 
-			ParentFunctionNode->DisableNode();
-
-			// Adding the call to parent and connecting it will reset this value
-			NewEventNode->DisableNode();
-			NewEventNode->NodeComment = LOCTEXT("DisabledNodeComment", "This node is disabled and will not be called.\nDrag off pins to build functionality.").ToString();
+			ParentFunctionNode->MakeAutomaticallyPlacedGhostNode();
 		}
+
+		NewEventNode->MakeAutomaticallyPlacedGhostNode();
 	}
 
 	return NewEventNode;
@@ -691,7 +682,7 @@ UK2Node_Event* FKismetEditorUtilities::AddDefaultEventNode(UBlueprint* InBluepri
 UBlueprint* FKismetEditorUtilities::ReloadBlueprint(UBlueprint* StaleBlueprint)
 {
 	check(StaleBlueprint->IsAsset());
-	FStringAssetReference BlueprintAssetRef(StaleBlueprint);
+	FSoftObjectPath BlueprintAssetRef(StaleBlueprint);
 
 	FBlueprintUnloader Unloader(StaleBlueprint);
 	Unloader.UnloadBlueprint(/*bResetPackage =*/true);
@@ -755,7 +746,6 @@ void FKismetEditorUtilities::CompileBlueprint(UBlueprint* BlueprintObj, EBluepri
 	const bool bSaveIntermediateProducts	= (CompileFlags & EBlueprintCompileOptions::SaveIntermediateProducts	) != EBlueprintCompileOptions::None;
 	const bool bSkeletonUpToDate			= (CompileFlags & EBlueprintCompileOptions::SkeletonUpToDate			) != EBlueprintCompileOptions::None;
 	const bool bBatchCompile				= (CompileFlags & EBlueprintCompileOptions::BatchCompile				) != EBlueprintCompileOptions::None;
-	const bool bAddInstrumentation			= (CompileFlags & EBlueprintCompileOptions::AddInstrumentation			) != EBlueprintCompileOptions::None;
 	const bool bSkipReinstancing			= (CompileFlags & EBlueprintCompileOptions::SkipReinstancing			) != EBlueprintCompileOptions::None;
 
 	FSecondsCounterScope Timer(BlueprintCompileAndLoadTimerData); 
@@ -827,13 +817,7 @@ void FKismetEditorUtilities::CompileBlueprint(UBlueprint* BlueprintObj, EBluepri
 	FKismetCompilerOptions CompileOptions;
 	CompileOptions.bSaveIntermediateProducts = bSaveIntermediateProducts;
 	CompileOptions.bRegenerateSkelton = !bSkeletonUpToDate;
-	CompileOptions.bAddInstrumentation = bAddInstrumentation;
 	CompileOptions.bReinstanceAndStubOnFailure = !bSkipReinstancing;
-	if (pResults)
-	{
-		// enable debug information for composite graph instances if we are instrumenting the blueprint.
-		pResults->bTreatCompositeGraphsAsTunnels = bAddInstrumentation;
-	}
 	Compiler.CompileBlueprint(BlueprintObj, CompileOptions, Results, ReinstanceHelper);
 
 	FBlueprintEditorUtils::UpdateDelegatesInBlueprint(BlueprintObj);
@@ -1160,7 +1144,7 @@ static void ConformComponentsUtils::ConformRemovedNativeComponents(UObject* BpCd
 				// For components, make sure we use the instance that's owned by the Blueprint CDO and not the native parent CDO's instance.
 				if (UActorComponent** ComponentTemplatePtr = FindComponentTemplateByNameInActorCDO(SuperObjValue->GetFName()))
 				{
-					SuperObjValue = Cast<UObject>(*ComponentTemplatePtr);
+					SuperObjValue = *ComponentTemplatePtr;
 				}
 			}
 			
@@ -1724,7 +1708,7 @@ AActor* FKismetEditorUtilities::CreateBlueprintInstanceFromSelection(UBlueprint*
 
 	for(auto It(SelectedActors.CreateIterator());It;++It)
 	{
-		if (AActor* Actor = Cast<AActor>(*It))
+		if (AActor* Actor = *It)
 		{
 			// Remove from active selection in editor
 			GEditor->SelectActor(Actor, /*bSelected=*/ false, /*bNotify=*/ false);
@@ -2000,15 +1984,13 @@ void FKismetEditorUtilities::UpgradeCosmeticallyStaleBlueprint(UBlueprint* Bluep
 	// Rename the ubergraph page 'StateGraph' to be named 'EventGraph' if possible
 	if (FBlueprintEditorUtils::DoesSupportEventGraphs(Blueprint))
 	{
-		const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-
 		UEdGraph* OldStateGraph = FindObject<UEdGraph>(Blueprint, TEXT("StateGraph"));
-		UObject* CollidingObject = FindObject<UObject>(Blueprint, *(K2Schema->GN_EventGraph.ToString()));
+		UObject* CollidingObject = FindObject<UObject>(Blueprint, *(UEdGraphSchema_K2::GN_EventGraph.ToString()));
 
 		if ((OldStateGraph != NULL) && (CollidingObject == NULL))
 		{
 			check(!OldStateGraph->HasAnyFlags(RF_Public));
-			OldStateGraph->Rename(*(K2Schema->GN_EventGraph.ToString()), OldStateGraph->GetOuter(), REN_DoNotDirty | REN_ForceNoResetLoaders);
+			OldStateGraph->Rename(*(UEdGraphSchema_K2::GN_EventGraph.ToString()), OldStateGraph->GetOuter(), REN_DoNotDirty | REN_ForceNoResetLoaders);
 			Blueprint->Status = BS_Dirty;
 		}
 	}
@@ -2016,35 +1998,28 @@ void FKismetEditorUtilities::UpgradeCosmeticallyStaleBlueprint(UBlueprint* Bluep
 
 void FKismetEditorUtilities::CreateNewBoundEventForActor(AActor* Actor, FName EventName)
 {
-	if(Actor != NULL && EventName != NAME_None)
+	if ((Actor != nullptr) && (EventName != NAME_None))
 	{
 		// First, find the property we want to bind to
-		UMulticastDelegateProperty* DelegateProperty = FindField<UMulticastDelegateProperty>(Actor->GetClass(), EventName);
-		if(DelegateProperty != NULL)
+		if (UMulticastDelegateProperty* DelegateProperty = FindField<UMulticastDelegateProperty>(Actor->GetClass(), EventName))
 		{
 			// Get the correct level script blueprint
-			ULevelScriptBlueprint* LSB = Actor->GetLevel()->GetLevelScriptBlueprint();
-			UEdGraph* TargetGraph = NULL;
-			if(LSB != NULL && LSB->UbergraphPages.Num() > 0)
+			if (ULevelScriptBlueprint* LSB = Actor->GetLevel()->GetLevelScriptBlueprint())
 			{
-				TargetGraph = LSB->UbergraphPages[0]; // Just use the forst graph
-			}
-
-			if(TargetGraph != NULL)
-			{
-				// Figure out a decent place to stick the node
-				const FVector2D NewNodePos = TargetGraph->GetGoodPlaceForNewNode();
-
-				// Create a new event node
-				UK2Node_ActorBoundEvent* EventNodeTemplate = NewObject<UK2Node_ActorBoundEvent>();
-				EventNodeTemplate->InitializeActorBoundEventParams(Actor, DelegateProperty);
-
-				UK2Node_ActorBoundEvent* EventNode = FEdGraphSchemaAction_K2NewNode::SpawnNodeFromTemplate<UK2Node_ActorBoundEvent>(TargetGraph, EventNodeTemplate, NewNodePos);
-
-				// Finally, bring up kismet and jump to the new node
-				if(EventNode != NULL)
+				if (UEdGraph* TargetGraph = LSB->GetLastEditedUberGraph())
 				{
-					BringKismetToFocusAttentionOnObject(EventNode);
+					// Figure out a decent place to stick the node
+					const FVector2D NewNodePos = TargetGraph->GetGoodPlaceForNewNode();
+
+					// Create a new event node
+					UK2Node_ActorBoundEvent* EventNodeTemplate = NewObject<UK2Node_ActorBoundEvent>();
+					EventNodeTemplate->InitializeActorBoundEventParams(Actor, DelegateProperty);
+
+					// Finally, bring up kismet and jump to the new node
+					if (UK2Node_ActorBoundEvent* EventNode = FEdGraphSchemaAction_K2NewNode::SpawnNodeFromTemplate<UK2Node_ActorBoundEvent>(TargetGraph, EventNodeTemplate, NewNodePos))
+					{
+						BringKismetToFocusAttentionOnObject(EventNode);
+					}
 				}
 			}
 		}
@@ -2067,11 +2042,7 @@ void FKismetEditorUtilities::CreateNewBoundEventForClass(UClass* Class, FName Ev
 		UMulticastDelegateProperty* DelegateProperty = FindField<UMulticastDelegateProperty>(Class, EventName);
 		if ( DelegateProperty != nullptr )
 		{
-			UEdGraph* TargetGraph = nullptr;
-			if(Blueprint->UbergraphPages.Num() > 0)
-			{
-				TargetGraph = Blueprint->UbergraphPages[0]; // Just use the first graph
-			}
+			UEdGraph* TargetGraph = Blueprint->GetLastEditedUberGraph();
 
 			if ( TargetGraph != nullptr )
 			{
@@ -2171,7 +2142,8 @@ bool FKismetEditorUtilities::CanBlueprintImplementInterface(UBlueprint const* Bl
 			// loop over all the prohibited interfaces
 			for (int32 ExclusionIndex = 0; ExclusionIndex < ProhibitedInterfaceNames.Num(); ++ExclusionIndex)
 			{
-				FString const& Exclusion = ProhibitedInterfaceNames[ExclusionIndex].Trim();
+				ProhibitedInterfaceNames[ExclusionIndex].TrimStartInline();
+				FString const& Exclusion = ProhibitedInterfaceNames[ExclusionIndex];
 				// if this interface matches one of the prohibited ones
 				if (InterfaceName == Exclusion) 
 				{

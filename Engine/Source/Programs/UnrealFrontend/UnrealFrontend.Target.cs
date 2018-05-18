@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.Collections.Generic;
@@ -11,24 +11,14 @@ public class UnrealFrontendTarget : TargetRules
 		LinkType = TargetLinkType.Modular;
 		AdditionalPlugins.Add("UdpMessaging");
 		LaunchModuleName = "UnrealFrontend";
-	}
 
-	//
-	// TargetRules interface.
-	//
+		bBuildEditor = false;
+		bCompileAgainstEngine = false;
+		bCompileAgainstCoreUObject = true;
+		bForceBuildTargetPlatforms = true;
+		bCompileWithStatsWithoutEngine = true;
+		bCompileWithPluginSupport = true;
 
-	public override void SetupGlobalEnvironment(
-		TargetInfo Target,
-		ref LinkEnvironmentConfiguration OutLinkEnvironmentConfiguration,
-		ref CPPEnvironmentConfiguration OutCPPEnvironmentConfiguration)
-	{
-		UEBuildConfiguration.bBuildEditor = false;
-		UEBuildConfiguration.bCompileAgainstEngine = false;
-		UEBuildConfiguration.bCompileAgainstCoreUObject = true;
-		UEBuildConfiguration.bForceBuildTargetPlatforms = true;
-		UEBuildConfiguration.bCompileWithStatsWithoutEngine = true;
-		UEBuildConfiguration.bCompileWithPluginSupport = true;
-
-		OutLinkEnvironmentConfiguration.bHasExports = false;
+		bHasExports = false;
 	}
 }

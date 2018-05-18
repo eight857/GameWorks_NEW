@@ -1,6 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Breakpoints/SMessagingBreakpointsTableRow.h"
+
+#include "IMessageTracerBreakpoint.h"
+#include "SlateOptMacros.h"
+#include "Styling/ISlateStyle.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Text/STextBlock.h"
 
 
 #define LOCTEXT_NAMESPACE "SMessagingBreakpointsTableRow"

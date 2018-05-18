@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ContentBrowserSettings.h: Declares the UContentBrowserSettings class.
@@ -13,19 +13,22 @@
 #include "ContentBrowserSettings.generated.h"
 
 /**
- * Implements the Level Editor's loading and saving settings.
+ * Implements content browser settings.  These are global not per-project
  */
-UCLASS(config=EditorPerProjectUserSettings)
-class UNREALED_API UContentBrowserSettings
-	: public UObject
+UCLASS(config=EditorSettings)
+class UNREALED_API UContentBrowserSettings : public UObject
 {
 	GENERATED_UCLASS_BODY()
 
 public:
 
 	/** The number of objects to load at once in the Content Browser before displaying a warning about loading many assets */
-	UPROPERTY(EditAnywhere, config, Category=ContentBrowser, meta=(DisplayName = "Assets to Load at Once Before Warning"))
+	UPROPERTY(EditAnywhere, config, Category=ContentBrowser, meta=(DisplayName = "Assets to Load at Once Before Warning", ClampMin = "1"))
 	int32 NumObjectsToLoadBeforeWarning;
+
+	/** Whether the Content Browser should open the Sources Panel by default */
+	UPROPERTY(EditAnywhere, config, Category = ContentBrowser)
+	bool bOpenSourcesPanelByDefault;
 
 	/** Whether to render thumbnails for loaded assets in real-time in the Content Browser */
 	UPROPERTY(config)
@@ -101,6 +104,18 @@ public:
 		return DisplayCollections;
 	}
 
+	/** Sets whether we are allowed to display favorite folders or not */
+	void SetDisplayFavorites(bool bInDisplayFavorites)
+	{
+		DisplayFavorites = bInDisplayFavorites;
+	}
+
+	/** Gets whether we are allowed to display the favorite folders or not*/
+	bool GetDisplayFavorites() const
+	{
+		return DisplayFavorites;
+	}
+
 	/** Sets whether we are allowed to display C++ folders or not */
 	void SetDisplayCppFolders(bool bDisplay)
 	{
@@ -155,6 +170,9 @@ private:
 
 	UPROPERTY(config)
 	bool DisplayCollections;
+
+	UPROPERTY(config)
+	bool DisplayFavorites;
 
 	UPROPERTY(config)
 	bool DisplayCppFolders;

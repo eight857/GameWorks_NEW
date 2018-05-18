@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -64,7 +64,7 @@ class FResizeSection
 public:
 
 	/** Create and initialize a new instance. */
-	FResizeSection( FSequencer& InSequencer, TArray<FSectionHandle> Sections, bool bInDraggingByEnd );
+	FResizeSection( FSequencer& InSequencer, TArray<FSectionHandle> Sections, bool bInDraggingByEnd, bool bIsSlipping );
 
 public:
 
@@ -82,6 +82,9 @@ private:
 
 	/** true if dragging  the end of the section, false if dragging the start */
 	bool bDraggingByEnd;
+
+	/** true if slipping, adjust only the start offset */
+	bool bIsSlipping;
 
 	/** Time where the mouse is pressed */
 	float MouseDownTime;
@@ -136,6 +139,9 @@ private:
 
 	/** A handle for the sequencer node tree updated delegate. */
 	FDelegateHandle SequencerNodeTreeUpdatedHandle;
+
+	struct FInitialRowIndex { UMovieSceneSection* Section; int32 RowIndex; };
+	TArray<FInitialRowIndex> InitialRowIndices;
 };
 
 

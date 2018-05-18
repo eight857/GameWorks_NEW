@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/SEventGraph.h"
 #include "Widgets/Layout/SSplitter.h"
@@ -17,6 +17,7 @@
 #include "Widgets/StatDragDropOp.h"
 #include "Widgets/SEventGraphTooltip.h"
 #include "Widgets/Input/SSearchBox.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #define LOCTEXT_NAMESPACE "SEventGraph"
 
@@ -2352,7 +2353,7 @@ void SEventGraph::ContextMenu_CopySelectedToClipboard_Execute()
 
 	if( Result.Len() )
 	{
-		FPlatformMisc::ClipboardCopy( *Result );
+		FPlatformApplicationMisc::ClipboardCopy( *Result );
 	}
 }
 

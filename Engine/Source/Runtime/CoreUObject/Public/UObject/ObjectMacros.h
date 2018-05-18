@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ObjectBase.h: Unreal object base class.
@@ -97,6 +97,9 @@ enum ESaveFlags
 	SAVE_Unversioned	= 0x00000020,	// Save all versions as zero. Upon load this is changed to the current version. This is only reasonable to use with full cooked builds for distribution.
 	SAVE_CutdownPackage	= 0x00000040,	// Saving cutdown packages in a temp location WITHOUT renaming the package.
 	SAVE_KeepEditorOnlyCookedPackages = 0x00000080,  // keep packages which are marked as editor only even though we are cooking
+	SAVE_Concurrent		= 0x00000100,	// We are save packages in multiple threads at once and should not call non-threadsafe functions or rely on globals. GIsSavingPackage should be set and PreSave/Postsave functions should be called before/after the entire concurrent save.
+	SAVE_DiffOnly       = 0x00000200, // Serializes the package to a special memory archive that performs a diff with an existing file on disk
+	SAVE_DiffCallstack  = 0x00000400, // Serializes the package to a special memory archive that compares all differences against a file on disk and dumps relevant callstacks
 };
 
 //
@@ -126,7 +129,7 @@ enum EPackageFlags
 	PKG_DisallowLazyLoading			= 0x00080000,	// Set if the archive serializing this package cannot use lazy loading
 	PKG_PlayInEditor				= 0x00100000,	// Set if the package was created for the purpose of PIE
 	PKG_ContainsScript				= 0x00200000,	// Package is allowed to contain UClass objects
-//	PKG_Unused						= 0x00400000,
+	PKG_DisallowExport				= 0x00400000,	// Editor should not export asset in this package
 //	PKG_Unused						= 0x00800000,
 //	PKG_Unused						= 0x01000000,	
 //	PKG_Unused						= 0x02000000,	
@@ -246,54 +249,52 @@ enum EClassFlags
 	CLASS_NewerVersionExists  = 0x80000000u,
 
 	//@}
-
-
-	/** @name Flags to inherit from base class */
-	//@{
-	CLASS_Inherit           = CLASS_Transient | CLASS_DefaultConfig | CLASS_Config | CLASS_PerObjectConfig | CLASS_ConfigDoNotCheckDefaults | CLASS_NotPlaceable
-							| CLASS_Const | CLASS_HasInstancedReference | CLASS_Deprecated | CLASS_DefaultToInstanced | CLASS_GlobalUserConfig,
-
-	/** these flags will be cleared by the compiler when the class is parsed during script compilation */
-	CLASS_RecompilerClear   = CLASS_Inherit | CLASS_Abstract | CLASS_NoExport | CLASS_Native | CLASS_Intrinsic | CLASS_TokenStreamAssembled,
-
-	/** these flags will be cleared by the compiler when the class is parsed during script compilation */
-	CLASS_ShouldNeverBeLoaded   = CLASS_Native | CLASS_Intrinsic | CLASS_TokenStreamAssembled,
-
-	/** these flags will be inherited from the base class only for non-intrinsic classes */
-	CLASS_ScriptInherit		= CLASS_Inherit | CLASS_EditInlineNew | CLASS_CollapseCategories,
-	//@}
-
-	/** This is used as a mask for the flags put into generated code for "compiled in" classes. */
-	CLASS_SaveInCompiledInClasses = 
-		CLASS_Abstract | 
-		CLASS_DefaultConfig |
-		CLASS_GlobalUserConfig |
-		CLASS_Config |
-		CLASS_Transient |
-		CLASS_Native |
-		CLASS_NotPlaceable |
-		CLASS_PerObjectConfig |
-		CLASS_ConfigDoNotCheckDefaults |
-		CLASS_EditInlineNew |
-		CLASS_CollapseCategories |
-		CLASS_Interface |
-		CLASS_DefaultToInstanced |
-		CLASS_HasInstancedReference |
-		CLASS_Hidden |
-		CLASS_Deprecated |
-		CLASS_HideDropDown |
-		CLASS_Intrinsic |
-		CLASS_AdvancedDisplay |
-		CLASS_Const |
-		CLASS_MinimalAPI |
-		CLASS_RequiredAPI,
-
-	CLASS_AllFlags			= 0xFFFFFFFFu,
 };
 
 // Declare bitwise operators to allow EClassFlags to be combined but still retain type safety
 ENUM_CLASS_FLAGS(EClassFlags);
 
+/** @name Flags to inherit from base class */
+//@{
+#define CLASS_Inherit ((EClassFlags)(CLASS_Transient | CLASS_DefaultConfig | CLASS_Config | CLASS_PerObjectConfig | CLASS_ConfigDoNotCheckDefaults | CLASS_NotPlaceable \
+						| CLASS_Const | CLASS_HasInstancedReference | CLASS_Deprecated | CLASS_DefaultToInstanced | CLASS_GlobalUserConfig))
+
+/** these flags will be cleared by the compiler when the class is parsed during script compilation */
+#define CLASS_RecompilerClear ((EClassFlags)(CLASS_Inherit | CLASS_Abstract | CLASS_NoExport | CLASS_Native | CLASS_Intrinsic | CLASS_TokenStreamAssembled))
+
+/** these flags will be cleared by the compiler when the class is parsed during script compilation */
+#define CLASS_ShouldNeverBeLoaded ((EClassFlags)(CLASS_Native | CLASS_Intrinsic | CLASS_TokenStreamAssembled))
+
+/** these flags will be inherited from the base class only for non-intrinsic classes */
+#define CLASS_ScriptInherit ((EClassFlags)(CLASS_Inherit | CLASS_EditInlineNew | CLASS_CollapseCategories))
+//@}
+
+/** This is used as a mask for the flags put into generated code for "compiled in" classes. */
+#define CLASS_SaveInCompiledInClasses ((EClassFlags)(\
+	CLASS_Abstract | \
+	CLASS_DefaultConfig | \
+	CLASS_GlobalUserConfig | \
+	CLASS_Config | \
+	CLASS_Transient | \
+	CLASS_Native | \
+	CLASS_NotPlaceable | \
+	CLASS_PerObjectConfig | \
+	CLASS_ConfigDoNotCheckDefaults | \
+	CLASS_EditInlineNew | \
+	CLASS_CollapseCategories | \
+	CLASS_Interface | \
+	CLASS_DefaultToInstanced | \
+	CLASS_HasInstancedReference | \
+	CLASS_Hidden | \
+	CLASS_Deprecated | \
+	CLASS_HideDropDown | \
+	CLASS_Intrinsic | \
+	CLASS_AdvancedDisplay | \
+	CLASS_Const | \
+	CLASS_MinimalAPI | \
+	CLASS_RequiredAPI))
+
+#define CLASS_AllFlags ((EClassFlags)0xFFFFFFFFu)
 
 
 /**
@@ -331,11 +332,11 @@ typedef uint64 EClassCastFlags;
 #define CASTCLASS_UObjectPropertyBase			DECLARE_UINT64(0x0000000004000000)
 #define CASTCLASS_UWeakObjectProperty			DECLARE_UINT64(0x0000000008000000)
 #define CASTCLASS_ULazyObjectProperty			DECLARE_UINT64(0x0000000010000000)
-#define CASTCLASS_UAssetObjectProperty			DECLARE_UINT64(0x0000000020000000)
+#define CASTCLASS_USoftObjectProperty			DECLARE_UINT64(0x0000000020000000)
 #define CASTCLASS_UTextProperty					DECLARE_UINT64(0x0000000040000000)
 #define CASTCLASS_UInt16Property				DECLARE_UINT64(0x0000000080000000)
 #define CASTCLASS_UDoubleProperty				DECLARE_UINT64(0x0000000100000000)
-#define CASTCLASS_UAssetClassProperty			DECLARE_UINT64(0x0000000200000000)
+#define CASTCLASS_USoftClassProperty			DECLARE_UINT64(0x0000000200000000)
 #define CASTCLASS_UPackage						DECLARE_UINT64(0x0000000400000000)
 #define CASTCLASS_ULevel						DECLARE_UINT64(0x0000000800000000)
 #define CASTCLASS_AActor						DECLARE_UINT64(0x0000001000000000)
@@ -496,29 +497,7 @@ enum EObjectFlags
 #define RF_Load						((EObjectFlags)(RF_Public | RF_Standalone | RF_Transactional | RF_ClassDefaultObject | RF_ArchetypeObject | RF_DefaultSubObject | RF_TextExportTransient | RF_InheritableComponentTemplate | RF_DuplicateTransient | RF_NonPIEDuplicateTransient)) // Flags to load from Unrealfiles.
 #define RF_PropagateToSubObjects	((EObjectFlags)(RF_Public | RF_ArchetypeObject | RF_Transactional | RF_Transient))		// Sub-objects will inherit these flags from their SuperObject.
 
-FORCEINLINE EObjectFlags operator|(EObjectFlags Arg1,EObjectFlags Arg2)
-{
-	return EObjectFlags(uint32(Arg1) | uint32(Arg2));
-}
-
-FORCEINLINE EObjectFlags operator&(EObjectFlags Arg1,EObjectFlags Arg2)
-{
-	return EObjectFlags(uint32(Arg1) & uint32(Arg2));
-}
-
-FORCEINLINE EObjectFlags operator~(EObjectFlags Arg)
-{
-	return EObjectFlags(RF_AllFlags & ~uint32(Arg));
-}
-
-FORCEINLINE void operator&=(EObjectFlags& Dest,EObjectFlags Arg)
-{
-	Dest = EObjectFlags(Dest & Arg);
-}
-FORCEINLINE void operator|=(EObjectFlags& Dest,EObjectFlags Arg)
-{
-	Dest = EObjectFlags(Dest | Arg);
-}
+ENUM_CLASS_FLAGS(EObjectFlags);
 
 //@}
 
@@ -526,19 +505,20 @@ FORCEINLINE void operator|=(EObjectFlags& Dest,EObjectFlags Arg)
 enum class EInternalObjectFlags : int32
 {
 	None = 0,
-	// All the other bits are reserved, DO NOT ADD NEW FLAGS HERE!
-	ReachableInCluster = 1 << 23, /// External reference to object in cluster exists
+	//~ All the other bits are reserved, DO NOT ADD NEW FLAGS HERE!
+	ReachableInCluster = 1 << 23, ///< External reference to object in cluster exists
 	ClusterRoot = 1 << 24, ///< Root of a cluster
-	Native = 1 << 25, ///< Native (UClass only).
+	Native = 1 << 25, ///< Native (UClass only). 
 	Async = 1 << 26, ///< Object exists only on a different thread than the game thread.
 	AsyncLoading = 1 << 27, ///< Object is being asynchronously loaded.
 	Unreachable = 1 << 28, ///< Object is not reachable on the object graph.
 	PendingKill = 1 << 29, ///< Objects that are pending destruction (invalid for gameplay but valid objects)
 	RootSet = 1 << 30, ///< Object will not be garbage collected, even if unreferenced.
+	HadReferenceKilled = 1 << 31, ///< Object had a reference null'd out by markpendingkill
 
 	GarbageCollectionKeepFlags = Native | Async | AsyncLoading,
-	// Make sure this is up to date!
-	AllFlags = ReachableInCluster | ClusterRoot | Native | Async | AsyncLoading | Unreachable | PendingKill | RootSet
+	//~ Make sure this is up to date!
+	AllFlags = ReachableInCluster | ClusterRoot | Native | Async | AsyncLoading | Unreachable | PendingKill | RootSet | HadReferenceKilled
 };
 ENUM_CLASS_FLAGS(EInternalObjectFlags);
 
@@ -603,15 +583,17 @@ struct COREUOBJECT_API FReferencerInformationList
 #define BODY_MACRO_COMBINE_INNER(A,B,C,D) A##B##C##D
 #define BODY_MACRO_COMBINE(A,B,C,D) BODY_MACRO_COMBINE_INNER(A,B,C,D)
 
-#define GENERATED_BODY_LEGACY(...) BODY_MACRO_COMBINE(CURRENT_FILE_ID,_,__LINE__,_GENERATED_BODY_LEGACY)
-#define GENERATED_BODY(...) BODY_MACRO_COMBINE(CURRENT_FILE_ID,_,__LINE__,_GENERATED_BODY)
+// Include a redundant semicolon at the end of the generated code block, so that intellisense parsers can start parsing
+// a new declaration if the line number/generated code is out of date.
+#define GENERATED_BODY_LEGACY(...) BODY_MACRO_COMBINE(CURRENT_FILE_ID,_,__LINE__,_GENERATED_BODY_LEGACY);
+#define GENERATED_BODY(...) BODY_MACRO_COMBINE(CURRENT_FILE_ID,_,__LINE__,_GENERATED_BODY);
 
 #define GENERATED_USTRUCT_BODY(...) GENERATED_BODY()
 #define GENERATED_UCLASS_BODY(...) GENERATED_BODY_LEGACY()
 #define GENERATED_UINTERFACE_BODY(...) GENERATED_BODY_LEGACY()
 #define GENERATED_IINTERFACE_BODY(...) GENERATED_BODY_LEGACY()
 
-#if UE_BUILD_DOCS
+#if UE_BUILD_DOCS || defined(__INTELLISENSE__ )
 #define UCLASS(...)
 #else
 #define UCLASS(...) BODY_MACRO_COMBINE(CURRENT_FILE_ID,_,__LINE__,_PROLOG)
@@ -620,7 +602,10 @@ struct COREUOBJECT_API FReferencerInformationList
 #define UINTERFACE(...) UCLASS()
 
 // This macro is used to declare a thunk function in autogenerated boilerplate code
-#define DECLARE_FUNCTION(func) void func( FFrame& Stack, RESULT_DECL )
+#define DECLARE_FUNCTION(func) static void func( UObject* Context, FFrame& Stack, RESULT_DECL )
+
+// This macro is used to define a thunk function in autogenerated boilerplate code
+#define DEFINE_FUNCTION(func) void func( UObject* Context, FFrame& Stack, RESULT_DECL )
 
 // These are used for syntax highlighting and to allow autocomplete hints
 
@@ -1024,6 +1009,9 @@ namespace UM
 		/// [ClassMetadata] [PropertyMetadata] [FunctionMetadata] The name to display for this class, property, or function instead of auto-generating it from the name.
 		DisplayName,
 
+		/// [ClassMetadata] [PropertyMetadata] [FunctionMetadata] The name to use for this class, property, or function when exporting it to a scripting language.
+		ScriptName,
+
 		/// [ClassMetadata] Specifies that this class is an acceptable base class for creating blueprints.
 		IsBlueprintBase,
 
@@ -1069,10 +1057,10 @@ namespace UM
 	// Metadata usable in UPROPERTY for customizing the behavior when displaying the property in a property panel
 	enum
 	{
-		/// [PropertyMetadata] Used for Subclass and StringClassReference properties.  Indicates whether abstract class types should be shown in the class picker.
+		/// [PropertyMetadata] Used for Subclass and SoftClass properties.  Indicates whether abstract class types should be shown in the class picker.
 		AllowAbstract,
 
-		/// [PropertyMetadata] Used for FStringAssetReference properties.  Comma delimited list that indicates the class type(s) of assets to be displayed in the asset picker.
+		/// [PropertyMetadata] Used for FSoftObjectPath properties.  Comma delimited list that indicates the class type(s) of assets to be displayed in the asset picker.
 		AllowedClasses,
 
 		/// [PropertyMetadata] Used for FVector properties.  It causes a ratio lock to be added when displaying this property in details panels.
@@ -1081,10 +1069,10 @@ namespace UM
 		/// [PropertyMetadata] Used for integer properties.  Clamps the valid values that can be entered in the UI to be between 0 and the length of the array specified.
 		ArrayClamp,
 
-		/// [PropertyMetadata] Used for AssetPtr/StringAssetReference properties. Comma separated list of Bundle names used inside PrimaryDataAssets to specify which bundles this reference is part of
+		/// [PropertyMetadata] Used for SoftObjectPtr/SoftObjectPath properties. Comma separated list of Bundle names used inside PrimaryDataAssets to specify which bundles this reference is part of
 		AssetBundles,
 
-		/// [PropertyMetadata] Used for Subclass and StringClassReference properties.  Indicates whether only blueprint classes should be shown in the class picker.
+		/// [PropertyMetadata] Used for Subclass and SoftClass properties.  Indicates whether only blueprint classes should be shown in the class picker.
 		BlueprintBaseOnly,
 
 		/// [PropertyMetadata] Property defaults are generated by the Blueprint compiler and will not be copied when CopyPropertiesForUnrelatedObjects is called post-compile.
@@ -1105,13 +1093,22 @@ namespace UM
 		/// [ClassMetadata] [PropertyMetadata] [FunctionMetadata] The name to display for this class, property, or function instead of auto-generating it from the name.
 		// DisplayName, (Commented out so as to avoid duplicate name with version in the Class section, but still show in the property section)
 
+		/// [ClassMetadata] [PropertyMetadata] [FunctionMetadata] The name to use for this class, property, or function when exporting it to a scripting language.
+		//ScriptName, (Commented out so as to avoid duplicate name with version in the Class section, but still show in the property section)
+
+		/// [PropertyMetadata] [FunctionMetadata] Flag set on a property or function to prevent it being exported to a scripting language.
+		ScriptNoExport,
+
 		/// [PropertyMetadata] Indicates that the property is an asset type and it should display the thumbnail of the selected asset.
 		DisplayThumbnail,	
 	
 		/// [PropertyMetadata] Specifies a boolean property that is used to indicate whether editing of this property is disabled.
 		EditCondition,
+
+		/// [PropertyMetadata] Keeps the elements of an array from being reordered by dragging 
+		EditFixedOrder,
 		
-		/// [PropertyMetadata] Used for FStringAssetReference properties in conjunction with AllowedClasses. Indicates whether only the exact classes specified in AllowedClasses can be used or whether subclasses are valid.
+		/// [PropertyMetadata] Used for FSoftObjectPath properties in conjunction with AllowedClasses. Indicates whether only the exact classes specified in AllowedClasses can be used or whether subclasses are valid.
 		ExactClass,
 
 		/// [PropertyMetadata] Specifies a list of categories whose functions should be exposed when building a function list in the Blueprint Editor.
@@ -1129,7 +1126,7 @@ namespace UM
 		/// [PropertyMetadata] Used for FColor and FLinearColor properties. Indicates that the Alpha property should be hidden when displaying the property widget in the details.
 		HideAlphaChannel,
 
-		/// [PropertyMetadata] Used for Subclass and StringClassReference properties. Specifies to hide the ability to change view options in the class picker
+		/// [PropertyMetadata] Used for Subclass and SoftClass properties. Specifies to hide the ability to change view options in the class picker
 		HideViewOptions,
 
 		/// [PropertyMetadata] Signifies that the bool property is only displayed inline as an edit condition toggle in other properties, and should not be shown on its own row.
@@ -1144,10 +1141,10 @@ namespace UM
 		/// [PropertyMetadata] For properties in a structure indicates the default value of the property in a blueprint make structure node.
 		MakeStructureDefaultValue,
 
-		/// [PropertyMetadata] Used FStringClassReference properties. Indicates the parent class that the class picker will use when filtering which classes to display.
+		/// [PropertyMetadata] Used FSoftClassPath properties. Indicates the parent class that the class picker will use when filtering which classes to display.
 		MetaClass,
 
-		/// [PropertyMetadata] Used for Subclass and StringClassReference properties. Indicates the selected class must implement a specific interface
+		/// [PropertyMetadata] Used for Subclass and SoftClass properties. Indicates the selected class must implement a specific interface
 		MustImplement,
 
 		/// [PropertyMetadata] Used for numeric properties. Stipulates that the value must be a multiple of the metadata value.
@@ -1177,13 +1174,13 @@ namespace UM
 		/// [PropertyMetadata] Used by FDirectoryPath properties. Indicates that the directory dialog will output a path relative to the game content directory when setting the property.
 		RelativeToGameContentDir,
 
-		// [PropertyMetadata] Used by struct properties. Indicates that the inner properties will not be shown inside an expandable struct, but promoted up a level.
+		/// [PropertyMetadata] Used by struct properties. Indicates that the inner properties will not be shown inside an expandable struct, but promoted up a level.
 		ShowOnlyInnerProperties,
 
-		/// [PropertyMetadata] Used for Subclass and StringClassReference properties. Shows the picker as a tree view instead of as a list
+		/// [PropertyMetadata] Used for Subclass and SoftClass properties. Shows the picker as a tree view instead of as a list
 		ShowTreeView,
 
-		// [PropertyMetadata] Used by numeric properties. Indicates how rapidly the value will grow when moving an unbounded slider.
+		/// [PropertyMetadata] Used by numeric properties. Indicates how rapidly the value will grow when moving an unbounded slider.
 		SliderExponent,
 
 		/// [PropertyMetadata] Used for float and integer properties.  Specifies the lowest that the value slider should represent.
@@ -1273,6 +1270,12 @@ namespace UM
 
 		/// [ClassMetadata] [PropertyMetadata] [FunctionMetadata] The name to display for this class, property, or function instead of auto-generating it from the name.
 		// DisplayName, (Commented out so as to avoid duplicate name with version in the Class section, but still show in the function section)
+
+		/// [ClassMetadata] [PropertyMetadata] [FunctionMetadata] The name to use for this class, property, or function when exporting it to a scripting language.
+		//ScriptName, (Commented out so as to avoid duplicate name with version in the Class section, but still show in the function section)
+
+		/// [PropertyMetadata] [FunctionMetadata] Flag set on a property or function to prevent it being exported to a scripting language.
+		//ScriptNoExport, (Commented out so as to avoid duplicate name with version in the Property section, but still show in the function section)
 
 		/// [FunctionMetadata] For BlueprintCallable functions indicates that the parameter pin should be hidden from the user's view.
 		HidePin,
@@ -1366,16 +1369,11 @@ public: \
 	{ \
 		return TStaticCastFlags; \
 	} \
-	DEPRECATED(4.7, "operator new has been deprecated for UObjects - please use NewObject or NewNamedObject instead") \
-	inline void* operator new( const size_t InSize, UObject* InOuter=(UObject*)GetTransientPackage(), FName InName=NAME_None, EObjectFlags InSetFlags=RF_NoFlags ) \
-	{ \
-		return StaticAllocateObject( StaticClass(), InOuter, InName, InSetFlags ); \
-	} \
 	/** For internal use only; use StaticConstructObject() to create new objects. */ \
 	inline void* operator new(const size_t InSize, EInternal InInternalOnly, UObject* InOuter = (UObject*)GetTransientPackage(), FName InName = NAME_None, EObjectFlags InSetFlags = RF_NoFlags) \
 	{ \
 		return StaticAllocateObject(StaticClass(), InOuter, InName, InSetFlags); \
-} \
+	} \
 	/** For internal use only; use StaticConstructObject() to create new objects. */ \
 	inline void* operator new( const size_t InSize, EInternal* InMem ) \
 	{ \

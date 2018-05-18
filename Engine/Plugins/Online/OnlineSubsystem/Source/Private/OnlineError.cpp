@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineError.h"
 #include "OnlineSubsystemTypes.h"
@@ -28,10 +28,39 @@ FOnlineError::FOnlineError(const FString& ErrorCodeIn)
 	SetFromErrorCode(ErrorCodeIn);
 }
 
+FOnlineError::FOnlineError(FString&& ErrorCodeIn)
+	: bSucceeded(false)
+	, HttpResult(0)
+	, NumericErrorCode(0)
+{
+	SetFromErrorCode(MoveTemp(ErrorCodeIn));
+}
+
+FOnlineError::FOnlineError(const int32 ErrorCodeIn)
+	: bSucceeded(false)
+	, HttpResult(0)
+	, NumericErrorCode(ErrorCodeIn)
+{
+	SetFromErrorCode(ErrorCodeIn);
+}
+
 void FOnlineError::SetFromErrorCode(const FString& ErrorCodeIn)
 {
 	ErrorCode = ErrorCodeIn;
 	ErrorRaw = ErrorCodeIn;
+}
+
+void FOnlineError::SetFromErrorCode(FString&& ErrorCodeIn)
+{
+	ErrorCode = MoveTemp(ErrorCodeIn);
+	ErrorRaw = ErrorCode;
+}
+
+void FOnlineError::SetFromErrorCode(const int32 ErrorCodeIn)
+{
+	NumericErrorCode = ErrorCodeIn;
+	ErrorCode = FString::Printf(TEXT("0x%0.8X"), NumericErrorCode);
+	ErrorRaw = ErrorCode;
 }
 
 FOnlineError::FOnlineError(const FText& ErrorMessageIn)
@@ -47,6 +76,12 @@ void FOnlineError::SetFromErrorMessage(const FText& ErrorMessageIn)
 	ErrorMessage = ErrorMessageIn;
 	ErrorCode = FTextInspector::GetKey(ErrorMessageIn).Get(GenericErrorCode);
 	ErrorRaw = ErrorMessageIn.ToString();
+}
+
+void FOnlineError::SetFromErrorMessage(const FText& InErrorMessage, const int32 InErrorCode)
+{
+	ErrorMessage = InErrorMessage;
+	SetFromErrorCode(InErrorCode);
 }
 
 const TCHAR* FOnlineError::ToLogString() const

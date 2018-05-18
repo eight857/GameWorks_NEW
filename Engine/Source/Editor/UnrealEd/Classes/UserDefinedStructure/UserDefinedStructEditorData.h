@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
 #include "Misc/Guid.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 #include "EdGraph/EdGraphPin.h"
 #include "UObject/StructOnScope.h"
 #include "EditorUndoClient.h"
@@ -34,13 +34,13 @@ struct FStructVariableDescription
 
 	// TYPE DATA
 	UPROPERTY()
-	FString Category;
+	FName Category;
 
 	UPROPERTY()
-	FString SubCategory;
+	FName SubCategory;
 
 	UPROPERTY()
-	TAssetPtr<UObject> SubCategoryObject;
+	TSoftObjectPtr<UObject> SubCategoryObject;
 
 	UPROPERTY()
 	FEdGraphTerminalType PinValueType;
@@ -73,7 +73,7 @@ struct FStructVariableDescription
 	uint8 bEnable3dWidget:1;
 
 	// CurrentDefaultValue stores the actual default value, after the DefaultValue was changed, and before the struct was recompiled
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	FString CurrentDefaultValue;
 
 	UPROPERTY()
@@ -107,19 +107,6 @@ struct TStructOpsTypeTraits< FStructVariableDescription > : public TStructOpsTyp
 	};
 };
 
-class FStructOnScopeMember : public FStructOnScope
-{
-public:
-	FStructOnScopeMember() : FStructOnScope() {}
-
-	void Recreate(const UStruct* InScriptStruct)
-	{
-		Destroy();
-		ScriptStruct = InScriptStruct;
-		Initialize();
-	}
-};
-
 UCLASS()
 class UNREALED_API UUserDefinedStructEditorData : public UObject, public FEditorUndoClient
 {
@@ -137,16 +124,7 @@ public:
 	UPROPERTY()
 	FString ToolTip;
 
-	// optional super struct
-	UPROPERTY()
-	UScriptStruct* NativeBase;
-
-protected:
-	FStructOnScopeMember DefaultStructInstance;
-
 public:
-	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
-
 	// UObject interface.
 	virtual TSharedPtr<ITransactionObjectAnnotation> GetTransactionAnnotation() const override;
 	virtual void PostEditUndo() override;

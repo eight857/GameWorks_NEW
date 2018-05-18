@@ -1,21 +1,24 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Net/UnitTestPackageMap.h"
 
 #include "GameFramework/Actor.h"
 
 #include "MinimalClient.h"
-#include "Net/UnitTestNetConnection.h"
+#include "NUTUtilDebug.h"
+#include "UnitLogging.h"
 
 
 /**
- * Default constructor
+ * UUnitTestPackageMap
  */
+
 UUnitTestPackageMap::UUnitTestPackageMap(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, bWithinSerializeNewActor(false)
 	, bPendingArchetypeSpawn(false)
 	, ReplaceObjects()
+	, OnSerializeName()
 {
 }
 
@@ -57,20 +60,13 @@ bool UUnitTestPackageMap::SerializeObject(FArchive& Ar, UClass* InClass, UObject
 		// this is the first place we know the type of a replicated actor (in an actor channel or otherwise), but BEFORE it is spawned
 		else if ((GIsInitializingActorChan || bPendingArchetypeSpawn) && InClass == UObject::StaticClass() && Obj != nullptr)
 		{
-			UUnitTestNetConnection* UnitConn = Cast<UUnitTestNetConnection>(GActiveReceiveUnitConnection);
-			bool bAllowActor = false;
+			bool bBlockActor = true;
 
-			if (UnitConn != nullptr)
-			{
-				UMinimalClient* MinClient = UnitConn->MinClient;
+			check(MinClient != nullptr);
 
-				if (MinClient != nullptr && MinClient->RepActorSpawnDel.IsBound())
-				{
-					bAllowActor = MinClient->RepActorSpawnDel.Execute(Obj->GetClass(), GIsInitializingActorChan);
-				}
-			}
+			MinClient->RepActorSpawnDel.ExecuteIfBound(Obj->GetClass(), GIsInitializingActorChan, bBlockActor);
 
-			if (!bAllowActor)
+			if (bBlockActor)
 			{
 				UE_LOG(LogUnitTest, Log,
 						TEXT("Blocking replication/spawning of actor on client (add to NotifyAllowNetActor if required)."));
@@ -80,14 +76,28 @@ bool UUnitTestPackageMap::SerializeObject(FArchive& Ar, UClass* InClass, UObject
 						*Obj->GetFullName());
 
 				Obj = nullptr;
-
-				// NULL the control channel, to break code that would disconnect the client (control chan is recovered, in ReceivedBunch)
-				Connection->Channels[0] = nullptr;
 			}
 		}
 	}
 
 	return bReturnVal;
+}
+
+bool UUnitTestPackageMap::SerializeName(FArchive& Ar, FName& InName)
+{
+	bool bSerialized = false;
+	FName SaveName = InName;
+
+	OnSerializeName.Broadcast(true, bSerialized, Ar, (Ar.IsSaving() ? SaveName : InName));
+
+	if (!bSerialized)
+	{
+		Super::SerializeName(Ar, (Ar.IsSaving() ? SaveName : InName));
+	}
+
+	OnSerializeName.Broadcast(false, bSerialized, Ar, (Ar.IsSaving() ? SaveName : InName));
+
+	return true;
 }
 
 bool UUnitTestPackageMap::SerializeNewActor(FArchive& Ar, class UActorChannel* Channel, class AActor*& Actor)
@@ -97,7 +107,12 @@ bool UUnitTestPackageMap::SerializeNewActor(FArchive& Ar, class UActorChannel* C
 	bWithinSerializeNewActor = true;
 	bPendingArchetypeSpawn = false;
 
-	bReturnVal = Super::SerializeNewActor(Ar, Channel, Actor);
+	{
+		// Disable PackageMap error logs during this call, since we may be deliberately causing an error to block serialization
+		FScopedLogSuppress Suppress(TEXT("LogNetPackageMap"));
+
+		bReturnVal = Super::SerializeNewActor(Ar, Channel, Actor);
+	}
 
 	bPendingArchetypeSpawn = false;
 	bWithinSerializeNewActor = false;

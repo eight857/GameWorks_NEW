@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnrealEdMisc.h"
 #include "TickableEditorObject.h"
@@ -88,6 +88,8 @@
 DEFINE_LOG_CATEGORY_STATIC(LogUnrealEdMisc, Log, All);
 
 bool FTickableEditorObject::bCollectionIntact = true;
+bool FTickableEditorObject::bIsTickingObjects = false;
+
 
 namespace
 {
@@ -323,7 +325,7 @@ void FUnrealEdMisc::OnInit()
 			// If the specified package exists
 			if ( FPackageName::SearchForPackageOnDisk(ParsedMapName, NULL, &InitialMapName) &&
 				// and it's a valid map file
-				FPaths::GetExtension(InitialMapName, /*bIncludeDot=*/true).ToLower() == FPackageName::GetMapPackageExtension().ToLower() )
+				FPaths::GetExtension(InitialMapName, /*bIncludeDot=*/true) == FPackageName::GetMapPackageExtension() )
 			{
 				// Never show loading progress when loading a map at startup.  Loading status will instead
 				// be reflected in the splash screen status
@@ -426,7 +428,8 @@ void FUnrealEdMisc::OnInit()
 
 	SlowTask.EnterProgressFrame(10);
 
-	LoadFBxLibraries();
+	//Fbx dll is currently compile with a different windows platform sdk so we should use this memory bypass later when unreal ed will be using windows 10 platform sdk
+	//LoadFBxLibraries();
 
 	// Register message log UIs
 	FMessageLogModule& MessageLogModule = FModuleManager::LoadModuleChecked<FMessageLogModule>("MessageLog");
@@ -451,6 +454,7 @@ void FUnrealEdMisc::OnInit()
 	{
 		FMessageLogInitializationOptions InitOptions;
 		InitOptions.bShowPages = true;
+		InitOptions.bShowFilters = true;
 		MessageLogModule.RegisterLogListing("PackagingResults", LOCTEXT("PackagingResults", "Packaging Results"), InitOptions);
 	}
 
@@ -894,7 +898,8 @@ void FUnrealEdMisc::OnExit()
 
 	UWorldComposition::EnableWorldCompositionEvent.Unbind();
 	
-	UnloadFBxLibraries();
+	//Fbx dll is currently compile with a different windows platform sdk so we should use this memory bypass later when unreal ed will be using windows 10 platform sdk
+	//UnloadFBxLibraries();
 
 	const TMap<FString, FString>& IniRestoreFiles = GetConfigRestoreFilenames();
 
@@ -1614,9 +1619,9 @@ void FUnrealEdMisc::RestartEditor(bool bWarn)
 	{
 		SwitchProject(FPaths::GetProjectFilePath(), bWarn);
 	}
-	else if(FApp::HasGameName())
+	else if(FApp::HasProjectName())
 	{
-		SwitchProject(FApp::GetGameName(), bWarn);
+		SwitchProject(FApp::GetProjectName(), bWarn);
 	}
 	else
 	{
@@ -1645,7 +1650,7 @@ void FUnrealEdMisc::BeginPerformanceSurvey()
 void FUnrealEdMisc::TickPerformanceAnalytics()
 {
 	// Don't run if we've not yet loaded a project
-	if( !FApp::HasGameName() )
+	if( !FApp::HasProjectName() )
 	{
 		return;
 	}
@@ -1839,7 +1844,7 @@ void FUnrealEdMisc::OnUserDefinedChordChanged(const FUICommandInfo& CommandInfo)
 		//@todo This shouldn't be using a localized value; GetInputText() [10/11/2013 justin.sargent]
 		TArray< FAnalyticsEventAttribute > ChordAttribs;
 		ChordAttribs.Add(FAnalyticsEventAttribute(TEXT("Context"), ChordName));
-		ChordAttribs.Add(FAnalyticsEventAttribute(TEXT("Shortcut"), CommandInfo.GetActiveChord()->GetInputText().ToString()));
+		ChordAttribs.Add(FAnalyticsEventAttribute(TEXT("Shortcut"), CommandInfo.GetInputText().ToString()));
 		FEngineAnalytics::GetProvider().RecordEvent(TEXT("Editor.Usage.KeyboardShortcut"), ChordAttribs);
 	}
 }

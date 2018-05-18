@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ControlRigEditorModule.h"
 #include "PropertyEditorModule.h"
@@ -316,7 +316,7 @@ void FControlRigEditorModule::HandleNewBlueprintCreated(UBlueprint* InBlueprint)
 		OutputNode->NodePosX = 0;
 		OutputNode->NodePosY = 0;
 		UEdGraphSchema_K2::SetNodeMetaData(OutputNode, FNodeMetadata::DefaultGraphNode);
-		OutputNode->DisableNode();
+		OutputNode->MakeAutomaticallyPlacedGhostNode();
 		OutputNode->NodeComment = LOCTEXT("AnimationOutputComment", "This node acts as the output for this animation controller.\nTo add or remove an output pin, enable or disable the \"Animation Output\" checkbox for a variable.").ToString();
 		OutputNode->bCommentBubbleVisible = true;
 		OutputNode->bCommentBubblePinned = true;
@@ -464,6 +464,8 @@ void FControlRigEditorModule::HandleSequencerCreated(TSharedRef<ISequencer> InSe
 			}
 		}
 	});
+
+	InSequencer->OnGetIsTrackVisible().BindRaw(this, &FControlRigEditorModule::IsTrackVisible);
 }
 
 void FControlRigEditorModule::HandleAssetEditorOpened(UObject* InAsset)
@@ -607,6 +609,21 @@ void FControlRigEditorModule::ReImportFromRigSequence(TArray<FAssetData> InAsset
 
 		ControlRigSequenceConverter::Convert(ControlRigSequence, AnimSequence, SkeletalMesh, bShowDialog);
 	}
+}
+
+bool FControlRigEditorModule::IsTrackVisible(const UMovieSceneTrack* InTrack)
+{
+	if (FControlRigEditMode* ControlRigEditMode = static_cast<FControlRigEditMode*>(GLevelEditorModeTools().GetActiveMode(FControlRigEditMode::ModeName)))
+	{		
+		// If nothing selected, show all nodes
+		if (ControlRigEditMode->GetSelectedNodes().Num() == 0)
+		{
+			return true;
+		}
+
+		return ControlRigEditMode->IsNodeSelected(ControlRigEditMode->GetNodeFromPropertyPath(InTrack->GetTrackName().ToString()));
+	}
+	return true;
 }
 
 IMPLEMENT_MODULE(FControlRigEditorModule, ControlRigEditor)

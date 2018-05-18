@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -45,6 +45,12 @@ public:
 	/** assets that were created for this, so that we can delete them */
 	UPROPERTY(Category=LODActor, VisibleAnywhere)
 	TArray<UObject*> SubObjects;
+
+#if WITH_EDITORONLY_DATA
+	/** Assets which have become stale and might get deleted (depends on undo/redo behaviour) */
+	UPROPERTY(transient)
+	TArray<UObject*> PreviousSubObjects;
+#endif // WITH_EDITORONLY_DATA
 
 	//~ Begin AActor Interface
 #if WITH_EDITOR
@@ -136,6 +142,9 @@ public:
 	virtual void PreEditChange(UProperty* PropertyThatWillChange) override;
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 	virtual void Serialize(FArchive& Ar) override;
+
+	virtual void PreSave(const class ITargetPlatform* TargetPlatform) override;
+	virtual void BeginDestroy() override;
 #endif // WITH_EDITOR	
 	//~ End UObject Interface.		
 protected:

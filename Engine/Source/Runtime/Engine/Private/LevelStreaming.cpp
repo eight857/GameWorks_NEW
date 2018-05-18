@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/LevelStreaming.h"
 #include "ContentStreaming.h"
@@ -33,6 +33,45 @@ DEFINE_LOG_CATEGORY_STATIC(LogLevelStreaming, Log, All);
 #define LOCTEXT_NAMESPACE "World"
 
 int32 ULevelStreamingKismet::UniqueLevelInstanceId = 0;
+
+/**
+ * This helper function is defined here so that it can go into the 4.18.1 hotfix (for UE-51791),
+ * even though it would make more logical sense to have this logic in a member function of UNetDriver.
+ * We're getting away with this because UNetDriver::GuidCache is (unfortunately) public.
+ *
+ * Renames any package entries in the GuidCache with a path matching UnPrefixedName to have a PIE prefix.
+ * This is needed because a client may receive an export for a level package before it's loaded and
+ * its name registered with FSoftObjectPath::AddPIEPackageName. In this case, the entry in the GuidCache
+ * will not be PIE-prefixed, but when the level is actually loaded, its package will be renamed with the
+ * prefix. Any subsequent references to this package won't resolve unless the name is fixed up.
+ *
+ * @param World the world whose NetDriver will be used for the rename
+ * @param UnPrefixedPackageName the path of the package to rename
+ */
+static void NetDriverRenameStreamingLevelPackageForPIE(const UWorld* World, FName UnPrefixedPackageName)
+{
+	if (World == nullptr || World->NetDriver == nullptr || !World->NetDriver->GuidCache.IsValid())
+	{
+		UE_LOG(LogNet, Verbose, TEXT("NetDriverRenameStreamingLevelPackageForPIE, GuidCache is invalid! Package name %s"), *UnPrefixedPackageName.ToString());
+		return;
+	}
+
+	const FWorldContext* const WorldContext = GEngine->GetWorldContextFromWorld(World);
+	if (!WorldContext || WorldContext->WorldType != EWorldType::PIE)
+	{
+		return;
+	}
+
+	for (TPair<FNetworkGUID, FNetGuidCacheObject>& GuidPair : World->NetDriver->GuidCache->ObjectLookup)
+	{
+		// Only look for packages, which will have a static GUID and an invalid OuterGUID.
+		const bool bIsPackage = GuidPair.Key.IsStatic() && !GuidPair.Value.OuterGUID.IsValid();
+		if (bIsPackage && GuidPair.Value.PathName == UnPrefixedPackageName)
+		{
+			GuidPair.Value.PathName = *UWorld::ConvertToPIEPackageName(GuidPair.Value.PathName.ToString(), WorldContext->PIEInstance);
+		}
+	}
+}
 
 FStreamLevelAction::FStreamLevelAction(bool bIsLoading, const FName& InLevelName, bool bIsMakeVisibleAfterLoad, bool bIsShouldBlockOnLoad, const FLatentActionInfo& InLatentInfo, UWorld* World)
 	: bLoading(bIsLoading)
@@ -229,7 +268,7 @@ void ULevelStreaming::PostLoad()
 		const FString DeprecatedPackageNameString = PackageName_DEPRECATED.ToString();
 		if ( FPackageName::IsShortPackageName(PackageName_DEPRECATED) == false )
 		{
-			// Convert the FName reference to a TAssetPtr, then broadcast that we loaded a reference
+			// Convert the FName reference to a TSoftObjectPtr, then broadcast that we loaded a reference
 			// so this reference is gathered by the cooker without having to resave the package.
 			SetWorldAssetByPackageName(PackageName_DEPRECATED);
 			WorldAsset.GetUniqueID().PostLoadPath();
@@ -424,7 +463,6 @@ bool ULevelStreaming::RequestLevel(UWorld* PersistentWorld, bool bAllowLevelLoad
 			UWorld* PIELevelWorld = UWorld::DuplicateWorldForPIE(NonPrefixedLevelName, PersistentWorld);
 			if (PIELevelWorld)
 			{
-				PIELevelWorld->PersistentLevel->bAlreadyMovedActors = true; // As we have duplicated the world, the actors will already have been transformed
 				check(PendingUnloadLevel == NULL);
 				SetLoadedLevel(PIELevelWorld->PersistentLevel);
 
@@ -495,6 +533,13 @@ bool ULevelStreaming::RequestLevel(UWorld* PersistentWorld, bool bAllowLevelLoad
 #endif
 			if (World->PersistentLevel != LoadedLevel)
 			{
+#if WITH_EDITOR
+				if (PIEInstanceID != INDEX_NONE)
+				{
+					World->PersistentLevel->FixupForPIE(PIEInstanceID);
+				}
+#endif
+
 				SetLoadedLevel(World->PersistentLevel);
 				// Broadcast level loaded event to blueprints
 				OnLevelLoaded.Broadcast();
@@ -573,7 +618,16 @@ void ULevelStreaming::AsyncLevelLoadComplete(const FName& InPackageName, UPackag
 					}
 					else
 					{
-						check(PendingUnloadLevel == NULL);
+						check(PendingUnloadLevel == nullptr);
+					
+#if WITH_EDITOR
+						int32 PIEInstanceID = GetOutermost()->PIEInstanceID;
+						if (PIEInstanceID != INDEX_NONE)
+						{
+							World->PersistentLevel->FixupForPIE(PIEInstanceID);
+						}
+#endif
+
 						SetLoadedLevel(Level);
 						// Broadcast level loaded event to blueprints
 						OnLevelLoaded.Broadcast();
@@ -815,7 +869,7 @@ void ULevelStreaming::BroadcastLevelVisibleStatus(UWorld* PersistentWorld, FName
 	}
 }
 
-void ULevelStreaming::SetWorldAsset(const TAssetPtr<UWorld>& NewWorldAsset)
+void ULevelStreaming::SetWorldAsset(const TSoftObjectPtr<UWorld>& NewWorldAsset)
 {
 	WorldAsset = NewWorldAsset;
 	bHasCachedWorldAssetPackageFName = false;
@@ -841,13 +895,15 @@ void ULevelStreaming::SetWorldAssetByPackageName(FName InPackageName)
 {
 	const FString TargetWorldPackageName = InPackageName.ToString();
 	const FString TargetWorldObjectName = FPackageName::GetLongPackageAssetName(TargetWorldPackageName);
-	TAssetPtr<UWorld> NewWorld;
+	TSoftObjectPtr<UWorld> NewWorld;
 	NewWorld = TargetWorldPackageName + TEXT(".") + TargetWorldObjectName;
 	SetWorldAsset(NewWorld);
 }
 
 void ULevelStreaming::RenameForPIE(int32 PIEInstanceID)
 {
+	const UWorld* const World = GetWorld();
+
 	// Apply PIE prefix so this level references
 	if (!WorldAsset.IsNull())
 	{
@@ -859,8 +915,11 @@ void ULevelStreaming::RenameForPIE(int32 PIEInstanceID)
 				UWorld::BuildPIEPackagePrefix(PIEInstanceID));
 			PackageNameToLoad = FName(*NonPrefixedName);
 		}
-		const FString PlayWorldSteamingLevelName = UWorld::ConvertToPIEPackageName(GetWorldAssetPackageName(), PIEInstanceID);
-		SetWorldAssetByPackageName(FName(*PlayWorldSteamingLevelName));
+		FName PlayWorldStreamingPackageName = FName(*UWorld::ConvertToPIEPackageName(GetWorldAssetPackageName(), PIEInstanceID));
+		FSoftObjectPath::AddPIEPackageName(PlayWorldStreamingPackageName);
+		SetWorldAssetByPackageName(PlayWorldStreamingPackageName);
+
+		NetDriverRenameStreamingLevelPackageForPIE(World, PackageNameToLoad);
 	}
 	
 	// Rename LOD levels if any
@@ -871,8 +930,12 @@ void ULevelStreaming::RenameForPIE(int32 PIEInstanceID)
 		{
 			// Store LOD level original package name
 			LODPackageNamesToLoad.Add(LODPackageName); 
-			// Apply PIE prefix to package name
-			LODPackageName = FName(*UWorld::ConvertToPIEPackageName(LODPackageName.ToString(), PIEInstanceID)); 
+			// Apply PIE prefix to package name			
+			const FName NonPrefixedLODPackageName = LODPackageName;
+			LODPackageName = FName(*UWorld::ConvertToPIEPackageName(LODPackageName.ToString(), PIEInstanceID));
+			FSoftObjectPath::AddPIEPackageName(LODPackageName);
+
+			NetDriverRenameStreamingLevelPackageForPIE(World, NonPrefixedLODPackageName);
 		}
 	}
 }
@@ -1059,23 +1122,46 @@ ALevelScriptActor* ULevelStreaming::GetLevelScriptActor()
 	return nullptr;
 }
 
-ULevelStreamingKismet* ULevelStreamingKismet::LoadLevelInstance(UObject* WorldContextObject, const FString& LevelName, const FVector& Location, const FRotator& Rotation, bool& bOutSuccess)
-{ 
-	bOutSuccess = false; 
+ULevelStreamingKismet* ULevelStreamingKismet::LoadLevelInstance(UObject* WorldContextObject, const FString LevelName, const FVector Location, const FRotator Rotation, bool& bOutSuccess)
+{
+	bOutSuccess = false;
 	UWorld* const World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
-	if (!World) 
+	if (!World)
 	{
 		return nullptr;
 	}
-	
+
 	// Check whether requested map exists, this could be very slow if LevelName is a short package name
 	FString LongPackageName;
 	bOutSuccess = FPackageName::SearchForPackageOnDisk(LevelName, &LongPackageName);
-	if (!bOutSuccess) 
+	if (!bOutSuccess)
 	{
 		return nullptr;
 	}
-		 
+
+	return LoadLevelInstance_Internal(World, LongPackageName, Location, Rotation, bOutSuccess);
+}
+
+ULevelStreamingKismet* ULevelStreamingKismet::LoadLevelInstanceBySoftObjectPtr(UObject* WorldContextObject, const TSoftObjectPtr<UWorld> Level, const FVector Location, const FRotator Rotation, bool& bOutSuccess)
+{
+	bOutSuccess = false;
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	// Check whether requested map exists, this could be very slow if LevelName is a short package name
+	if (Level.IsNull())
+	{
+		return nullptr;
+	}
+
+	return LoadLevelInstance_Internal(World, Level.GetLongPackageName(), Location, Rotation, bOutSuccess);
+}
+
+ULevelStreamingKismet* ULevelStreamingKismet::LoadLevelInstance_Internal(UWorld* World, const FString& LongPackageName, const FVector Location, const FRotator Rotation, bool& bOutSuccess)
+{
     // Create Unique Name for sub-level package
 	const FString ShortPackageName = FPackageName::GetShortName(LongPackageName);
 	const FString PackagePath = FPackageName::GetLongPackagePath(LongPackageName);

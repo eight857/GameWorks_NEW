@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	VulkanUniformBuffer.cpp: Vulkan Constant buffer implementation.
@@ -46,7 +46,7 @@ static inline EBufferUsageFlags UniformBufferToBufferUsage(EUniformBufferUsage U
 	case UniformBuffer_SingleDraw:
 		return BUF_Volatile;
 	case UniformBuffer_SingleFrame:
-		return BUF_Dynamic;
+		return BUF_Volatile;
 	case UniformBuffer_MultiFrame:
 		return BUF_Static;
 	}
@@ -70,15 +70,10 @@ FVulkanUniformBuffer::FVulkanUniformBuffer(FVulkanDevice& Device, const FRHIUnif
 		static TConsoleVariableData<int32>* CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.Vulkan.UseRealUBs"));
 		if (CVar && CVar->GetValueOnAnyThread() != 0)
 		{
-			ensure(0);
-			//#todo-rco:...
-#if 0
-			Buffer = AllocateBufferFromPool(Device, InLayout.ConstantBufferSize, Usage);
-
-			void* Data = Buffer->Lock(InLayout.ConstantBufferSize);
+			const bool bRT = IsInRenderingThread();
+			void* Data = Lock(bRT, RLM_WriteOnly, InLayout.ConstantBufferSize, 0);
 			FMemory::Memcpy(Data, Contents, InLayout.ConstantBufferSize);
-			Buffer->Unlock();
-#endif
+			Unlock(bRT);
 		}
 		else
 		{
@@ -116,8 +111,6 @@ FVulkanUniformBuffer::~FVulkanUniformBuffer()
 
 FUniformBufferRHIRef FVulkanDynamicRHI::RHICreateUniformBuffer(const void* Contents, const FRHIUniformBufferLayout& Layout, EUniformBufferUsage Usage)
 {
-	SCOPE_CYCLE_COUNTER(STAT_VulkanCreateUniformBufferTime);
-
 	// Emulation: Creates and returns a CPU-Only buffer.
 	// Parts of the buffer are later on copied for each shader stage into the packed uniform buffer
 	return new FVulkanUniformBuffer(*Device, Layout, Contents, Usage);

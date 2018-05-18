@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CrashDebugHelperIOS.h"
 #include "EngineVersion.h"
@@ -15,7 +15,7 @@
 FString ExtractRelativePath( const TCHAR* BaseName, TCHAR const* FullName )
 {
 	FString FullPath = FString( FullName ).ToLower();
-	FullPath = FullPath.Replace( TEXT( "\\" ), TEXT( "/" ) );
+	FullPath.ReplaceInline( TEXT( "\\" ), TEXT( "/" ) );
 	
 	TArray<FString> Components;
 	int32 Count = FullPath.ParseIntoArray( Components, TEXT( "/" ), true );

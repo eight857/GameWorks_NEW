@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -16,19 +16,19 @@ public class ScreenShotComparisonTools : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[] {
 				"AutomationMessages",
-				"UnrealEdMessages",
-				"Slate",
                 "EditorStyle",
 				"ImageWrapper",
 				"Json",
-				"JsonUtilities"
-			}
-		);
+				"JsonUtilities",
+				"Slate",
+                "UnrealEdMessages",
+            }
+        );
 
 		PrivateIncludePathModuleNames.AddRange(
 			new string[] {
-				"Messaging"
-			}
+                "MessagingCommon",
+            }
 		);
 
 		PrivateIncludePaths.AddRange(

@@ -1,9 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/SWidgetReflectorTreeWidgetItem.h"
 #include "SlateOptMacros.h"
 #include "Widgets/Colors/SColorBlock.h"
 #include "Widgets/Input/SHyperlink.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "SCheckBox.h"
 
 
 /* SMultiColumnTableRow overrides
@@ -12,6 +14,7 @@
 FName SReflectorTreeWidgetItem::NAME_WidgetName(TEXT("WidgetName"));
 FName SReflectorTreeWidgetItem::NAME_WidgetInfo(TEXT("WidgetInfo"));
 FName SReflectorTreeWidgetItem::NAME_Visibility(TEXT("Visibility"));
+FName SReflectorTreeWidgetItem::NAME_Focusable(TEXT("Focusable"));
 FName SReflectorTreeWidgetItem::NAME_Clipping(TEXT("Clipping"));
 FName SReflectorTreeWidgetItem::NAME_ForegroundColor(TEXT("ForegroundColor"));
 FName SReflectorTreeWidgetItem::NAME_Address(TEXT("Address"));
@@ -61,6 +64,19 @@ TSharedRef<SWidget> SReflectorTreeWidgetItem::GenerateWidgetForColumn(const FNam
 			[
 				SNew(STextBlock)
 				.Text(this, &SReflectorTreeWidgetItem::GetVisibilityAsString)
+					.Justification(ETextJustify::Center)
+			];
+	}
+	else if (ColumnName == NAME_Focusable)
+	{
+		return SNew(SBox)
+			.HAlign(HAlign_Center)
+			.VAlign(VAlign_Center)
+			.Padding(FMargin(2.0f, 0.0f))
+			[
+				SNew(SCheckBox)
+				.Style(FCoreStyle::Get(), TEXT("WidgetReflector.FocusableCheck"))
+				.IsChecked(this, &SReflectorTreeWidgetItem::GetFocusableAsCheckBoxState)
 			];
 	}
 	else if ( ColumnName == NAME_Clipping )
@@ -104,7 +120,7 @@ TSharedRef<SWidget> SReflectorTreeWidgetItem::GenerateWidgetForColumn(const FNam
 				SNew(SHyperlink)
 				.ToolTipText(NSLOCTEXT("SWidgetReflector", "ClickToCopy", "Click to copy address."))
 				.Text(Address)
-				.OnNavigate_Lambda([Address](){ FPlatformMisc::ClipboardCopy(*Address.ToString()); })
+				.OnNavigate_Lambda([Address](){ FPlatformApplicationMisc::ClipboardCopy(*Address.ToString()); })
 			];
 	}
 	else

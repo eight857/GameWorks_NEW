@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	RenderCore.h: Render core module implementation.
@@ -13,7 +13,7 @@ IMPLEMENT_MODULE(FDefaultModuleImpl, RenderCore);
 
 DEFINE_LOG_CATEGORY(LogRendererCore);
 
-/*-----------------------------------------------------------------------------
+/*------------------------------------------------------------------------------
 	Stat declarations.
 -----------------------------------------------------------------------------*/
 // Cycle stats are rendered in reverse order from what they are declared in.
@@ -73,10 +73,11 @@ DEFINE_STAT(STAT_LightInteractionMemory);
 // The InitViews stats group contains information on how long visibility culling took and how effective it was
 
 DEFINE_STAT(STAT_GatherShadowPrimitivesTime);
-DEFINE_STAT(STAT_BuildCombinedStaticAndCSMVisibilityState);
+DEFINE_STAT(STAT_BuildCSMVisibilityState);
 DEFINE_STAT(STAT_UpdateIndirectLightingCache);
 DEFINE_STAT(STAT_UpdateIndirectLightingCachePrims);
 DEFINE_STAT(STAT_UpdateIndirectLightingCacheBlocks);
+DEFINE_STAT(STAT_InterpolateVolumetricLightmapOnCPU);
 DEFINE_STAT(STAT_UpdateIndirectLightingCacheTransitions);
 DEFINE_STAT(STAT_UpdateIndirectLightingCacheFinalize);
 DEFINE_STAT(STAT_SortStaticDrawLists);
@@ -171,6 +172,10 @@ DEFINE_STAT(STAT_RenderWholeSceneReflectiveShadowMapsTime);
 
 DEFINE_STAT(STAT_ShadowmapAtlasMemory);
 DEFINE_STAT(STAT_CachedShadowmapMemory);
+
+DEFINE_STAT(STAT_RenderTargetPoolSize);
+DEFINE_STAT(STAT_RenderTargetPoolUsed);
+DEFINE_STAT(STAT_RenderTargetPoolCount);
 
 #define EXPOSE_FORCE_LOD !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 
@@ -272,3 +277,19 @@ RENDERCORE_API int32 GetCVarForceLODShadow()
 
 	return Ret;
 }
+
+RENDERCORE_API bool IsHDREnabled()
+{
+	static const auto CVarHDROutputEnabled = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.HDR.EnableHDROutput"));
+	if (CVarHDROutputEnabled)
+	{
+		if (CVarHDROutputEnabled->GetValueOnAnyThread() != 0)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+

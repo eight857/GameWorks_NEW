@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "EdGraphUtilities.h"
@@ -13,7 +13,6 @@
 #include "UnrealExporter.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
-#include "K2Node_TunnelBoundary.h"
 #include "K2Node_Composite.h"
 
 /////////////////////////////////////////////////////
@@ -26,7 +25,7 @@ public:
 	TSet<UEdGraphNode*> SpawnedNodes;
 	TSet<UEdGraphNode*> SubstituteNodes;
 	const UEdGraph* DestinationGraph;
-	TArray<FName> ExtraNamesInUse;
+	TSet<FName> ExtraNamesInUse;
 	TArray<UEdGraphNode*> NodesToDestroy;
 public:
 	FGraphObjectTextFactory(const UEdGraph* InDestinationGraph)
@@ -250,7 +249,7 @@ UEdGraph* FEdGraphUtilities::CloneGraph(UEdGraph* InSource, UObject* NewOuter, F
 
 				if (bCloningForCompile)
 				{
-					DstNode->EnabledState = SrcNode->IsNodeEnabled() ? ENodeEnabledState::Enabled : ENodeEnabledState::Disabled;
+					DstNode->SetEnabledState(SrcNode->IsNodeEnabled() ? ENodeEnabledState::Enabled : ENodeEnabledState::Disabled);
 				}
 			}
 		}
@@ -260,11 +259,11 @@ UEdGraph* FEdGraphUtilities::CloneGraph(UEdGraph* InSource, UObject* NewOuter, F
 }
 
 // Clones the content from SourceGraph and merges it into MergeTarget; including merging/flattening all of the children from the SourceGraph into MergeTarget
-void FEdGraphUtilities::CloneAndMergeGraphIn(UEdGraph* MergeTarget, UEdGraph* SourceGraph, FCompilerResultsLog& MessageLog, bool bRequireSchemaMatch, bool bInIsCompiling/* = false*/, bool bCreateBoundaryNodes/* = false*/, TArray<UEdGraphNode*>* OutClonedNodes)
+void FEdGraphUtilities::CloneAndMergeGraphIn(UEdGraph* MergeTarget, UEdGraph* SourceGraph, FCompilerResultsLog& MessageLog, bool bRequireSchemaMatch, bool bInIsCompiling/* = false*/, TArray<UEdGraphNode*>* OutClonedNodes)
 {
 	// Clone the graph, then move all of it's children
 	UEdGraph* ClonedGraph = CloneGraph(SourceGraph, NULL, &MessageLog, true);
-	MergeChildrenGraphsIn(ClonedGraph, ClonedGraph, bRequireSchemaMatch, false, &MessageLog, bCreateBoundaryNodes);
+	MergeChildrenGraphsIn(ClonedGraph, ClonedGraph, bRequireSchemaMatch, false, &MessageLog);
 
 	// Duplicate the list of cloned nodes
 	if (OutClonedNodes != NULL)
@@ -281,7 +280,7 @@ void FEdGraphUtilities::CloneAndMergeGraphIn(UEdGraph* MergeTarget, UEdGraph* So
 }
 
 // Moves the contents of all of the children graphs (recursively) into the target graph.  This does not clone, it's destructive to the source
-void FEdGraphUtilities::MergeChildrenGraphsIn(UEdGraph* MergeTarget, UEdGraph* ParentGraph, bool bRequireSchemaMatch, bool bInIsCompiling/* = false*/, FCompilerResultsLog* MessageLog/* = nullptr*/, bool bWantBoundaryNodes/* = false*/)
+void FEdGraphUtilities::MergeChildrenGraphsIn(UEdGraph* MergeTarget, UEdGraph* ParentGraph, bool bRequireSchemaMatch, bool bInIsCompiling/* = false*/, FCompilerResultsLog* MessageLog/* = nullptr*/)
 {
 	// Determine if we are regenerating a blueprint on load
 	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(MergeTarget);
@@ -291,46 +290,6 @@ void FEdGraphUtilities::MergeChildrenGraphsIn(UEdGraph* MergeTarget, UEdGraph* P
 	for (int32 Index = 0; Index < ParentGraph->SubGraphs.Num(); ++Index)
 	{
 		UEdGraph* ChildGraph = ParentGraph->SubGraphs[Index];
-
-		if (ChildGraph && MessageLog)
-		{
-			UK2Node_Composite* CompositeInstance = ChildGraph->GetTypedOuter<UK2Node_Composite>();
-			if (MessageLog->bTreatCompositeGraphsAsTunnels && CompositeInstance != nullptr)
-			{
-				// Locate or register active tunnels for this child graph.
-				TArray<TWeakObjectPtr<UEdGraphNode>> ActiveTunnels;
-				UEdGraphNode* TrueCompositeInstance = MessageLog->GetSourceTunnelNode(CompositeInstance);
-				MessageLog->GetTunnelsActiveForNode(TrueCompositeInstance, ActiveTunnels);
-				if (!ActiveTunnels.Num())
-				{
-					ActiveTunnels.Add(TrueCompositeInstance);
-					MessageLog->RegisterIntermediateTunnelInstance(TrueCompositeInstance, ActiveTunnels);
-				}
-				// Register composite nodes to the source composite instance.
-				for (auto Node : ChildGraph->Nodes)
-				{
-					MessageLog->RegisterIntermediateTunnelNode(Node, TrueCompositeInstance);
-					if (FBlueprintEditorUtils::IsTunnelInstanceNode(Node))
-					{
-						if (Node->IsA<UK2Node_Composite>())
-						{
-							UEdGraphNode* SourceNode = MessageLog->GetSourceTunnelNode(Node);
-							MessageLog->RegisterIntermediateTunnelInstance(SourceNode, ActiveTunnels);
-						}
-						else
-						{
-							// Register child macro instance nodes using the duplicated instance.
-							MessageLog->RegisterIntermediateTunnelInstance(Node, ActiveTunnels);
-						}
-					}
-				}
-			}
-		}
-		if (bWantBoundaryNodes && MessageLog)
-		{
-			// Create boundary nodes around tunnels for debugging/profiling if requested.
-			UK2Node_TunnelBoundary::CreateBoundaryNodesForGraph(ChildGraph, *MessageLog);
-		}
 
 		auto NodeOwner = Cast<const UEdGraphNode>(ChildGraph ? ChildGraph->GetOuter() : nullptr);
 		const bool bNonVirtualGraph = NodeOwner ? NodeOwner->ShouldMergeChildGraphs() : true;
@@ -348,7 +307,7 @@ void FEdGraphUtilities::MergeChildrenGraphsIn(UEdGraph* MergeTarget, UEdGraph* P
 				ChildGraph->MoveNodesToAnotherGraph(MergeTarget, IsAsyncLoading() || bIsLoading, bInIsCompiling);
 			}
 
-			MergeChildrenGraphsIn(MergeTarget, ChildGraph, bRequireSchemaMatch, bInIsCompiling, MessageLog, bWantBoundaryNodes);
+			MergeChildrenGraphsIn(MergeTarget, ChildGraph, bRequireSchemaMatch, bInIsCompiling, MessageLog);
 		}
 	}
 }
@@ -467,7 +426,7 @@ void FEdGraphUtilities::CopyCommonState(UEdGraphNode* OldNode, UEdGraphNode* New
 	NewNode->NodeComment = OldNode->NodeComment;
 }
 
-bool FEdGraphUtilities::IsSetParam(const UFunction* Function, const FString& ParameterName)
+bool FEdGraphUtilities::IsSetParam(const UFunction* Function, const FName ParameterName)
 {
 	if (Function == nullptr)
 	{
@@ -485,20 +444,25 @@ bool FEdGraphUtilities::IsSetParam(const UFunction* Function, const FString& Par
 		RawMetaData.ParseIntoArray(SetParamPinGroups, TEXT(","), true);
 	}
 
-	for (FString& Entry : SetParamPinGroups)
+	if (SetParamPinGroups.Num() > 0)
 	{
 		TArray<FString> GroupEntries;
-		Entry.ParseIntoArray(GroupEntries, TEXT("|"), true);
-		if (GroupEntries.Contains(ParameterName))
+		const FString ParameterNameStr = ParameterName.ToString();
+		for (const FString& Entry : SetParamPinGroups)
 		{
-			return true;
+			GroupEntries.Reset();
+			Entry.ParseIntoArray(GroupEntries, TEXT("|"), true);
+			if (GroupEntries.Contains(ParameterNameStr))
+			{
+				return true;
+			}
 		}
 	}
 
 	return false;
 }
 
-bool FEdGraphUtilities::IsMapParam(const UFunction* Function, const FString& ParameterName)
+bool FEdGraphUtilities::IsMapParam(const UFunction* Function, const FName ParameterName)
 {
 	if (Function == nullptr)
 	{
@@ -513,11 +477,14 @@ bool FEdGraphUtilities::IsMapParam(const UFunction* Function, const FString& Par
 		return false;
 	}
 
-	const auto PipeSeparatedStringContains = [ParameterName](const FString& List)
+	TArray<FString> GroupEntries;
+	const FString ParameterNameStr = ParameterName.ToString();
+
+	const auto PipeSeparatedStringContains = [&GroupEntries, &ParameterNameStr](const FString& List)
 	{
-		TArray<FString> GroupEntries;
+		GroupEntries.Reset();
 		List.ParseIntoArray(GroupEntries, TEXT("|"), true);
-		if (GroupEntries.Contains(ParameterName))
+		if (GroupEntries.Contains(ParameterNameStr))
 		{
 			return true;
 		}
@@ -529,7 +496,7 @@ bool FEdGraphUtilities::IsMapParam(const UFunction* Function, const FString& Par
 		|| PipeSeparatedStringContains(MapKeyParamMetaData);
 }
 
-bool FEdGraphUtilities::IsArrayDependentParam(const UFunction* Function, const FString& ParameterName)
+bool FEdGraphUtilities::IsArrayDependentParam(const UFunction* Function, const FName ParameterName)
 {
 	if (Function == nullptr)
 	{
@@ -545,7 +512,7 @@ bool FEdGraphUtilities::IsArrayDependentParam(const UFunction* Function, const F
 	TArray<FString> TypeDependentPinNames;
 	DependentPinMetaData.ParseIntoArray(TypeDependentPinNames, TEXT(","), true);
 
-	return TypeDependentPinNames.Contains(ParameterName);
+	return TypeDependentPinNames.Contains(ParameterName.ToString());
 }
 
 UEdGraphPin* FEdGraphUtilities::FindArrayParamPin(const UFunction* Function, const UEdGraphNode* Node)
@@ -672,17 +639,15 @@ void FWeakGraphPinPtr::operator=(const class UEdGraphPin* Pin)
 
 UEdGraphPin* FWeakGraphPinPtr::Get()
 {
-	UEdGraphNode* Node = NodeObjectPtr.Get();
-	if(Node != NULL)
+	if (UEdGraphNode* Node = NodeObjectPtr.Get())
 	{
 		// If pin is no longer valid or has a different owner, attempt to fix up the reference
 		UEdGraphPin* Pin = PinReference.Get();
-		if(Pin == NULL || Pin->GetOuter() != Node)
+		if (Pin == nullptr || Pin->GetOuter() != Node)
 		{
-			for(auto PinIter = Node->Pins.CreateConstIterator(); PinIter; ++PinIter)
+			for (UEdGraphPin* TestPin : Node->Pins)
 			{
-				UEdGraphPin* TestPin = *PinIter;
-				if(TestPin->PinName.Equals(PinName))
+				if (TestPin->PinName == PinName)
 				{
 					Pin = TestPin;
 					PinReference = Pin;
@@ -694,5 +659,5 @@ UEdGraphPin* FWeakGraphPinPtr::Get()
 		return Pin;
 	}
 
-	return NULL;
+	return nullptr;
 }

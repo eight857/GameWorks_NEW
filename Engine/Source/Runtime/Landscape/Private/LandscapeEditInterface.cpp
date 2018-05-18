@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 LandscapeEditInterface.cpp: Landscape editing interface
@@ -1985,7 +1985,6 @@ void ULandscapeComponent::ReplaceLayer(ULandscapeLayerInfoObject* FromLayerInfo,
 	const bool bToLayerIsNoWeightBlend = (ToLayerInfo && ToLayerInfo->bNoWeightBlend);
 
 	const bool bRequireNormalization = (bFromLayerIsNoWeightBlend != bToLayerIsNoWeightBlend);
-	checkf(!bRequireNormalization, TEXT("It is not yet supported to replace a layer with another whose bNoWeightBlend setting does not match"))
 
 	if (bMerging)
 	{
@@ -2645,9 +2644,13 @@ void FLandscapeEditDataInterface::SetAlphaData(ULandscapeLayerInfoObject* const 
 			for (int32 LayerIdx = 0; LayerIdx < Component->WeightmapLayerAllocations.Num(); LayerIdx++)
 			{
 				FWeightmapLayerAllocationInfo& Allocation = Component->WeightmapLayerAllocations[LayerIdx];
-				LayerDataPtrs[LayerIdx] = (uint8*)TexDataInfos[Allocation.WeightmapTextureIndex]->GetMipData(0) + ChannelOffsets[Allocation.WeightmapTextureChannel];
-				LayerNoWeightBlends[LayerIdx] = Allocation.LayerInfo->bNoWeightBlend;
-				LayerEditDataAllZero[LayerIdx] = true;
+
+				if (Allocation.LayerInfo != nullptr) // only take into account valid layer
+				{
+					LayerDataPtrs[LayerIdx] = (uint8*)TexDataInfos[Allocation.WeightmapTextureIndex]->GetMipData(0) + ChannelOffsets[Allocation.WeightmapTextureChannel];
+					LayerNoWeightBlends[LayerIdx] = Allocation.LayerInfo->bNoWeightBlend;
+					LayerEditDataAllZero[LayerIdx] = true;
+				}
 			}
 
 			// Find the texture data corresponding to this vertex

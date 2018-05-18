@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Evaluation/MovieSceneColorTemplate.h"
 #include "Sections/MovieSceneColorSection.h"
@@ -6,6 +6,7 @@
 #include "UObject/UnrealType.h"
 #include "MovieSceneCommonHelpers.h"
 #include "Components/LightComponent.h"
+#include "Components/SkyLightComponent.h"
 #include "Styling/SlateColor.h"
 #include "MovieSceneEvaluation.h"
 #include "IMovieScenePlayer.h"
@@ -104,13 +105,23 @@ private:
 			// and whether or not the linear color needs to be converted back to sRGB.  All other other set function cases should
 			// follow the sequencer convention of having a single parameter of the correct type, which in this case is an FColor
 			// already in sRGB format.
-			LightComponent->SetLightColor( ColorValue, bConvertBackToSRgb );
+			if (Bindings.GetPropertyName() == GET_MEMBER_NAME_CHECKED(ULightComponent, LightColor))
+			{
+				LightComponent->SetLightColor( ColorValue, bConvertBackToSRgb );
+				return;
+			}
 		}
-		else
+		else if (USkyLightComponent* SkyLightComponent = Cast<USkyLightComponent>(&Object))
 		{
-			FColor SRgbColorValue = ColorValue.ToFColor( bConvertBackToSRgb );
-			Bindings.CallFunction<FColor>( Object, SRgbColorValue );
+			if (Bindings.GetPropertyName() == GET_MEMBER_NAME_CHECKED(USkyLightComponent, LightColor))
+			{
+				SkyLightComponent->SetLightColor( ColorValue );
+				return;
+			}
 		}
+
+		FColor SRgbColorValue = ColorValue.ToFColor( bConvertBackToSRgb );
+		Bindings.CallFunction<FColor>( Object, SRgbColorValue );
 	}
 
 	void ApplySlateColor(UObject& Object, FTrackInstancePropertyBindings& Bindings)

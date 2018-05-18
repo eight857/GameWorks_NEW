@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Commandlets/ImportLocalizedDialogueCommandlet.h"
 #include "Modules/ModuleManager.h"
@@ -145,8 +145,8 @@ int32 UImportLocalizedDialogueCommandlet::Main(const FString& Params)
 		}
 	}
 	
-	const FString RootAssetPath = FApp::HasGameName() ? TEXT("/Game") : TEXT("/Engine");
-	const FString RootContentDir = FApp::HasGameName() ? FPaths::GameContentDir() : FPaths::EngineContentDir();
+	const FString RootAssetPath = FApp::HasProjectName() ? TEXT("/Game") : TEXT("/Engine");
+	const FString RootContentDir = FApp::HasProjectName() ? FPaths::ProjectContentDir() : FPaths::EngineContentDir();
 
 	// Prepare the asset registry
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));

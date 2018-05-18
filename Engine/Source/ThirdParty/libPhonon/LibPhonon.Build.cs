@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -8,7 +8,7 @@ public class libPhonon : ModuleRules
     {
         Type = ModuleType.External;
 
-        string LibraryPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "libPhonon/phonon_api/";
+        string LibraryPath = Target.UEThirdPartySourceDirectory + "libPhonon/phonon_api/";
         string BinaryPath = "$(EngineDir)/Binaries/ThirdParty/Phonon/";
 
         PublicIncludePaths.Add(LibraryPath + "include");
@@ -24,7 +24,7 @@ public class libPhonon : ModuleRules
 
             BinaryPath += "Win64/";
 
-            RuntimeDependencies.Add(new RuntimeDependency(BinaryPath + DllName));
+            RuntimeDependencies.Add(BinaryPath + DllName);
         }
         else if (Target.Platform == UnrealTargetPlatform.Win32)
         {
@@ -37,7 +37,12 @@ public class libPhonon : ModuleRules
 
             BinaryPath += "Win32/";
 
-            RuntimeDependencies.Add(new RuntimeDependency(BinaryPath + DllName));
+            RuntimeDependencies.Add(BinaryPath + DllName);
+        }
+        else if (Target.Platform == UnrealTargetPlatform.Android)
+        {
+            PublicLibraryPaths.Add(LibraryPath + "/lib/Android");
+            PublicAdditionalLibraries.Add("phonon");
         }
     }
 }

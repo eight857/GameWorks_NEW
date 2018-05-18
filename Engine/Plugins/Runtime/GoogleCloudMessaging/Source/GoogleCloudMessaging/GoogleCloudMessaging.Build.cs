@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System.IO;
 
@@ -21,15 +21,15 @@ namespace UnrealBuildTool.Rules
 					"Launch"
 				});
 
-			if (UEBuildConfiguration.bBuildEditor)
+			if (Target.bBuildEditor)
 			{
 				PrivateDependencyModuleNames.Add("UnrealEd");
 			}
 
 			if (Target.Platform == UnrealTargetPlatform.Android)
 			{
-				string PluginPath = Utils.MakePathRelativeTo(ModuleDirectory, BuildConfiguration.RelativeEnginePath);
-				AdditionalPropertiesForReceipt.Add(new ReceiptProperty("AndroidPlugin", Path.Combine(PluginPath, "GoogleCloudMessaging_UPL.xml")));
+				string PluginPath = Utils.MakePathRelativeTo(ModuleDirectory, Target.RelativeEnginePath);
+				AdditionalPropertiesForReceipt.Add("AndroidPlugin", Path.Combine(PluginPath, "GoogleCloudMessaging_UPL.xml"));
 			}
 
 			PublicIncludePathModuleNames.Add("Launch");

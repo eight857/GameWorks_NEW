@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MetalCommon.usf: Common Metal shader code
 =============================================================================*/
 
 // Update this GUID to improve shader recompilation for Metal only shaders
-// GUID = {36782442-E538-4A21-BEAA-7184F683FE5D}
+// GUID = {0C91821D-7081-477F-A434-945D00DABC73}
   
 #pragma once
 
@@ -15,6 +15,6 @@
 #endif
 #endif
 
-// Cross compiler doesn't support structured buffers.  This replacement works if it was using a builtin type.
-#define RWStructuredBuffer RWBuffer
-#define StructuredBuffer Buffer
+// Abuse the GLSL-style "invariant" keyword that hlslcc exposes to modify Buffer<>/RWBuffer<> declarations to assume that they input type is always the same as that declared in the shader
+// The MetalRHI runtime will then assert when it isn't. For Metal 1.1 and below all Buffer<>/RWBuffer<> objects will *assume* this type matches as there is no way to gracefully handle it there.
+#define STRONG_TYPE invariant

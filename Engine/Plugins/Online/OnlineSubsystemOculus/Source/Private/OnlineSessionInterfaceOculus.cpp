@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSessionInterfaceOculus.h"
 #include "OnlineSubsystemOculusPrivate.h"
@@ -57,13 +57,25 @@ FOnlineSessionOculus::~FOnlineSessionOculus()
 	// Make sure the player leaves all the sessions they were in before destroying this
 	for (auto It = Sessions.CreateConstIterator(); It; ++It)
 	{
-		auto Session = It.Value();
-		auto RoomId = GetOvrIDFromSession(*Session);
-		if (RoomId != 0)
+		TSharedPtr<FNamedOnlineSession> Session = It.Value();
+		if (Session.IsValid())
 		{
-			ovr_Room_Leave(RoomId);
+			ovrID RoomId = GetOvrIDFromSession(*Session);
+			if (RoomId != 0)
+			{
+				ovr_Room_Leave(RoomId);
+			}
+
+			if (!Session.IsUnique())
+			{
+				UE_LOG_ONLINE(Warning, TEXT("Session pointer (room %llu) not unique during cleanup!"), RoomId);
+			}
+			Session->SessionState = EOnlineSessionState::Destroying;
 		}
-		Session->SessionState = EOnlineSessionState::Destroying;
+		else
+		{
+			UE_LOG_ONLINE(Warning, TEXT("Invalid session during shutdown!"));
+		}
 	}
 	Sessions.Empty();
 };
@@ -544,7 +556,7 @@ bool FOnlineSessionOculus::DestroySession(FName SessionName, const FOnDestroySes
 
 	OculusSubsystem.AddRequestDelegate(
 		ovr_Room_Leave(RoomId),
-		FOculusMessageOnCompleteDelegate::CreateLambda([this, SessionName, Session](ovrMessageHandle Message, bool bIsError)
+		FOculusMessageOnCompleteDelegate::CreateLambda([this, SessionName, Session, CompletionDelegate](ovrMessageHandle Message, bool bIsError)
 	{
 		// Failed to leave the room
 		if (bIsError)
@@ -552,11 +564,13 @@ bool FOnlineSessionOculus::DestroySession(FName SessionName, const FOnDestroySes
 			auto Error = ovr_Message_GetError(Message);
 			auto ErrorMessage = ovr_Error_GetMessage(Error);
 			UE_LOG_ONLINE(Error, TEXT("%s"), *FString(ErrorMessage));
+			CompletionDelegate.ExecuteIfBound(SessionName, false);
 			TriggerOnDestroySessionCompleteDelegates(SessionName, false);
 			return;
 		}
 
 		RemoveNamedSession(SessionName);
+		CompletionDelegate.ExecuteIfBound(SessionName, true);
 		TriggerOnDestroySessionCompleteDelegates(SessionName, true);
 	}));
 
@@ -565,7 +579,21 @@ bool FOnlineSessionOculus::DestroySession(FName SessionName, const FOnDestroySes
 
 bool FOnlineSessionOculus::IsPlayerInSession(FName SessionName, const FUniqueNetId& UniqueId)
 {
-	/* TODO: #10920536 */
+	auto Session = GetNamedSession(SessionName);
+
+	if (Session == nullptr) 
+	{
+		return false;
+	}
+
+	for (auto Player : Session->RegisteredPlayers)
+	{
+		if (*Player == UniqueId)
+		{
+			return true;
+		}
+	}
+
 	return false;
 }
 
@@ -625,13 +653,6 @@ bool FOnlineSessionOculus::StartMatchmaking(const TArray< TSharedRef<const FUniq
 
 bool FOnlineSessionOculus::CancelMatchmaking(int32 SearchingPlayerNum, FName SessionName)
 {
-	// If we are not searching for those matchmaking session to begin with, return as if we cancelled them
-	if (!(InProgressMatchmakingSearch.IsValid() && SessionName == InProgressMatchmakingSearchName))
-	{
-		TriggerOnCancelMatchmakingCompleteDelegates(SessionName, true);
-		return true;
-	}
-
 	OculusSubsystem.AddRequestDelegate(
 		ovr_Matchmaking_Cancel2(),
 		FOculusMessageOnCompleteDelegate::CreateLambda([this, SessionName](ovrMessageHandle Message, bool bIsError)
@@ -641,8 +662,13 @@ bool FOnlineSessionOculus::CancelMatchmaking(int32 SearchingPlayerNum, FName Ses
 			TriggerOnCancelMatchmakingCompleteDelegates(SessionName, false);
 			return;
 		}
-		InProgressMatchmakingSearch->SearchState = EOnlineAsyncTaskState::Failed;
-		InProgressMatchmakingSearch = nullptr;
+
+		// Update the in progress matchmaking search if there is one
+		if (InProgressMatchmakingSearch.IsValid() && SessionName == InProgressMatchmakingSearchName)
+		{
+			InProgressMatchmakingSearch->SearchState = EOnlineAsyncTaskState::Failed;
+			InProgressMatchmakingSearch = nullptr;
+		}
 		TriggerOnCancelMatchmakingCompleteDelegates(SessionName, true);
 	}));
 
@@ -752,7 +778,14 @@ bool FOnlineSessionOculus::FindModeratedRoomSessions(const TSharedRef<FOnlineSes
 
 bool FOnlineSessionOculus::FindMatchmakingSessions(const FString Pool, const TSharedRef<FOnlineSessionSearch>& SearchSettings)
 {
+	if (InProgressMatchmakingSearch.IsValid())
+	{
+		InProgressMatchmakingSearch.Reset();
+	}
+
 	SearchSettings->SearchState = EOnlineAsyncTaskState::InProgress;
+	InProgressMatchmakingSearch = SearchSettings;
+
 	OculusSubsystem.AddRequestDelegate(
 		ovr_Matchmaking_Browse2(TCHAR_TO_UTF8(*Pool), nullptr),
 		FOculusMessageOnCompleteDelegate::CreateLambda([this, SearchSettings](ovrMessageHandle Message, bool bIsError)
@@ -971,8 +1004,8 @@ bool FOnlineSessionOculus::FindFriendSession(int32 LocalUserNum, const FUniqueNe
 			TriggerOnFindFriendSessionCompleteDelegates(LocalUserNum, false, SearchResult);
 			return;
 		}
-    
-    // UE4 specific setting.  Sessions with different build unique ids shouldn't be able to see each other
+	
+	// UE4 specific setting.  Sessions with different build unique ids shouldn't be able to see each other
 		// because the builds are not compatible
 		int32 BuildUniqueId = GetBuildUniqueId();
 

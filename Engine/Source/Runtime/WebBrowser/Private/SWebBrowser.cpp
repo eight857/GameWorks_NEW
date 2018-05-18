@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SWebBrowser.h"
 #include "Widgets/Text/STextBlock.h"
@@ -365,6 +365,22 @@ void SWebBrowser::UnbindAdapter(const TSharedRef<IWebBrowserAdapter>& Adapter)
 	if (BrowserView.IsValid())
 	{
 		BrowserView->UnbindAdapter(Adapter);
+	}
+}
+
+void SWebBrowser::BindInputMethodSystem(ITextInputMethodSystem* TextInputMethodSystem)
+{
+	if (BrowserView.IsValid())
+	{
+		BrowserView->BindInputMethodSystem(TextInputMethodSystem);
+	}
+}
+
+void SWebBrowser::UnbindInputMethodSystem()
+{
+	if (BrowserView.IsValid())
+	{
+		BrowserView->UnbindInputMethodSystem();
 	}
 }
 

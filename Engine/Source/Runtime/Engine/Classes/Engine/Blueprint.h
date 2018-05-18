@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,7 +11,7 @@
 #include "Engine/EngineTypes.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Engine/BlueprintCore.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "Blueprint.generated.h"
 
 class FCompilerResultsLog;
@@ -104,7 +104,7 @@ struct FCompilerNativizationOptions
 
 	// Individually excluded assets
 	UPROPERTY()
-	TSet<FStringAssetReference> ExcludedAssets;
+	TSet<FSoftObjectPath> ExcludedAssets;
 
 	// Excluded folders. It excludes only BPGCs, enums and structures are still converted.
 	UPROPERTY()
@@ -146,9 +146,6 @@ public:
 	/** Whether or not this compile is for a duplicated blueprint */
 	bool bIsDuplicationInstigated;
 
-	/** Whether or not this compile should emit instrumentation events */
-	bool bAddInstrumentation;
-
 	/** Whether or not to reinstance and stub if the blueprint fails to compile */
 	bool bReinstanceAndStubOnFailure;
 
@@ -168,11 +165,6 @@ public:
 			|| (CompileType == EKismetCompileType::Cpp);
 	}
 
-	bool IsInstrumentationActive() const
-	{
-		return bAddInstrumentation && DoesRequireBytecodeGeneration();
-	}
-
 	/** Whether or not this compile type should operate on the generated class of the blueprint, as opposed to just the skeleton */
 	bool IsGeneratedClassCompileType() const
 	{
@@ -184,7 +176,6 @@ public:
 		, bSaveIntermediateProducts(false)
 		, bRegenerateSkelton(true)
 		, bIsDuplicationInstigated(false)
-		, bAddInstrumentation(false)
 		, bReinstanceAndStubOnFailure(true)
 	{
 	};
@@ -397,6 +388,10 @@ class ENGINE_API UBlueprint : public UBlueprintCore
 	/**whether or not you want to continuously rerun the construction script for an actor as you drag it in the editor, or only when the drag operation is complete*/
 	UPROPERTY(EditAnywhere, Category=BlueprintOptions)
 	uint32 bRunConstructionScriptOnDrag : 1;
+
+	/**whether or not you want to continuously rerun the construction script for an actor in sequencer*/
+	UPROPERTY(EditAnywhere, Category=BlueprintOptions)
+	uint32 bRunConstructionScriptInSequencer : 1;
 
 	/** Whether or not this blueprint's class is a const class or not.  Should set CLASS_Const in the KismetCompiler. */
 	UPROPERTY(EditAnywhere, Category=ClassOptions, AdvancedDisplay)
@@ -748,7 +743,14 @@ public:
 	/** Collect blueprints that depend on this blueprint. */
 	virtual void GatherDependencies(TSet<TWeakObjectPtr<UBlueprint>>& InDependencies) const;
 
+	/** Checks all nodes in all graphs to see if they should be replaced by other nodes */
 	virtual void ReplaceDeprecatedNodes();
+
+	/** Clears out any editor data regarding a blueprint class, this can be called when you want to unload a blueprint */
+	virtual void ClearEditorReferences();
+
+	/** Returns Valid if this object has data validation rules set up for it and the data for this object is valid. Returns Invalid if it does not pass the rules. Returns NotValidated if no rules are set for this object. */
+	virtual EDataValidationResult IsDataValid(TArray<FText>& ValidationErrors) override;
 
 #endif	//#if WITH_EDITOR
 
@@ -880,7 +882,14 @@ public:
 	void Message_Warn(const FString& MessageToLog);
 	void Message_Error(const FString& MessageToLog);
 #endif
-
+	
+#if WITH_EDITORONLY_DATA
+protected:
+	/** 
+	 * Blueprint can choose to load specific modules for compilation. Children are expected to call base implementation.
+	 */
+	virtual void LoadModulesRequiredForCompilation();
+#endif
 };
 
 

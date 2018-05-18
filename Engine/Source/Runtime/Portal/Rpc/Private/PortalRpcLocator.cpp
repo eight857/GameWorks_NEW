@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PortalRpcLocator.h"
 #include "HAL/PlatformProcess.h"
@@ -6,8 +6,8 @@
 #include "Containers/Ticker.h"
 #include "Misc/EngineVersion.h"
 #include "IMessageContext.h"
-#include "Helpers/MessageEndpoint.h"
-#include "Helpers/MessageEndpointBuilder.h"
+#include "MessageEndpoint.h"
+#include "MessageEndpointBuilder.h"
 #include "PortalRpcDefines.h"
 #include "IPortalRpcLocator.h"
 #include "PortalRpcMessages.h"

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EngineSessionManager.h"
 #include "Misc/Guid.h"
@@ -29,10 +29,10 @@ DEFINE_LOG_CATEGORY(LogEngineSessionManager);
 
 namespace SessionManagerDefs
 {
-	static const FTimespan SessionRecordExpiration(30, 0, 0, 0);	// 30 days
-	static const FTimespan SessionRecordTimeout(0, 3, 0);			// 3 minutes
-	static const FTimespan GlobalLockWaitTimeout(0, 0, 0, 0, 500);	// 1/2 second
-	static const int HeartbeatPeriodSeconds(60);				// 1 minute
+	static const FTimespan SessionRecordExpiration = FTimespan::FromDays(30.0);
+	static const FTimespan SessionRecordTimeout = FTimespan::FromMinutes(3.0);
+	static const FTimespan GlobalLockWaitTimeout = FTimespan::FromSeconds(0.5);
+	static const int HeartbeatPeriodSeconds(60);
 	static const FString DefaultUserActivity(TEXT("Unknown"));
 	static const FString StoreId(TEXT("Epic Games"));
 	static const FString RunningSessionToken(TEXT("Running"));
@@ -425,6 +425,7 @@ void FEngineSessionManager::DeleteStoredRecord(const FSessionRecord& Record)
  * @EventParam CurrentUserActivity - If one was set when the session abnormally terminated, this is the activity taken from the FUserActivityTracking API.
  * @EventParam IsVanilla - Value from the engine's IsVanillaProduct() method. Basically if this is a Epic-distributed Editor with zero third party plugins or game code modules.
  * @EventParam GPUCrash - A GPU Hang or Crash was detected before the final assert, fatal log, or other exit.
+ 
  *
  * @TODO: Debugger should be a completely separate flag, since it's orthogonal to whether we detect a crash or shutdown.
  *

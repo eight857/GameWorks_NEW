@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/Paths.h"
@@ -19,9 +19,6 @@
 	#include "PhysicsEngine/PhysXSupport.h"
 #endif
 
-#if WITH_BOX2D
-	#include "../PhysicsEngine2D/Box2DIntegration.h"
-#endif
 #include "PhysicsEngine/PhysicsSettings.h"
 #include "CoreDelegates.h"
 
@@ -29,10 +26,6 @@
 	#define APEX_STATICALLY_LINKED	0
 #endif
 
-#if WITH_FLEX
-// fwd declare error func
-void FlexErrorFunc(NvFlexErrorSeverity level, const char* msg, const char* file, int line);
-#endif
 
 FPhysCommandHandler * GPhysCommandHandler = NULL;
 FDelegateHandle GPreGarbageCollectDelegateHandle;
@@ -41,6 +34,7 @@ FPhysicsDelegates::FOnUpdatePhysXMaterial FPhysicsDelegates::OnUpdatePhysXMateri
 FPhysicsDelegates::FOnPhysicsAssetChanged FPhysicsDelegates::OnPhysicsAssetChanged;
 FPhysicsDelegates::FOnPhysSceneInit FPhysicsDelegates::OnPhysSceneInit;
 FPhysicsDelegates::FOnPhysSceneTerm FPhysicsDelegates::OnPhysSceneTerm;
+FPhysicsDelegates::FOnPhysDispatchNotifications FPhysicsDelegates::OnPhysDispatchNotifications;
 
 // CVars
 TAutoConsoleVariable<float> CVarToleranceScaleLength(
@@ -55,30 +49,13 @@ TAutoConsoleVariable<float> CVarToleranceScaleSpeed(
 	TEXT("The typical magnitude of velocities of objects in simulation. Default: 1000"),
 	ECVF_ReadOnly);
 
-static TAutoConsoleVariable<int32> CVarAPEXMaxDestructibleDynamicChunkIslandCount(
-	TEXT("p.APEXMaxDestructibleDynamicChunkIslandCount"),
-	2000,
-	TEXT("APEX Max Destructilbe Dynamic Chunk Island Count."),
-	ECVF_Default);
-
-
-static TAutoConsoleVariable<int32> CVarAPEXMaxDestructibleDynamicChunkCount(
-	TEXT("p.APEXMaxDestructibleDynamicChunkCount"),
-	2000,
-	TEXT("APEX Max Destructible dynamic Chunk Count."),
-	ECVF_Default);
-
-static TAutoConsoleVariable<int32> CVarAPEXSortDynamicChunksByBenefit(
-	TEXT("p.bAPEXSortDynamicChunksByBenefit"),
-	1,
-	TEXT("True if APEX should sort dynamic chunks by benefit."),
-	ECVF_Default);
-
 static TAutoConsoleVariable<int32> CVarUseUnifiedHeightfield(
 	TEXT("p.bUseUnifiedHeightfield"),
 	1,
 	TEXT("Whether to use the PhysX unified heightfield. This feature of PhysX makes landscape collision consistent with triangle meshes but the thickness parameter is not supported for unified heightfields. 1 enables and 0 disables. Default: 1"),
 	ECVF_ReadOnly);
+
+
 
 //////////////////////////////////////////////////////////////////////////
 // UWORLD
@@ -219,6 +196,7 @@ void FEndPhysicsTickFunction::ExecuteTick(float DeltaTime, enum ELevelTick TickT
 			STAT_FSimpleDelegateGraphTask_FinishPhysicsSim,
 			STATGROUP_TaskGraphTasks);
 
+		MyCompletionGraphEvent->SetGatherThreadForDontCompleteUntil(ENamedThreads::GameThread);
 		MyCompletionGraphEvent->DontCompleteUntil(
 			FSimpleDelegateGraphTask::CreateAndDispatchWhenReady(
 				FSimpleDelegateGraphTask::FDelegate::CreateUObject(Target, &UWorld::FinishPhysicsSim),
@@ -232,6 +210,7 @@ void FEndPhysicsTickFunction::ExecuteTick(float DeltaTime, enum ELevelTick TickT
 		Target->FinishPhysicsSim();
 	}
 
+#if WITH_PHYSX
 #if PHYSX_MEMORY_VALIDATION
 	static int32 Frequency = 0;
 	if (Frequency++ > 10)
@@ -240,6 +219,7 @@ void FEndPhysicsTickFunction::ExecuteTick(float DeltaTime, enum ELevelTick TickT
 		GPhysXAllocator->ValidateHeaders();
 	}
 #endif
+#endif // WITH_PHYSX 
 }
 
 FString FEndPhysicsTickFunction::DiagnosticMessage()
@@ -265,10 +245,6 @@ void PvdConnect(FString Host, bool bVisualization);
 //////// GAME-LEVEL RIGID BODY PHYSICS STUFF ///////
 void InitGamePhys()
 {
-#if WITH_BOX2D
-	FPhysicsIntegration2D::InitializePhysics();
-#endif
-
 #if WITH_PHYSX
 	// Do nothing if SDK already exists
 	if(GPhysXFoundation != NULL)
@@ -277,7 +253,7 @@ void InitGamePhys()
 	}
 
 	// Make sure 
-	LoadPhysXModules(/*bLoadCookingModule=*/ false);
+	PhysDLLHelper::LoadPhysXModules(/*bLoadCookingModule=*/ false);
 
 	// Create Foundation
 	GPhysXAllocator = new FPhysXAllocator();
@@ -307,7 +283,7 @@ void InitGamePhys()
 
 	GPhysCommandHandler = new FPhysCommandHandler();
 
-	GPreGarbageCollectDelegateHandle = FCoreUObjectDelegates::PreGarbageCollect.AddRaw(GPhysCommandHandler, &FPhysCommandHandler::Flush);
+	GPreGarbageCollectDelegateHandle = FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddRaw(GPhysCommandHandler, &FPhysCommandHandler::Flush);
 
 	// Init Extensions
 	PxInitExtensions(*GPhysXSDK, GPhysXVisualDebugger);
@@ -349,7 +325,7 @@ void InitGamePhys()
 	ApexDesc.resourceCallback		= &GApexResourceCallback;	// The resource callback is how APEX asks the application to find assets when it needs them
 
 #if PLATFORM_MAC
-	FString DylibFolder = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX/");
+	FString DylibFolder = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX3/");
 	ANSICHAR* DLLLoadPath = (ANSICHAR*)FMemory::Malloc(DylibFolder.Len() + 1);
 	FCStringAnsi::Strcpy(DLLLoadPath, DylibFolder.Len() + 1, TCHAR_TO_UTF8(*DylibFolder));
 	ApexDesc.dllLoadPath = DLLLoadPath;
@@ -373,9 +349,6 @@ void InitGamePhys()
 
 
 #if APEX_STATICALLY_LINKED
-	// We need to instantiate the module if we have statically linked them
-	// Otherwise all createModule functions will fail
-	instantiateModuleDestructible();
 
 #if WITH_APEX_CLOTHING
 	instantiateModuleClothing();
@@ -393,34 +366,12 @@ void InitGamePhys()
 	check(GApexModuleLegacy);
 #endif // WITH_APEX_LEGACY
 
-	// Load APEX Destruction module
-	GApexModuleDestructible = static_cast<apex::ModuleDestructible*>(GApexSDK->createModule("Destructible"));
-	check(GApexModuleDestructible);
-
-	// Set Destructible module parameters
-	NvParameterized::Interface* ModuleParams = GApexModuleDestructible->getDefaultModuleDesc();
-	// ModuleParams contains the default module descriptor, which may be modified here before calling the module init function
-	GApexModuleDestructible->init(*ModuleParams);
-	// Set chunk report for fracture effect callbacks
-	GApexModuleDestructible->setChunkReport(&GApexChunkReport);
-
-	
-	GApexModuleDestructible->setMaxDynamicChunkIslandCount((physx::PxU32)FMath::Max(CVarAPEXMaxDestructibleDynamicChunkIslandCount.GetValueOnGameThread(), 0));
-	GApexModuleDestructible->setMaxChunkCount((physx::PxU32)FMath::Max(CVarAPEXMaxDestructibleDynamicChunkCount.GetValueOnGameThread(), 0));
-	GApexModuleDestructible->setSortByBenefit(CVarAPEXSortDynamicChunksByBenefit.GetValueOnGameThread() != 0);
-
-	GApexModuleDestructible->scheduleChunkStateEventCallback(apex::DestructibleCallbackSchedule::FetchResults);
-
-	// APEX 1.3 to preserve 1.2 behavior
-	GApexModuleDestructible->setUseLegacyDamageRadiusSpread(true); 
-	GApexModuleDestructible->setUseLegacyChunkBoundsTesting(true);
-
 #if WITH_APEX_CLOTHING
 	// Load APEX Clothing module
 	GApexModuleClothing = static_cast<apex::ModuleClothing*>(GApexSDK->createModule("Clothing"));
 	check(GApexModuleClothing);
 	// Set Clothing module parameters
-	ModuleParams = GApexModuleClothing->getDefaultModuleDesc();
+	NvParameterized::Interface* ModuleParams = GApexModuleClothing->getDefaultModuleDesc();
 
 	// Can be tuned for switching between more memory and more spikes.
 	NvParameterized::setParamU32(*ModuleParams, "maxUnusedPhysXResources", 5);
@@ -444,65 +395,8 @@ void InitGamePhys()
 #endif // WITH_PHYSX
 }
 
-void InitGamePhysPostRHI()
-{
-#if WITH_FLEX
-
-	if (!GUsingNullRHI)
-	{
-
-		NvFlexInitDesc desc;
-		memset(&desc, 0, sizeof(NvFlexInitDesc));
-		
-#if WITH_FLEX_CUDA
-		// query the CUDA device index from the NVIDIA control panel
-		int SuggestedOrdinal = NvFlexDeviceGetSuggestedOrdinal();
-
-		// create an optimized CUDA context for Flex, the context will
-		// be made current on the calling thread, note that if using
-		// GPU PhysX then it is recommended to skip this step and use
-		// the same CUDA context as PhysX
-		NvFlexDeviceCreateCudaContext(SuggestedOrdinal);
-
-		desc.computeType = eNvFlexCUDA;
-#else
-
-		static const bool bD3D12 = FParse::Param(FCommandLine::Get(), TEXT("d3d12")) || FParse::Param(FCommandLine::Get(), TEXT("dx12"));
-		desc.computeType = bD3D12 ? eNvFlexD3D12 : eNvFlexD3D11;
-
-#endif
-
-		GFlexLib = NvFlexInit(NV_FLEX_VERSION, FlexErrorFunc, &desc);
-		
-		if (GFlexLib)
-		{
-			UE_LOG(LogInit, Display, TEXT("Initialized Flex with GPU: %s"), ANSI_TO_TCHAR(NvFlexGetDeviceName(GFlexLib)));
-		}
-	}
-
-	if (GFlexLib != NULL)
-	{
-		GFlexIsInitialized = true;
-	}
-#endif // WITH_FLEX
-}
-
 void TermGamePhys()
 {
-
-#if WITH_FLEX
-	if (GFlexIsInitialized)
-	{
-		NvFlexShutdown(GFlexLib);
-
-		GFlexIsInitialized = false;
-	}		
-#endif // WITH_FLEX
-
-#if WITH_BOX2D
-	FPhysicsIntegration2D::ShutdownPhysics();
-#endif
-
 #if WITH_PHYSX
 	FPhysxSharedData::Terminate();
 
@@ -515,7 +409,7 @@ void TermGamePhys()
 	if (GPhysCommandHandler != NULL)
 	{
 		GPhysCommandHandler->Flush();	//finish off any remaining commands
-		FCoreUObjectDelegates::PreGarbageCollect.Remove(GPreGarbageCollectDelegateHandle);
+		FCoreUObjectDelegates::GetPreGarbageCollectDelegate().Remove(GPreGarbageCollectDelegateHandle);
 		delete GPhysCommandHandler;
 		GPhysCommandHandler = NULL;
 	}
@@ -573,8 +467,8 @@ void TermGamePhys()
 	// @todo delete FPhysXAllocator
 	// @todo delete FPhysXOutputStream
 
-	UnloadPhysXModules();
-#endif
+	PhysDLLHelper::UnloadPhysXModules();
+#endif // WITH_PHYSX
 }
 
 /** 

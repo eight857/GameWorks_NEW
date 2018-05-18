@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once 
 
@@ -12,6 +12,7 @@
 #include "Sound/AudioVolume.h"
 #include "Sound/SoundConcurrency.h"
 #include "Sound/SoundMix.h"
+#include "Sound/SoundSourceBus.h"
 #include "Sound/AudioSettings.h"
 #include "AudioDeviceManager.h"
 #include "EngineGlobals.h"
@@ -26,6 +27,7 @@ class USoundBase;
 class USoundEffectSourcePreset;
 class USoundEffectSubmixPreset;
 class USoundSubmix;
+class USoundSourceBus;
 class USoundWave;
 struct FActiveSound;
 struct FAudioQualitySettings;
@@ -50,7 +52,6 @@ class USoundMix;
 class FAudioEffectsManager;
 class FViewportClient;
 class ICompressedAudioInfo;
-class IAudioPlugin;
 class IAudioSpatialization;
 class UReverbEffect;
 class USoundConcurrency;
@@ -415,6 +416,7 @@ class IDeviceChangedListener
 {
 public:
 	virtual void OnDeviceRemoved(FString DeviceID) = 0;
+	virtual void OnDefaultDeviceChanged() = 0;
 };
 
 class ENGINE_API FAudioDevice : public FExec
@@ -486,6 +488,8 @@ private:
 	*/
 	void GetSoundClassInfo(TMap<FName, FAudioClassInfo>& AudioClassInfos);
 #endif
+
+	void UpdateAudioPluginSettingsObjectCache();
 
 public:
 
@@ -612,6 +616,7 @@ public:
 
 	/**
 	 * Sets the details about the listener
+	 * @param	World				The world the listener is being set on.
 	 * @param   ListenerIndex		The index of the listener
 	 * @param   ListenerTransform   The listener's world transform
 	 * @param   DeltaSeconds		The amount of time over which velocity should be calculated.  If 0, then velocity will not be calculated.
@@ -619,6 +624,11 @@ public:
 	void SetListener(UWorld* World, int32 InListenerIndex, const FTransform& ListenerTransform, float InDeltaSeconds);
 
 	const TArray<FListener>& GetListeners() const { check(IsInAudioThread()); return Listeners; }
+
+	/**
+	 * Get ambisonics mixer, if one is available
+	 */
+	TAmbisonicsMixerPtr GetAmbisonicsMixer() { return AmbisonicsMixer; };
 
 	/** 
 	 * Returns the currently applied reverb effect if there is one.
@@ -688,7 +698,7 @@ public:
 	 * @param	USoundConcurrency	The sound's sound concurrency settings to use (optional). Will use the USoundBase's USoundConcurrency if not specified.
 	 * @param	Params				An optional list of audio component params to immediately apply to a sound.
 	 */
-	void PlaySoundAtLocation(USoundBase* Sound, UWorld* World, float VolumeMultiplier, float PitchMultiplier, float StartTime, const FVector& Location, const FRotator& Rotation, USoundAttenuation* AttenuationSettings = nullptr, USoundConcurrency* ConcurrencySettings = nullptr, const TArray<FAudioComponentParam>* Params = nullptr);
+	void PlaySoundAtLocation(USoundBase* Sound, UWorld* World, float VolumeMultiplier, float PitchMultiplier, float StartTime, const FVector& Location, const FRotator& Rotation, USoundAttenuation* AttenuationSettings = nullptr, USoundConcurrency* ConcurrencySettings = nullptr, const TArray<FAudioComponentParam>* Params = nullptr, AActor* OwningActor = nullptr);
 
 	/**
 	 * Adds an active sound to the audio device
@@ -944,6 +954,12 @@ public:
 		FAudioThread::ResumeAudioThread();
 	}
 
+	/** Registers a third party listener-observer to this audio device. */
+	void RegisterPluginListener(const TAudioPluginListenerPtr PluginListener);
+
+	/* Unregisters a third party listener-observer to this audio device. */
+	void UnregisterPluginListener(const TAudioPluginListenerPtr PluginListener);
+
 	bool IsAudioDeviceMuted() const;
 
 	void SetDeviceMuted(bool bMuted);
@@ -1024,11 +1040,11 @@ public:
 	/** Whether or not there's a spatialization plugin enabled. */
 	bool IsSpatializationPluginEnabled() const
 	{
-		return bSpatializationInterfaceEnabled && SpatializationPluginInterface.IsValid();
+		return bSpatializationInterfaceEnabled;
 	}
 
 	/** Return the spatialization plugin interface. */
-	TSharedPtr<IAudioSpatialization> GetSpatializationPluginInterface()
+	TAudioSpatializationPtr GetSpatializationPluginInterface()
 	{
 		return SpatializationPluginInterface;
 	}
@@ -1036,14 +1052,14 @@ public:
 	/** Whether or not there's an occlusion plugin enabled. */
 	bool IsOcclusionPluginEnabled() const
 	{
-		return bOcclusionInterfaceEnabled && OcclusionInterface.IsValid();
+		return bOcclusionInterfaceEnabled;
 	}
 
 	static bool IsOcclusionPluginLoaded()
 	{
 		if (FAudioDevice* MainAudioDevice = GEngine->GetMainAudioDevice())
 		{
-			return MainAudioDevice->OcclusionInterface.IsValid();
+			return MainAudioDevice->bOcclusionInterfaceEnabled;
 		}
 		return false;
 	}
@@ -1051,14 +1067,14 @@ public:
 	/** Whether or not there's a reverb plugin enabled. */
 	bool IsReverbPluginEnabled() const
 	{
-		return bReverbInterfaceEnabled && ReverbPluginInterface.IsValid();
+		return bReverbInterfaceEnabled;
 	}
 
 	static bool IsReverbPluginLoaded()
 	{
 		if (FAudioDevice* MainAudioDevice = GEngine->GetMainAudioDevice())
 		{
-			return MainAudioDevice->ReverbPluginInterface.IsValid();
+			return MainAudioDevice->bReverbInterfaceEnabled;
 		}
 		return false;
 	}
@@ -1095,6 +1111,15 @@ protected:
 	void StartSources(TArray<FWaveInstance*>& WaveInstances, int32 FirstActiveIndex, bool bGameTicking);
 
 private:
+
+	/**
+	* Initializes all plugin listeners belonging to this audio device.
+	* Called in the game thread.
+	*
+	* @param World: Pointer to the UWorld the listener is in.
+	* @param InViewportIndex: Viewport that the listener belongs to.
+	*/
+	void InitializePluginListeners(UWorld* World);
 
 	/**
 	 * Parses the sound classes and propagates multiplicative properties down the tree.
@@ -1275,10 +1300,10 @@ public:
 	FVector GetListenerTransformedDirection(const FVector& Position, float* OutDistance);
 
 	/** Returns the current audio device update delta time. */
-	float GetDeviceDeltaTime() const
-	{
-		return DeviceDeltaTime;
-	}
+	float GetDeviceDeltaTime() const;
+
+	/** Returns the game's delta time */
+	float GetGameDeltaTime() const;
 
 	/** Sets the update delta time for the audio frame */
 	void UpdateDeviceDeltaTime()
@@ -1363,6 +1388,9 @@ public:
 		bUseAttenuationForNonGameWorlds = bInUseAttenuationForNonGameWorlds;
 	}
 
+	/** Returns the default reverb send level used for sources which have reverb applied but no attenuation settings. */
+	float GetDefaultReverbSendLevel() const { return DefaultReverbSendLevel; }
+
 public:
 
 	/** The maximum number of concurrent audible sounds */
@@ -1388,27 +1416,25 @@ public:
 	/** The handle for this audio device used in the audio device manager. */
 	uint32 DeviceHandle;
 
-	/** An audio plugin. */
-	IAudioPlugin* AudioPlugin;
-
 	/** 3rd party audio spatialization interface. */
-	TSharedPtr<IAudioSpatialization> SpatializationPluginInterface;
+	TAudioSpatializationPtr SpatializationPluginInterface;
 
 	/** 3rd party reverb interface. */
-	TSharedPtr<IAudioReverb> ReverbPluginInterface;
+	TAudioReverbPtr ReverbPluginInterface;
 
 	/** 3rd party occlusion interface. */
-	TSharedPtr<IAudioOcclusion> OcclusionInterface;
+	TAudioOcclusionPtr OcclusionInterface;
 
-	/** 3rd party listener observer. */
-	TSharedPtr<IAudioListenerObserver> ListenerObserver;
+	/* This devices ambisonics pointer, if one exists */
+	TAmbisonicsMixerPtr AmbisonicsMixer;
 
-private:
-	// Audio thread representation of listeners
-	TArray<FListener> Listeners;
+	/** 3rd party listener observers registered to this audio device. */
+	TArray<TAudioPluginListenerPtr> PluginListeners;
 
 	// Game thread cache of listener transforms
 	TArray<FTransform> ListenerTransforms;
+
+private:
 
 	uint64 CurrentTick;
 
@@ -1436,6 +1462,8 @@ private:
 
 	/** Set of sources used to play sounds (platform will subclass these) */
 protected:
+	// Audio thread representation of listeners
+	TArray<FListener> Listeners;
 	TArray<FSoundSource*> Sources;
 	TArray<FSoundSource*> FreeSources;
 
@@ -1457,6 +1485,9 @@ private:
 	/** Map of sound mix sound class overrides. Will override any sound class effects for any sound mixes */
 	TMap<USoundMix*, FSoundMixClassOverrideMap> SoundMixClassEffectOverrides;
 
+	/** Cached array of plugin settings objects currently loaded. This is stored so we can add it in AddReferencedObjects. */
+	TArray<UObject*> PluginSettingsObjects;
+
 protected:
 	/** Interface to audio effects processing */
 	FAudioEffectsManager* Effects;
@@ -1466,6 +1497,9 @@ private:
 
 	/** A volume headroom to apply to specific platforms to achieve better platform consistency. */
 	float PlatformAudioHeadroom;
+
+	/** The default reverb send level to use for sources which have reverb applied but don't have an attenuation settings. */
+	float DefaultReverbSendLevel;
 
 	/** Reverb Effects activated without volumes - Game Thread owned */
 	TMap<FName, FActivatedReverb> ActivatedReverbs;
@@ -1488,6 +1522,11 @@ public:
 	/** Whether or not the audio mixer module is being used by this device. */
 	uint8 bAudioMixerModuleLoaded : 1;
 
+	/** Whether of not various audio plugin interfaces are external sends. */
+	uint8 bSpatializationIsExternalSend:1;
+	uint8 bOcclusionIsExternalSend:1;
+	uint8 bReverbIsExternalSend:1;
+
 private:
 	/* True once the startup sounds have been precached */
 	uint8 bStartupSoundsPreCached:1;
@@ -1496,7 +1535,9 @@ private:
 	uint8 bSpatializationInterfaceEnabled:1;
 	uint8 bOcclusionInterfaceEnabled:1;
 	uint8 bReverbInterfaceEnabled:1;
-	uint8 bListenerObserverInterfaceEnabled:1;
+	
+	/** Whether or not we've initialized plugin listeners array. */
+	uint8 bPluginListenersInitialized:1;
 
 	/** Whether HRTF is enabled for all 3d sounds. */
 	uint8 bHRTFEnabledForAll:1;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GeometryCache.h"
 #include "EditorFramework/AssetImportData.h"
@@ -55,7 +55,7 @@ void UGeometryCache::GetResourceSizeEx(FResourceSizeEx& CumulativeResourceSize)
 	Super::GetResourceSizeEx(CumulativeResourceSize);
 
 #if WITH_EDITORONLY_DATA
-	CumulativeResourceSize.AddDedicatedSystemMemoryBytes(sizeof(AssetImportData)); //-V568
+	CumulativeResourceSize.AddDedicatedSystemMemoryBytes(sizeof(*AssetImportData));
 #endif
 	// Calculate Resource Size according to what is serialized
 	const int32 NumTracks = Tracks.Num();

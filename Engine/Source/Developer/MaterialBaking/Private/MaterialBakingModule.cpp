@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MaterialBakingModule.h"
 #include "MaterialRenderItem.h"
@@ -127,7 +127,7 @@ void FMaterialBakingModule::BakeMaterials(const TArray<FMaterialData*>& Material
 				.SetWorldTimes(0.0f, 0.0f, 0.0f)
 				.SetGammaCorrection(RenderTarget->GameThread_GetRenderTargetResource()->GetDisplayGamma()));
 
-			TargetsViewFamilyPairs.Add(TPair<UTextureRenderTarget2D*, FSceneViewFamily>(RenderTarget, ViewFamily));
+			TargetsViewFamilyPairs.Add(TPair<UTextureRenderTarget2D*, FSceneViewFamily>(RenderTarget, Forward<FSceneViewFamily>(ViewFamily)));
 			MaterialRenderProxies.Add(Proxy);
 			MaterialPropertiesToBakeOut.Add(Property);
 		}
@@ -143,7 +143,6 @@ void FMaterialBakingModule::BakeMaterials(const TArray<FMaterialData*>& Material
 
 			FMeshMaterialRenderItem RenderItem(CurrentMaterialSettings, CurrentMeshSettings, MaterialPropertiesToBakeOut[0]);
 			FCanvas::FCanvasSortElement& SortElement = Canvas.GetSortElement(Canvas.TopDepthSortKey());
-			SortElement.RenderBatchArray.Add(&RenderItem);
 
 			for (int32 PropertyIndex = 0; PropertyIndex < NumPropertiesToRender; ++PropertyIndex)
 			{
@@ -170,16 +169,21 @@ void FMaterialBakingModule::BakeMaterials(const TArray<FMaterialData*>& Material
 							RenderItem.GenerateRenderData();
 						}
 
+						Canvas.SetRenderTargetRect(FIntRect(0, 0, RenderTarget->GetSurfaceWidth(), RenderTarget->GetSurfaceHeight()));
+						Canvas.SetBaseTransform(Canvas.CalcBaseTransform2D(RenderTarget->GetSurfaceWidth(), RenderTarget->GetSurfaceHeight()));
 						PreviousRenderTarget = RenderTarget;
 					}
 
 					// Clear canvas before rendering
 					Canvas.Clear(RenderTarget->ClearColor);
 
+					SortElement.RenderBatchArray.Add(&RenderItem);
+
 					// Do rendering
 					Canvas.Flush_GameThread();
 					FlushRenderingCommands();
 
+					SortElement.RenderBatchArray.Empty();
 					ReadTextureOutput(RenderTargetResource, Property, CurrentOutput);
 					FMaterialBakingHelpers::PerformUVBorderSmear(CurrentOutput.PropertyData[Property], RenderTarget->GetSurfaceWidth(), RenderTarget->GetSurfaceHeight(), Property == MP_Normal);
 #if WITH_EDITOR
@@ -191,16 +195,13 @@ void FMaterialBakingModule::BakeMaterials(const TArray<FMaterialData*>& Material
 						FString TrimmedPropertyName = PropertyName.ToString();
 						TrimmedPropertyName.RemoveFromStart(TEXT("MP_"));
 
-						const FString DirectoryPath = FPaths::ConvertRelativePathToFull(FPaths::GameIntermediateDir() + TEXT("MaterialBaking/"));
-						FString FilenameString = FString::Printf(*(DirectoryPath + TEXT("%s-%d-%s.bmp")),
-							*CurrentMaterialSettings->Material->GetName(), MaterialIndex, *TrimmedPropertyName);
+						const FString DirectoryPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectIntermediateDir() + TEXT("MaterialBaking/"));
+						FString FilenameString = FString::Printf(TEXT("%s%s-%d-%s.bmp"), *DirectoryPath, *CurrentMaterialSettings->Material->GetName(), MaterialIndex, *TrimmedPropertyName);
 						FFileHelper::CreateBitmap(*FilenameString, CurrentOutput.PropertySizes[Property].X, CurrentOutput.PropertySizes[Property].Y, CurrentOutput.PropertyData[Property].GetData());
 					}
 				}
 #endif // WITH_EDITOR
 			}
-
-			SortElement.RenderBatchArray.Empty();
 		}
 	}
 
@@ -250,7 +251,8 @@ void FMaterialBakingModule::CleanupMaterialProxies()
 UTextureRenderTarget2D* FMaterialBakingModule::CreateRenderTarget(bool bInForceLinearGamma, EPixelFormat InPixelFormat, const FIntPoint& InTargetSize)
 {
 	UTextureRenderTarget2D* RenderTarget = nullptr;
-	const FIntPoint ClampedTargetSize(FMath::Clamp(InTargetSize.X, 1, (int32)GetMax2DTextureDimension()), FMath::Clamp(InTargetSize.Y, 1, (int32)GetMax2DTextureDimension()));
+	const int32 MaxTextureSize = 1 << (MAX_TEXTURE_MIP_COUNT - 1); // Don't use GetMax2DTextureDimension() as this is for the RHI only.
+	const FIntPoint ClampedTargetSize(FMath::Clamp(InTargetSize.X, 1, MaxTextureSize), FMath::Clamp(InTargetSize.Y, 1, MaxTextureSize));
 	auto RenderTargetComparison = [bInForceLinearGamma, InPixelFormat, ClampedTargetSize](const UTextureRenderTarget2D* CompareRenderTarget) -> bool
 	{
 		return (CompareRenderTarget->SizeX == ClampedTargetSize.X && CompareRenderTarget->SizeY == ClampedTargetSize.Y && CompareRenderTarget->OverrideFormat == InPixelFormat && CompareRenderTarget->bForceLinearGamma == bInForceLinearGamma);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AdvancedPreviewScene.h"
 #include "UnrealClient.h"
@@ -35,22 +35,15 @@ FAdvancedPreviewScene::FAdvancedPreviewScene(ConstructionValues CVS, float InFlo
 	CurrentProfileIndex = DefaultSettings->Profiles.IsValidIndex(CurrentProfileIndex) ? GetDefault<UEditorPerProjectUserSettings>()->AssetViewerProfileIndex : 0;
 	ensureMsgf(DefaultSettings->Profiles.IsValidIndex(CurrentProfileIndex), TEXT("Invalid default settings pointer or current profile index"));
 	FPreviewSceneProfile& Profile = DefaultSettings->Profiles[CurrentProfileIndex];
+	Profile.LoadEnvironmentMap();
 
 	SphereReflectionComponent = nullptr;
 
 	const FTransform Transform(FRotator(0, 0, 0), FVector(0, 0, 0), FVector(1));
 
-	// Add and set up sky light using the set cube map texture
-	{
-		SkyLightComponent = NewObject<USkyLightComponent>();
-		SkyLightComponent->Cubemap = Profile.EnvironmentCubeMap.Get();
-		SkyLightComponent->SourceType = ESkyLightSourceType::SLS_SpecifiedCubemap;
-		SkyLightComponent->Mobility = EComponentMobility::Movable;
-		SkyLightComponent->bLowerHemisphereIsBlack = false;
-		SkyLightComponent->Intensity = Profile.SkyLightIntensity;
-		AddComponent(SkyLightComponent, Transform);
-		SkyLightComponent->UpdateSkyCaptureContents(PreviewWorld);
-	}
+	// Set up sky light using the set cube map texture, reusing the sky light from PreviewScene class
+	SetSkyCubemap(Profile.EnvironmentCubeMap.Get());
+	SetSkyBrightness(Profile.SkyLightIntensity);
 	
 	// Large scale to prevent sphere from clipping
 	const FTransform SphereTransform(FRotator(0, 0, 0), FVector(0, 0, 0), FVector(2000));
@@ -117,12 +110,12 @@ void FAdvancedPreviewScene::UpdateScene(FPreviewSceneProfile& Profile, bool bUpd
 	if (bUpdateSkyLight)
 	{
 		// Threshold to ensure we only update the intensity if it is going to make a difference
-		if (!FMath::IsNearlyEqual(bUseSkylight ? SkyLightComponent->Intensity : SphereReflectionComponent->Brightness, Profile.SkyLightIntensity, 0.05f))
+		if (!FMath::IsNearlyEqual(bUseSkylight ? SkyLight->Intensity : SphereReflectionComponent->Brightness, Profile.SkyLightIntensity, 0.05f))
 		{
 			static const FName IntensityName("Intensity");
 			if (bUseSkylight)
 			{
-				SkyLightComponent->SetIntensity(Profile.SkyLightIntensity);
+				SetSkyBrightness(Profile.SkyLightIntensity);
 			}
 			else
 			{
@@ -140,7 +133,7 @@ void FAdvancedPreviewScene::UpdateScene(FPreviewSceneProfile& Profile, bool bUpd
 		static const FName CubeMapRotationName("CubemapRotation");
 
 		UTextureCube* EnvironmentTexture = Profile.EnvironmentCubeMap.LoadSynchronous();
-		UTexture* Texture = Cast<UTexture>(EnvironmentTexture);
+		UTexture* Texture = EnvironmentTexture;
 		InstancedSkyMaterial->GetTextureParameterValue(SkyBoxName, Texture);
 
 		if (Texture != EnvironmentTexture)
@@ -148,7 +141,7 @@ void FAdvancedPreviewScene::UpdateScene(FPreviewSceneProfile& Profile, bool bUpd
 			InstancedSkyMaterial->SetTextureParameterValueEditorOnly(SkyBoxName, EnvironmentTexture);
 			if (bUseSkylight)
 			{
-				SkyLightComponent->Cubemap = EnvironmentTexture;
+				SetSkyCubemap(EnvironmentTexture);
 			}
 			else
 			{
@@ -172,7 +165,7 @@ void FAdvancedPreviewScene::UpdateScene(FPreviewSceneProfile& Profile, bool bUpd
 			DefaultSettings->Profiles[CurrentProfileIndex].DirectionalLightRotation = LightDir;
 			if (bUseSkylight)
 			{
-				SkyLightComponent->SourceCubemapAngle = Profile.LightingRigRotation;
+				SkyLight->SourceCubemapAngle = Profile.LightingRigRotation;
 			}
 			else
 			{
@@ -201,7 +194,7 @@ void FAdvancedPreviewScene::UpdateScene(FPreviewSceneProfile& Profile, bool bUpd
 	SkyComponent->SetVisibility(Profile.bShowEnvironment, true);
 	if (bUseSkylight)
 	{
-		SkyLightComponent->SetVisibility(Profile.bShowEnvironment, true);
+		SkyLight->SetVisibility(Profile.bShowEnvironment, true);
 	}
 	else
 	{
@@ -211,6 +204,12 @@ void FAdvancedPreviewScene::UpdateScene(FPreviewSceneProfile& Profile, bool bUpd
 
 	bRotateLighting = Profile.bRotateLightingRig;
 	CurrentRotationSpeed = Profile.RotationSpeed;
+}
+
+FLinearColor FAdvancedPreviewScene::GetBackgroundColor() const
+{
+	FLinearColor Color = DefaultSettings->Profiles[CurrentProfileIndex].EnvironmentColor;
+	return Color * DefaultSettings->Profiles[CurrentProfileIndex].EnvironmentIntensity;
 }
 
 void FAdvancedPreviewScene::SetFloorOffset(const float InFloorOffset)
@@ -223,6 +222,7 @@ void FAdvancedPreviewScene::SetFloorOffset(const float InFloorOffset)
 void FAdvancedPreviewScene::SetProfileIndex(const int32 InProfileIndex)
 {
 	CurrentProfileIndex = InProfileIndex;
+	DefaultSettings->Profiles[CurrentProfileIndex].LoadEnvironmentMap();
 	SetLightDirection(DefaultSettings->Profiles[CurrentProfileIndex].DirectionalLightRotation);
 	UpdateScene(DefaultSettings->Profiles[CurrentProfileIndex]);
 	DefaultSettings->OnAssetViewerSettingsChanged().Broadcast(NAME_None);
@@ -248,23 +248,23 @@ void FAdvancedPreviewScene::Tick(float DeltaTime)
 	{		
 		if (bUseSkylight)
 		{
-			SkyLightComponent->SourceCubemapAngle = Profile.LightingRigRotation;
-			SkyLightComponent->SetCaptureIsDirty();
-			SkyLightComponent->MarkRenderStateDirty();
-			SkyLightComponent->UpdateSkyCaptureContents(PreviewWorld);
+			SkyLight->SourceCubemapAngle = Profile.LightingRigRotation;
+			SkyLight->SetCaptureIsDirty();
+			SkyLight->MarkRenderStateDirty();
+			SkyLight->UpdateSkyCaptureContents(PreviewWorld);
 		}
 		else
 		{
 			SphereReflectionComponent->SourceCubemapAngle = Profile.LightingRigRotation;
-			SphereReflectionComponent->SetCaptureIsDirty();
+			SphereReflectionComponent->MarkDirtyForRecapture();
 			SphereReflectionComponent->MarkRenderStateDirty();
-			SphereReflectionComponent->UpdateReflectionCaptureContents(PreviewWorld);
+			UReflectionCaptureComponent::UpdateReflectionCaptureContents(PreviewWorld);
 		}
 
 		InstancedSkyMaterial->SetScalarParameterValueEditorOnly(FName("CubemapRotation"), Profile.LightingRigRotation / 360.0f);
 		InstancedSkyMaterial->PostEditChange();
 
-		PreviewWorld->UpdateAllReflectionCaptures();
+		UReflectionCaptureComponent::UpdateReflectionCaptureContents(PreviewWorld);
 		PreviewWorld->UpdateAllSkyCaptures();
 
 		PreviousRotation = Profile.LightingRigRotation;
@@ -275,26 +275,21 @@ void FAdvancedPreviewScene::Tick(float DeltaTime)
 	{
 		if (bUseSkylight)
 		{
-			SkyLightComponent->SetCaptureIsDirty();
-			SkyLightComponent->MarkRenderStateDirty();
-			SkyLightComponent->UpdateSkyCaptureContents(PreviewWorld);
+			SkyLight->SetCaptureIsDirty();
+			SkyLight->MarkRenderStateDirty();
+			SkyLight->UpdateSkyCaptureContents(PreviewWorld);
 		}
 		else
 		{
-			SphereReflectionComponent->SetCaptureIsDirty();
+			SphereReflectionComponent->MarkDirtyForRecapture();
 			SphereReflectionComponent->MarkRenderStateDirty();
-			SphereReflectionComponent->UpdateReflectionCaptureContents(PreviewWorld);
+			UReflectionCaptureComponent::UpdateReflectionCaptureContents(PreviewWorld);
 		}
 
 
 		InstancedSkyMaterial->PostEditChange();
 		bSkyChanged = false;
 	}
-}
-
-bool FAdvancedPreviewScene::IsTickable() const
-{
-	return true;
 }
 
 TStatId FAdvancedPreviewScene::GetStatId() const
@@ -386,7 +381,7 @@ void FAdvancedPreviewScene::SetEnvironmentVisibility(const bool bVisible, const 
 		SkyComponent->SetVisibility(bVisible ? DefaultSettings->Profiles[CurrentProfileIndex].bShowEnvironment : bVisible);
 		if (bUseSkylight)
 		{
-			SkyLightComponent->SetVisibility(bVisible ? DefaultSettings->Profiles[CurrentProfileIndex].bShowEnvironment : bVisible);
+			SkyLight->SetVisibility(bVisible ? DefaultSettings->Profiles[CurrentProfileIndex].bShowEnvironment : bVisible);
 		}
 		else
 		{
@@ -439,11 +434,14 @@ void FAdvancedPreviewScene::BindCommands()
 	UICommandList->MapAction(Commands.ToggleFloor,
 		FExecuteAction::CreateRaw(this, &FAdvancedPreviewScene::HandleToggleFloor));
 
-	UICommandList->MapAction(Commands.ToggleSky,
-		FExecuteAction::CreateRaw(this, &FAdvancedPreviewScene::HandleToggleSky));
+	UICommandList->MapAction(Commands.ToggleEnvironment,
+		FExecuteAction::CreateRaw(this, &FAdvancedPreviewScene::HandleToggleEnvironment));
+
+	UICommandList->MapAction(Commands.TogglePostProcessing,
+		FExecuteAction::CreateRaw(this, &FAdvancedPreviewScene::HandleTogglePostProcessing));
 }
 
-void FAdvancedPreviewScene::HandleToggleSky()
+void FAdvancedPreviewScene::HandleToggleEnvironment()
 {
 	SetEnvironmentVisibility(!DefaultSettings->Profiles[CurrentProfileIndex].bShowEnvironment);
 }
@@ -451,6 +449,19 @@ void FAdvancedPreviewScene::HandleToggleSky()
 void FAdvancedPreviewScene::HandleToggleFloor()
 {
 	SetFloorVisibility(!DefaultSettings->Profiles[CurrentProfileIndex].bShowFloor);
+}
+
+void FAdvancedPreviewScene::HandleTogglePostProcessing()
+{
+	FPreviewSceneProfile& Profile = DefaultSettings->Profiles[CurrentProfileIndex];
+	Profile.bPostProcessingEnabled = !Profile.bPostProcessingEnabled;
+	PostProcessComponent->bEnabled = Profile.bPostProcessingEnabled;
+	bPostProcessing = Profile.bPostProcessingEnabled;
+	
+	FName PropertyName("bPostProcessingEnabled");
+	UProperty* PostProcessingProperty = FindField<UProperty>(FPreviewSceneProfile::StaticStruct(), PropertyName);
+	FPropertyChangedEvent PropertyEvent(PostProcessingProperty);
+	DefaultSettings->PostEditChangeProperty(PropertyEvent);	
 }
 
 void FAdvancedPreviewScene::OnAssetViewerSettingsRefresh(const FName& InPropertyName)

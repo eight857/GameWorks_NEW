@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Designer/SDesignerView.h"
 #include "Rendering/DrawElements.h"
@@ -486,6 +486,13 @@ void SDesignerView::Construct(const FArguments& InArgs, TSharedPtr<FWidgetBluepr
 	DesignerHittestGrid = MakeShared<FHittestGrid>();
 
 	ZoomToFit(/*bInstantZoom*/ true);
+
+	//RegisterActiveTimer(0.f, FWidgetActiveTimerDelegate::CreateSP(this, &SDesignerView::EnsureTick));
+}
+
+EActiveTimerReturnType SDesignerView::EnsureTick(double InCurrentTime, float InDeltaTime)
+{
+	return EActiveTimerReturnType::Continue;
 }
 
 TSharedRef<SWidget> SDesignerView::CreateOverlayUI()
@@ -567,7 +574,7 @@ TSharedRef<SWidget> SDesignerView::CreateOverlayUI()
 			.ButtonStyle(FEditorStyle::Get(), "ViewportMenu.Button")
 			.ToolTipText(LOCTEXT("ZoomToFit_ToolTip", "Zoom To Fit"))
 			.OnClicked(this, &SDesignerView::HandleZoomToFitClicked)
-			.ContentPadding(1.0f)
+			.ContentPadding(FEditorStyle::Get().GetMargin("ViewportMenu.SToolBarButtonBlock.Button.Padding"))
 			[
 				SNew(SImage)
 				.Image(FEditorStyle::GetBrush("UMGEditor.ZoomToFit"))
@@ -583,7 +590,7 @@ TSharedRef<SWidget> SDesignerView::CreateOverlayUI()
 			.ButtonStyle(FEditorStyle::Get(), "ViewportMenu.Button")
 			.ForegroundColor(FLinearColor::Black)
 			.OnGetMenuContent(this, &SDesignerView::GetResolutionsMenu)
-			.ContentPadding(1.0f)
+			.ContentPadding(FEditorStyle::Get().GetMargin("ViewportMenu.SToolBarButtonBlock.Button.Padding"))
 			.ButtonContent()
 			[
 				SNew(STextBlock)
@@ -601,7 +608,7 @@ TSharedRef<SWidget> SDesignerView::CreateOverlayUI()
 			.ButtonStyle(FEditorStyle::Get(), "ViewportMenu.Button")
 			.ForegroundColor(FLinearColor::Black)
 			.OnGetMenuContent(this, &SDesignerView::GetScreenSizingFillMenu)
-			.ContentPadding(1.0f)
+			.ContentPadding(FEditorStyle::Get().GetMargin("ViewportMenu.SToolBarButtonBlock.Button.Padding"))
 			.ButtonContent()
 			[
 				SNew(STextBlock)
@@ -2022,9 +2029,17 @@ void SDesignerView::DrawSafeZone(const FOnPaintHandlerParams& PaintArgs)
 			FDisplayMetrics Metrics;
 			FSlateApplication::Get().GetDisplayMetrics(Metrics);
 
-			const FMargin DebugSafeMargin = ( DebugSafeZoneMode == 1 ) ?
+			const FMargin DebugSafeMargin = 
+#if PLATFORM_IOS
+				// FVector4(X,Y,Z,W) being used like FMargin(left, top, right, bottom)
+				( DebugSafeZoneMode == 1 )
+				? FMargin(Metrics.TitleSafePaddingSize.X, Metrics.TitleSafePaddingSize.Y, Metrics.TitleSafePaddingSize.Z, Metrics.TitleSafePaddingSize.W)
+				: FMargin(Metrics.ActionSafePaddingSize.X, Metrics.ActionSafePaddingSize.Y, Metrics.ActionSafePaddingSize.Z, Metrics.ActionSafePaddingSize.W);
+#else
+				( DebugSafeZoneMode == 1 ) ?
 				FMargin(Metrics.TitleSafePaddingSize.X, Metrics.TitleSafePaddingSize.Y) :
 				FMargin(Metrics.ActionSafePaddingSize.X, Metrics.ActionSafePaddingSize.Y);
+#endif
 
 			float PaddingRatio = DebugSafeMargin.Left / ( Metrics.PrimaryDisplayWidth * 0.5 );
 
@@ -2858,7 +2873,7 @@ FReply SDesignerView::OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& 
 	
 	const bool bIsPreview = false;
 	ProcessDropAndAddWidget(MyGeometry, DragDropEvent, bIsPreview);
-
+	TSharedPtr<FSelectedWidgetDragDropOp> SelectedDragDropOp = DragDropEvent.GetOperationAs<FSelectedWidgetDragDropOp>();
 	if (DropPreviews.Num() > 0)
 	{
 		UWidgetBlueprint* BP = GetBlueprint();
@@ -2879,7 +2894,15 @@ FReply SDesignerView::OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& 
 		DropPreviews.Empty();
 		return FReply::Handled().SetUserFocus(SharedThis(this));
 	}
-	
+	else if (SelectedDragDropOp.IsValid())
+	{
+		// If we were dragging any widgets, even if we didn't move them, we need to refresh the preview
+		// because they are collapsed in the preview when the drag begins
+		if (SelectedDragDropOp->DraggedWidgets.Num() > 0)
+		{
+			BlueprintEditor.Pin().Get()->RefreshPreview();
+		}
+	}
 	return FReply::Unhandled();
 }
 

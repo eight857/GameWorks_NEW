@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	LinuxPlatformMemory.cpp: Linux platform memory functions
@@ -193,7 +193,11 @@ namespace LinuxMemoryPool
 {
 	enum
 	{
+	#if UE_SERVER
+		LargestPoolSize = 65536,
+	#else
 		LargestPoolSize = 32 * 1024 * 1024,
+	#endif // UE_SERVER
 
 		RequiredAlignment = 65536,	// should match BinnedPageSize
 		ExtraSizeToAllocate = 60 * 1024,	// BinnedPageSize - SystemPageSize (4KB on most platforms)
@@ -208,6 +212,10 @@ namespace LinuxMemoryPool
 	 */
 	int32 PoolTable[] =
 	{
+	#if UE_SERVER
+		// 1GB of 64K blocks
+		65536, 16384,
+	#else
 		// 512 MB of 64K blocks
 		65536, 8192,
 		// 256 MB of 256K blocks
@@ -218,6 +226,7 @@ namespace LinuxMemoryPool
 		8 * 1024 * 1024, 24,
 		// 192 MB of 32MB blocks
 		LinuxMemoryPool::LargestPoolSize, 6,
+	#endif // UE_SERVER
 		-1
 	};
 
@@ -312,6 +321,30 @@ namespace LinuxMemoryPool
 					uint64 NumBlocks = static_cast<uint64>(PoolPtr[1]);
 					PoolSize += (BlockSize * NumBlocks);
 					MaxPooledAllocs += NumBlocks;
+				}
+			}
+		}
+		// check if we need to downscale to fit actual memory on the machine
+		else
+		{
+			uint64 TotalPhysicalMemory = FPlatformMemory::GetConstants().TotalPhysical;
+			if (PoolSize >= TotalPhysicalMemory)
+			{
+				// scale down to try to fit roughly 50% of the total physical memory
+				uint64 DesiredPoolSize = TotalPhysicalMemory - TotalPhysicalMemory / 2;
+				double Multiplier = FMath::Max(static_cast<double>(DesiredPoolSize) / static_cast<double>(PoolSize), 0.0);
+				if (Multiplier > 0.0)
+				{
+					PoolSize = 0;
+					MaxPooledAllocs = 0;
+					for (int32* PoolPtr = InOutPoolTable; *PoolPtr != -1; PoolPtr += 2)
+					{
+						uint64 BlockSize = static_cast<uint64>(PoolPtr[0]);
+						PoolPtr[1] = FMath::Max(static_cast<uint32>(PoolPtr[1] * Multiplier), 1u);
+						uint64 NumBlocks = static_cast<uint64>(PoolPtr[1]);
+						PoolSize += (BlockSize * NumBlocks);
+						MaxPooledAllocs += NumBlocks;
+					}
 				}
 			}
 		}

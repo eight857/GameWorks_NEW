@@ -1,9 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "MeshPaintHelpers.h"
 #include "ClothPainter.h"
+
+class IDetailsView;
 
 /** 
  * Base object for tools used to paint clothing
@@ -46,12 +48,24 @@ public:
 	/** Called as tool is deselected, can be used to shutdown and unbind actions */
 	virtual void Deactivate(TWeakPtr<FUICommandList> InCommands) {};
 
+	/** Called as a change in the target geometry changes, to clear anything the tool may have cached */
+	virtual void OnMeshChanged() {};
+
+	/** If true, the tool must provide the range of values used in GetValueRange, used to modify auto calculated view ranges */
+	virtual bool HasValueRange() { return false; }
+
+	/** If HasValueRange returns true, this should specify the range of values the tool is currently covering */
+	virtual void GetValueRange(float& OutRangeMin, float& OutRangeMax) {}
+
 	/** 
 	 * Optionally return a UObject that will be displayed in the details panel when the tool is selected.
 	 * This is intended for settings unique to the tool, common settings (brush size etc) are available from
 	 * the brush settings in the Painter.
 	 */
 	virtual UObject* GetSettingsObject() { return nullptr; }
+
+	/** Optionally register any applicable customizations for the settings object */
+	virtual void RegisterSettingsObjectCustomizations(IDetailsView* InDetailsView) {}
 
 protected:
 

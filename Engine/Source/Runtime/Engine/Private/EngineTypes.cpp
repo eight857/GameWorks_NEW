@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/EngineTypes.h"
 #include "UObject/UnrealType.h"
@@ -223,7 +223,7 @@ USceneComponent* FComponentReference::GetComponent(AActor* OwningActor) const
 			}
 			else
 			{
-				Result = Cast<USceneComponent>(SearchActor->GetRootComponent());
+				Result = SearchActor->GetRootComponent();
 			}
 		}
 	}

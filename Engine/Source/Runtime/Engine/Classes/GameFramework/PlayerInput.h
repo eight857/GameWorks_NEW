@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 //~=============================================================================
 // PlayerInput
@@ -312,10 +312,6 @@ public:
 	UFUNCTION(exec)
 	void SetMouseSensitivity(const float Sensitivity);
 
-	/** Exec function to return the mouse sensitivity to its default value */
-	DEPRECATED(4.8, "SetMouseSensitivityToDefault is deprecated, use SetAxisProperties instead")
-	void SetMouseSensitivityToDefault();
-
 	/** Exec function to add a debug exec command */
 	UFUNCTION(exec)
 	void SetBind(FName BindName, const FString& Command);
@@ -332,10 +328,6 @@ public:
 	/** Exec function to invert an axis key */
 	UFUNCTION(exec)
 	void InvertAxisKey(const FKey AxisKey);
-
-	/** Backwards compatibility exec function for people used to it instead of using InvertAxisKey */
-	DEPRECATED(4.8, "InvertMouse is deprecated, use InvertAxisKey(EKeys::MouseY); instead")
-	void InvertMouse();
 
 	/** Exec function to invert an axis mapping */
 	UFUNCTION(exec)
@@ -456,7 +448,7 @@ public:
 	 * @param: Index is 0 for X axis, 1 for Y axis
 	 * @return the smoothed mouse axis movement
 	 */
-	float SmoothMouse(float aMouse, uint8& SampleCount, int32 Index);
+	virtual float SmoothMouse(float aMouse, uint8& SampleCount, int32 Index);
 
 	/**
 	 * Draw important PlayerInput variables on canvas.  HUD will call DisplayDebug() on the current ViewTarget when the ShowDebug exec is used
@@ -523,6 +515,9 @@ public:
 	/** Returns the list of keys mapped to the specified Action Name */
 	const TArray<FInputActionKeyMapping>& GetKeysForAction(const FName ActionName);
 
+	/** Returns the list of keys mapped to the specified Axis Name */
+	const TArray<FInputAxisKeyMapping>& GetKeysForAxis(const FName AxisName);
+
 	static const TArray<FInputActionKeyMapping>& GetEngineDefinedActionMappings() { return EngineDefinedActionMappings; }
 	static const TArray<FInputAxisKeyMapping>& GetEngineDefinedAxisMappings() { return EngineDefinedAxisMappings; }
 
@@ -531,7 +526,7 @@ private:
 	 * Given raw keystate value, returns the "massaged" value. Override for any custom behavior,
 	 * such as input changes dependent on a particular game state.
  	 */
-	float MassageAxisInput(FKey Key, float RawValue);
+	virtual float MassageAxisInput(FKey Key, float RawValue);
 
 	/** Process non-axes keystates */
 	void ProcessNonAxesKeys(FKey Inkey, FKeyState* KeyState);
@@ -594,8 +589,12 @@ private:
 	/** @return true if InKey is being consumed */
 	bool IsKeyConsumed(FKey Key) const;
 
+protected:
+
 	/** Initialized axis properties (i.e deadzone values) if needed */
 	void ConditionalInitAxisProperties();
+
+private:
 
 	/** @return True if a key is handled by an action binding */
 	bool IsKeyHandledByAction( FKey Key ) const;
@@ -607,6 +606,9 @@ private:
 
 	/** Static empty array to be able to return from GetKeysFromAction when there are no keys mapped to the requested action name */
 	static const TArray<FInputActionKeyMapping> NoKeyMappings;
+
+	/** Static empty array to be able to return from GetKeysFromAxis when there are no axis mapped to the requested axis name */
+	static const TArray<FInputAxisKeyMapping> NoAxisMappings;
 
 	/** Action Mappings defined by engine systems that cannot be remapped by users */
 	static TArray<FInputActionKeyMapping> EngineDefinedActionMappings;

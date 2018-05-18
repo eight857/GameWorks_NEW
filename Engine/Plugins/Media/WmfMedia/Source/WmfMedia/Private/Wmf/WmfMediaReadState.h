@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -29,9 +29,6 @@ public:
 		, ReadBufferSize(InReadBufferSize)
 		, RefCount(0)
 	{ }
-
-	/** Virtual destructor. */
-	virtual ~FWmfMediaReadState() { }
 
 public:
 
@@ -114,6 +111,14 @@ public:
 		}
 
 		return CurrentRefCount;
+	}
+
+private:
+
+	/** Hidden destructor (this class is reference counted). */
+	virtual ~FWmfMediaReadState()
+	{
+		check(RefCount == 0);
 	}
 
 private:

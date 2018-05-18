@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -31,9 +31,10 @@ public:
 	virtual void InvalidateViews() override;
 	virtual void FocusViews() override;
 	virtual UDebugSkelMeshComponent* GetPreviewMeshComponent() const override { return SkeletalMeshComponent; }
+	virtual void SetPreviewMeshComponent(UDebugSkelMeshComponent* InSkeletalMeshComponent) override { SkeletalMeshComponent = InSkeletalMeshComponent; }
 	virtual void SetAdditionalMeshes(class UDataAsset* InAdditionalMeshes) override;
 	virtual void RefreshAdditionalMeshes() override;
-	virtual void ShowReferencePose(bool bReferencePose) override;
+	virtual void ShowReferencePose(bool bResetBoneTransforms = false) override;
 	virtual bool IsShowReferencePoseEnabled() const override;
 	virtual void SetSelectedBone(const FName& BoneName) override;
 	virtual void ClearSelectedBone() override;
@@ -116,6 +117,7 @@ public:
 	virtual int32 GetSelectedBoneIndex() const override;
 	virtual void TogglePlayback() override;
 	virtual AActor* GetActor() const override;
+	virtual void SetActor(AActor* InActor) override;
 	virtual bool AllowMeshHitProxies() const override;
 	virtual void SetAllowMeshHitProxies(bool bState) override;
 
@@ -137,14 +139,62 @@ public:
 		}
 	}
 
+	virtual void RegisterOnCameraOverrideChanged(const FSimpleDelegate& Delegate) override
+	{
+		OnCameraOverrideChanged.Add(Delegate);
+	}
+
+	virtual void UnregisterOnCameraOverrideChanged(void* Thing) override
+	{
+		OnCameraOverrideChanged.RemoveAll(Thing);
+	}
+
+	virtual void RegisterOnPreTick(const FSimpleDelegate& Delegate) override
+	{
+		OnPreTickDelegate.Add(Delegate);
+	}
+
+	virtual void UnregisterOnPreTick(void* Thing) override
+	{
+		OnPreTickDelegate.RemoveAll(Thing);
+	}
+
+	virtual void RegisterOnPostTick(const FSimpleDelegate& Delegate) override
+	{
+		OnPostTickDelegate.Add(Delegate);
+	}
+
+	virtual void UnregisterOnPostTick(void* Thing) override
+	{
+		OnPostTickDelegate.RemoveAll(Thing);
+	}
+
+	virtual void FlagTickable() override;
+
+	void SetCameraOverride(TSharedPtr<class FEditorCameraController> NewCamera)
+	{
+		CameraOverride = NewCamera;
+		OnCameraOverrideChanged.Broadcast();
+	}
+
+	TSharedPtr<FEditorCameraController> GetCurrentCameraOverride() const
+	{
+		return CameraOverride;
+	}
+
 	/** FPreviewScene interface */
 	virtual void Tick(float InDeltaTime) override;
+	virtual bool IsTickable() const override;
+	virtual ETickableTickType GetTickableTickType() const { return ETickableTickType::Conditional; }
 	virtual void AddComponent(class UActorComponent* Component, const FTransform& LocalToWorld, bool bAttachToRoot = false) override;
 	virtual void RemoveComponent(class UActorComponent* Component) override;
 
 	/** FEditorUndoClient interface */
 	virtual void PostUndo(bool bSuccess) override;
 	virtual void PostRedo(bool bSuccess) override;
+
+	/** FGCObject interface */
+	virtual void AddReferencedObjects( FReferenceCollector& Collector ) override;
 
 	/** Validate preview attached assets on skeleton and supplied skeletal mesh, notifying user if any are removed */
 	void ValidatePreviewAttachedAssets(USkeletalMesh* PreviewSkeletalMesh);
@@ -247,9 +297,6 @@ private:
 	/** Cached bounds of the floor mesh */
 	FBoxSphereBounds FloorBounds;
 
-	/** Preview asset cached so we can re-apply it when reverting from ref pose */
-	TWeakObjectPtr<UObject> CachedPreviewAsset;
-
 	/** Delegate to be called after the preview animation has been changed */
 	FOnAnimChangedMulticaster OnAnimChanged;
 
@@ -302,4 +349,17 @@ private:
 
 	/* Selected LOD changed delegate */
 	FOnSelectedLODChangedMulticaster OnSelectedLODChanged;
+
+	/** Camera override delegate */
+	FSimpleMulticastDelegate OnCameraOverrideChanged;
+
+	/** Currently specified camera override */
+	TSharedPtr<FEditorCameraController> CameraOverride;
+
+	/** Delegates fired on pre/post tick of this preview scene */
+	FSimpleMulticastDelegate OnPreTickDelegate;
+	FSimpleMulticastDelegate OnPostTickDelegate;
+
+	/** The last time we were flagged for ticking */
+	double LastTickTime;
 };

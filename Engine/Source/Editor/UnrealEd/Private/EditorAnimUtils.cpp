@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EditorAnimUtils.h"
 #include "Modules/ModuleManager.h"
@@ -304,10 +304,7 @@ namespace EditorAnimUtils
 
 	void FAnimationRetargetContext::AddRemappedAsset(UAnimationAsset* OriginalAsset, UAnimationAsset* NewAsset)
 	{
-		if(OriginalAsset->IsA(UAnimationAsset::StaticClass()) && NewAsset->IsA(UAnimationAsset::StaticClass()))
-		{
-			RemappedAnimAssets.Add(Cast<UAnimationAsset>(OriginalAsset), Cast<UAnimationAsset>(NewAsset));
-		}
+		RemappedAnimAssets.Add(OriginalAsset, NewAsset);
 	}
 
 	void OpenAssetFromNotify(UObject* AssetToOpen)

@@ -1,10 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "UObject/AssetPtr.h"
 #include "OnlineBeaconHostObject.h"
 
 #include "LobbyBeaconHost.generated.h"
@@ -93,7 +92,7 @@ protected:
 
 	/** Class to use for the lobby beacon state */
 	UPROPERTY()
-	TAssetSubclassOf<ALobbyBeaconState> LobbyStateClass;
+	TSoftClassPtr<ALobbyBeaconState> LobbyStateClass;
 
 	/** Actor representing the state of the lobby (similar to AGameState) */
 	UPROPERTY()

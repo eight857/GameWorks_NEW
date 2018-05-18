@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VREditorTeleporter.h"
 #include "VREditorMode.h"
@@ -8,6 +8,7 @@
 #include "VREditorMotionControllerInteractor.h"
 #include "VREditorAssetContainer.h"
 #include "Components/StaticMeshComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "Engine/EngineTypes.h"
 #include "HeadMountedDisplayTypes.h"
 #include "Sound/SoundCue.h"
@@ -23,7 +24,7 @@ namespace VREd
 	static FAutoConsoleVariable TeleportDistance(TEXT("VREd.TeleportDistance"), 500.0f, TEXT("Default distance for teleporting when not hitting anything"));
 	static FAutoConsoleVariable TeleportScaleSensitivity(TEXT("VREd.TeleportScaleSensitivity"), 0.05f, TEXT("Teleport world to meters scale touchpad sensitivity"));
 	static FAutoConsoleVariable TeleportOffsetMultiplier(TEXT("VREd.TeleportOffsetMultiplier"), 0.3f, TEXT("Teleport offset multiplier"));
-	static FAutoConsoleVariable TeleportEnableChangeScale(TEXT("VREd.TeleportEnableChangeScale"), 1, TEXT("Ability to change the world to meters scale while teleporting"));
+	static FAutoConsoleVariable TeleportEnableChangeScale(TEXT("VREd.TeleportEnableChangeScale"), 0, TEXT("Ability to change the world to meters scale while teleporting"));
 	static FAutoConsoleVariable TeleportFadeInAnimateSpeed(TEXT("VREd.TeleportAnimateSpeed"), 3.0f, TEXT("How fast the teleporter should fade in"));
 	static FAutoConsoleVariable TeleportDragSpeed(TEXT("VREd.TeleportDragSpeed"), 0.3f, TEXT("How fast the teleporter should drag behind the laser aiming location"));
 	static FAutoConsoleVariable TeleportAllowScaleBackToDefault(TEXT("VREd.TeleportAllowScaleBackToDefault"), 1, TEXT("Scale back to default world to meters scale"));
@@ -117,6 +118,12 @@ bool AVREditorTeleporter::IsAiming() const
 {
 	return TeleportingState == EState::Aiming;
 }
+
+bool AVREditorTeleporter::IsTeleporting() const
+{
+	return TeleportingState == EState::Teleporting;
+}
+
 
 void AVREditorTeleporter::Tick(const float DeltaTime)
 {
@@ -446,8 +453,10 @@ float AVREditorTeleporter::CalculateAnimatedScaleFactor() const
 
 float AVREditorTeleporter::GetSlideDelta(UVREditorMotionControllerInteractor* Interactor, const bool Axis)
 {
+	static const FName SteamVR(TEXT("SteamVR"));
+
 	FVector2D SlideDelta = FVector2D::ZeroVector; 
-	const bool bIsAbsolute = (VRMode->GetHMDDeviceType() == EHMDDeviceType::DT_SteamVR);
+	const bool bIsAbsolute = (VRMode->GetHMDDeviceType() == SteamVR);
 	if (bIsAbsolute)
 	{
 		SlideDelta = FVector2D(Interactor->GetTrackpadSlideDelta(0), Interactor->GetTrackpadSlideDelta(1));

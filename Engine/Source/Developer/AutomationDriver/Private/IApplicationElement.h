@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -28,6 +28,9 @@ public:
 
 	// @return whether the user can currently interact with the element
 	virtual bool IsInteractable() const = 0;
+
+	// @return whether the element is currently checked
+	virtual bool IsChecked() const = 0;
 
 	// @return the text being displayed to the user via this element
 	virtual FText GetText() const = 0;
@@ -73,4 +76,7 @@ public:
 
 	/** @return a parent element of this element which is scrollable; null if no scrollable parent exists */
 	virtual TSharedPtr<IApplicationElement> GetScrollableParent() const = 0;
+
+	/** @return an empty, null element */
+	virtual void* GetRawElement() const = 0;
 };

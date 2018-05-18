@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimationRecorder.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -16,6 +16,7 @@
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Animation/AnimationSettings.h"
+#include "Animation/AnimationRecordingSettings.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 
@@ -28,6 +29,8 @@ FAnimationRecorder::FAnimationRecorder()
 	, bRecordLocalToWorld(false)
 	, bAutoSaveAsset(false)
 	, bRemoveRootTransform(true)
+	, InterpMode(ERichCurveInterpMode::RCIM_Linear)
+	, TangentMode(ERichCurveTangentMode::RCTM_Auto)
 
 {
 	SetSampleRateAndLength(FAnimationRecordingSettings::DefaultSampleRate, FAnimationRecordingSettings::DefaultMaximumLength);
@@ -338,7 +341,16 @@ UAnimSequence* FAnimationRecorder::StopRecord(bool bShowMessage)
 				// Fill all the curve data at once
 				if (FloatCurveData)
 				{
-					FloatCurveData->FloatCurve.SetKeys(TimesToRecord, ValuesToRecord);
+					TArray<FRichCurveKey> Keys;
+					for (int32 Index = 0; Index < TimesToRecord.Num(); ++Index)
+					{
+						FRichCurveKey Key(TimesToRecord[Index], ValuesToRecord[Index]);
+						Key.InterpMode = InterpMode;
+						Key.TangentMode = TangentMode;
+						Keys.Add(Key);
+					}
+
+					FloatCurveData->FloatCurve.SetKeys(Keys);
 				}
 			}	
 		}
@@ -621,7 +633,7 @@ void FAnimationRecorder::Record(USkeletalMeshComponent* Component, FTransform co
 	}
 }
 
-void FAnimationRecorder::RecordNotifies(USkeletalMeshComponent* Component, const TArray<const struct FAnimNotifyEvent*>& AnimNotifies, float DeltaTime, float RecordTime)
+void FAnimationRecorder::RecordNotifies(USkeletalMeshComponent* Component, const TArray<FAnimNotifyEventReference>& AnimNotifies, float DeltaTime, float RecordTime)
 {
 	if (ensure(AnimationObject))
 	{
@@ -632,74 +644,77 @@ void FAnimationRecorder::RecordNotifies(USkeletalMeshComponent* Component, const
 		}
 
 		int32 AddedThisFrame = 0;
-		for(const FAnimNotifyEvent* NotifyEvent : AnimNotifies)
+		for(const FAnimNotifyEventReference& NotifyEventRef : AnimNotifies)
 		{
-			// we don't want to insert notifies with duration more than once
-			if(NotifyEvent->GetDuration() > 0.0f)
+			if(const FAnimNotifyEvent* NotifyEvent = NotifyEventRef.GetNotify())
 			{
-				// if this event is active already then don't add it
-				bool bAlreadyActive = false;
-				for(auto& ActiveNotify : ActiveNotifies)
+				// we don't want to insert notifies with duration more than once
+				if(NotifyEvent->GetDuration() > 0.0f)
 				{
-					if(NotifyEvent == ActiveNotify.Key)
+					// if this event is active already then don't add it
+					bool bAlreadyActive = false;
+					for (auto& ActiveNotify : ActiveNotifies)
 					{
-						// flag as active
-						ActiveNotify.Value = true;
-						bAlreadyActive = true;
-						break;
+						if(NotifyEvent == ActiveNotify.Key)
+						{
+							// flag as active
+							ActiveNotify.Value = true;
+							bAlreadyActive = true;
+							break;
+						}
+					}
+
+					// already active, so skip adding
+					if(bAlreadyActive)
+					{
+						continue;
+					}
+					else
+					{
+						// add a new active notify with duration
+						ActiveNotifies.Emplace(NotifyEvent, true);
 					}
 				}
 
-				// already active, so skip adding
-				if(bAlreadyActive)
-				{
-					continue;
-				}
-				else
-				{
-					// add a new active notify with duration
-					ActiveNotifies.Emplace(NotifyEvent, true);
-				}
-			}
+				// make a new notify from this event & set the current time
+				FAnimNotifyEvent NewEvent = *NotifyEvent;
+				NewEvent.SetTime(RecordTime);
+				NewEvent.TriggerTimeOffset = 0.0f;
+				NewEvent.EndTriggerTimeOffset = 0.0f;
 
-			// make a new notify from this event & set the current time
-			FAnimNotifyEvent NewEvent = *NotifyEvent;
-			NewEvent.SetTime(RecordTime);
-			NewEvent.TriggerTimeOffset = 0.0f;
-			NewEvent.EndTriggerTimeOffset = 0.0f;
-			
-			// see if we need to create a new notify
-			if(NotifyEvent->Notify)
-			{
-				UAnimNotify** FoundNotify = UniqueNotifies.Find(NotifyEvent->Notify);
-				if(FoundNotify == nullptr)
+				// see if we need to create a new notify
+				if(NotifyEvent->Notify)
 				{
-					NewEvent.Notify = Cast<UAnimNotify>(StaticDuplicateObject(NewEvent.Notify, AnimationObject));
-					UniqueNotifies.Add(NotifyEvent->Notify, NewEvent.Notify);
+					UAnimNotify** FoundNotify = UniqueNotifies.Find(NotifyEvent->Notify);
+					if(FoundNotify == nullptr)
+					{
+						NewEvent.Notify = Cast<UAnimNotify>(StaticDuplicateObject(NewEvent.Notify, AnimationObject));
+						UniqueNotifies.Add(NotifyEvent->Notify, NewEvent.Notify);
+					}
+					else
+					{
+						NewEvent.Notify = *FoundNotify;
+					}
 				}
-				else
-				{
-					NewEvent.Notify = *FoundNotify;
-				}
-			}
 
-			// see if we need to create a new notify state
-			if (NotifyEvent->NotifyStateClass)
-			{
-				UAnimNotifyState** FoundNotifyState = UniqueNotifyStates.Find(NotifyEvent->NotifyStateClass);
-				if (FoundNotifyState == nullptr)
+				// see if we need to create a new notify state
+				if (NotifyEvent->NotifyStateClass)
 				{
-					NewEvent.NotifyStateClass = Cast<UAnimNotifyState>(StaticDuplicateObject(NewEvent.NotifyStateClass, AnimationObject));
-					UniqueNotifyStates.Add(NotifyEvent->NotifyStateClass, NewEvent.NotifyStateClass);
+					UAnimNotifyState** FoundNotifyState = UniqueNotifyStates.Find(NotifyEvent->NotifyStateClass);
+					if (FoundNotifyState == nullptr)
+					{
+						NewEvent.NotifyStateClass = Cast<UAnimNotifyState>(StaticDuplicateObject(NewEvent.NotifyStateClass, AnimationObject));
+						UniqueNotifyStates.Add(NotifyEvent->NotifyStateClass, NewEvent.NotifyStateClass);
+					}
+					else
+					{
+						NewEvent.NotifyStateClass = *FoundNotifyState;
+					}
 				}
-				else
-				{
-					NewEvent.NotifyStateClass = *FoundNotifyState;
-				}
-			}
 
-			AnimationObject->Notifies.Add(NewEvent);
-			AddedThisFrame++;
+				AnimationObject->Notifies.Add(NewEvent);
+				AddedThisFrame++;
+			}
 		}
 
 		// remove all notifies that didnt get added this time
@@ -772,6 +787,8 @@ void FAnimRecorderInstance::InitInternal(USkeletalMeshComponent* InComponent, co
 	Recorder = MakeShareable(new FAnimationRecorder());
 	Recorder->SetSampleRateAndLength(Settings.SampleRate, Settings.Length);
 	Recorder->bRecordLocalToWorld = Settings.bRecordInWorldSpace;
+	Recorder->InterpMode = Settings.InterpMode;
+	Recorder->TangentMode = Settings.TangentMode;
 	Recorder->SetAnimCompressionScheme(UAnimCompress_BitwiseCompressOnly::StaticClass());
 	Recorder->bAutoSaveAsset = Settings.bAutoSaveAsset;
 	Recorder->bRemoveRootTransform = Settings.bRemoveRootAnimation;

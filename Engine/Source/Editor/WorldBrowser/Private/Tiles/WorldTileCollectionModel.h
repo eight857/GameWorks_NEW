@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -236,6 +236,11 @@ private:
 
 	/**  */	
 	void ReimportTiledLandscape_Executed(FName TargetLayer);
+
+	/** Tiles location locking */	
+	void OnToggleLockTilesLocation();
+public:
+	bool IsLockTilesLocationEnabled();
 
 public:
 	/** Whether Editor has support for generating static mesh proxies */	

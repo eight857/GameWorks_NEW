@@ -1,11 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
 #include "Modules/ModuleInterface.h"
-#include "IMessageRpcClient.h"
-#include "IMessageRpcServer.h"
+#include "Templates/SharedPointer.h"
+
+class IMessageRpcClient;
+class IMessageRpcServer;
+
 
 /**
  * Interface for the MessagingRpc module.

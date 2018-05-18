@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HierarchicalLODUtilities.h"
 #include "GameFramework/Actor.h"
@@ -91,7 +91,7 @@ float FHierarchicalLODUtilities::CalculateDrawDistanceFromScreenSize(const float
 	return ComputeBoundsDrawDistance(ScreenSize, SphereRadius, ProjectionMatrix);
 }
 
-UPackage* FHierarchicalLODUtilities::CreateOrRetrieveLevelHLODPackage(ULevel* InLevel)
+UPackage* FHierarchicalLODUtilities::CreateOrRetrieveLevelHLODPackage(const ULevel* InLevel)
 {
 	checkf(InLevel != nullptr, TEXT("Invalid Level supplied"));
 
@@ -118,11 +118,6 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 {
 	if (AssetsOuter && LODActor)
 	{
-		if (!LODActor->IsDirty())
-		{
-			return false;
-		}
-
 		UE_LOG(LogHierarchicalLODUtilities, Log, TEXT("Building Proxy Mesh for Cluster %s"), *LODActor->GetName());
 		const FScopedTransaction Transaction(LOCTEXT("UndoAction_BuildProxyMesh", "Building Proxy Mesh for Cluster"));
 		LODActor->Modify();		
@@ -146,7 +141,10 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 				}
 
 				// TODO: support instanced static meshes
-				Components.RemoveAll([](UStaticMeshComponent* Val){ return Val->IsA(UInstancedStaticMeshComponent::StaticClass()); });
+				Components.RemoveAll([](UStaticMeshComponent* Val)
+				{ 
+					return Val->IsA(UInstancedStaticMeshComponent::StaticClass()) || !Val->ShouldGenerateAutoLOD();
+				});
 
 				AllComponents.Append(Components);
 			}
@@ -165,11 +163,12 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 
 			// Generate proxy mesh and proxy material assets
 			IMeshReductionManagerModule& MeshReductionModule = FModuleManager::Get().LoadModuleChecked<IMeshReductionManagerModule>("MeshReductionInterface");
+			const bool bHasMeshReductionCapableModule = (MeshReductionModule.GetMeshMergingInterface() != NULL);
 
 			const IMeshMergeUtilities& MeshMergeUtilities = FModuleManager::Get().LoadModuleChecked<IMeshMergeModule>("MeshMergeUtilities").GetUtilities();
 			// should give unique name, so use level + actor name
 			const FString PackageName = FString::Printf(TEXT("LOD_%s"), *FirstActor->GetName());
-			if (MeshReductionModule.GetMeshMergingInterface() && LODSetup.bSimplifyMesh)
+			if (bHasMeshReductionCapableModule && LODSetup.bSimplifyMesh)
 			{
 				TArray<AActor*> Actors;
 				ExtractSubActorsFromLODActor(LODActor, Actors);
@@ -262,34 +261,34 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 	return false;
 }
 
-bool FHierarchicalLODUtilities::ShouldGenerateCluster(AActor* Actor)
+EClusterGenerationError FHierarchicalLODUtilities::ShouldGenerateCluster(AActor* Actor)
 {
 	if (!Actor)
 	{
-		return false;
+		return EClusterGenerationError::InvalidActor;
 	}
 
 	if (Actor->bHidden)
 	{
-		return false;
+		return EClusterGenerationError::ActorHiddenInGame;
 	}
 
 	if (!Actor->bEnableAutoLODGeneration)
 	{
-		return false;
+		return EClusterGenerationError::ExcludedActor;
 	}
 
 	ALODActor* LODActor = Cast<ALODActor>(Actor);
 	if (LODActor)
 	{
-		return false;
+		return EClusterGenerationError::LODActor;
 	}
 
 	FVector Origin, Extent;
 	Actor->GetActorBounds(false, Origin, Extent);
 	if (Extent.SizeSquared() <= 0.1)
 	{
-		return false;
+		return EClusterGenerationError::ActorTooSmall;
 	}
 
 	// for now only consider staticmesh - I don't think skel mesh would work with simplygon merge right now @fixme
@@ -300,30 +299,37 @@ bool FHierarchicalLODUtilities::ShouldGenerateCluster(AActor* Actor)
 
 	int32 ValidComponentCount = 0;
 	// now make sure you check parent primitive, so that we don't build for the actor that already has built. 
+
+	EClusterGenerationError ErrorType = EClusterGenerationError::None;
+
 	if (Components.Num() > 0)
 	{
 		for (auto& ComponentIter : Components)
 		{
 			if (ComponentIter->GetLODParentPrimitive())
 			{
-				return false;
+				return EClusterGenerationError::AlreadyClustered;
 			}
 
 			if (ComponentIter->bHiddenInGame)
 			{
-				return false;
+				return EClusterGenerationError::ComponentHiddenInGame;
 			}
 
 			// see if we should generate it
 			if (ComponentIter->ShouldGenerateAutoLOD())
 			{
 				++ValidComponentCount;
-				break;
+				ErrorType |= EClusterGenerationError::ValidActor;
+			}
+			else
+			{
+				ErrorType |= (ComponentIter->bEnableAutoLODGeneration ? EClusterGenerationError::MoveableComponent: EClusterGenerationError::ExcludedComponent);
 			}
 		}
 	}
 
-	return (ValidComponentCount > 0);
+	return ErrorType;
 }
 
 ALODActor* FHierarchicalLODUtilities::GetParentLODActor(const AActor* InActor)
@@ -350,7 +356,7 @@ ALODActor* FHierarchicalLODUtilities::GetParentLODActor(const AActor* InActor)
 void FHierarchicalLODUtilities::DestroyCluster(ALODActor* InActor)
 {
 	// Find if it has a parent ALODActor
-	AActor* Actor = CastChecked<AActor>(InActor);
+	AActor* Actor = InActor;
 	UWorld* World = Actor->GetWorld();
 	ALODActor* ParentLOD = GetParentLODActor(InActor);
 
@@ -395,8 +401,8 @@ void FHierarchicalLODUtilities::DestroyClusterData(ALODActor* InActor)
 #if WITH_EDITOR
 			// Close possible open editors using this asset	
 			FAssetEditorManager::Get().CloseAllEditorsForAsset(AssetObject);
+			InActor->PreviousSubObjects.Add(AssetObject);
 #endif // WITH_EDITOR
-			AssetObject->ClearFlags(RF_AllFlags);
 		}
 	}
 
@@ -408,7 +414,8 @@ ALODActor* FHierarchicalLODUtilities::CreateNewClusterActor(UWorld* InWorld, con
 {
 	// Check incoming data
 	check(InWorld != nullptr && WorldSettings != nullptr && InLODLevel >= 0);
-	if (!WorldSettings->bEnableHierarchicalLODSystem || WorldSettings->HierarchicalLODSetup.Num() == 0 || WorldSettings->HierarchicalLODSetup.Num() < InLODLevel)
+	const TArray<struct FHierarchicalSimplification>& HierarchicalLODSetups = InWorld->GetWorldSettings()->GetHierarchicalLODSetup();
+	if (!WorldSettings->bEnableHierarchicalLODSystem || HierarchicalLODSetups.Num() == 0 || HierarchicalLODSetups.Num() < InLODLevel)
 	{
 		return nullptr;
 	}

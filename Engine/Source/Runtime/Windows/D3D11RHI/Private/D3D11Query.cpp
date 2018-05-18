@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D11Query.cpp: D3D query RHI implementation.
@@ -53,7 +53,7 @@ bool FD3D11DynamicRHI::RHIGetRenderQueryResult(FRenderQueryRHIParamRef QueryRHI,
 	if(Query->QueryType == RQT_AbsoluteTime)
 	{
 		// GetTimingFrequency is the number of ticks per second
-		uint64 Div = FGPUTiming::GetTimingFrequency() / (1000 * 1000);
+		uint64 Div = FMath::Max(1llu, FGPUTiming::GetTimingFrequency() / (1000 * 1000));
 
 		// convert from GPU specific timestamp to micro sec (1 / 1 000 000 s) which seems a reasonable resolution
 		OutResult = Query->Result / Div;
@@ -105,6 +105,12 @@ bool FD3D11DynamicRHI::GetQueryData(ID3D11Query* Query,void* Data,SIZE_T DataSiz
 		double StartTime = FPlatformTime::Seconds();
 		do 
 		{
+			bool bGPUAlive = GDynamicRHI->CheckGpuHeartbeat();
+			if (!bGPUAlive)
+			{
+				UE_LOG(LogD3D11RHI, Fatal, TEXT("GPU has crashed"));
+				return false;
+			}
 			Result = Direct3DDeviceIMContext->GetData(Query,Data,DataSize,0);
 
 			// timer queries are used for Benchmarks which can stall a bit more

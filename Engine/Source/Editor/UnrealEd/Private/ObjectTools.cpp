@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "ObjectTools.h"
@@ -14,6 +14,7 @@
 #include "Misc/Paths.h"
 #include "Misc/ScopedSlowTask.h"
 #include "Misc/App.h"
+#include "Misc/FileHelper.h"
 #include "Modules/ModuleManager.h"
 #include "UObject/UObjectHash.h"
 #include "UObject/UObjectIterator.h"
@@ -88,6 +89,7 @@
 #include "ShaderCompiler.h"
 #include "UniquePtr.h"
 #include "Engine/MapBuildDataRegistry.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogObjectTools, Log, All);
 
@@ -142,7 +144,7 @@ namespace ObjectTools
 		bool bIsSupported = false;
 
 		// Check object prerequisites
-		if ( Obj->IsAsset() )
+		if (ensure(Obj) && Obj->IsAsset() )
 		{
 			UPackage* ObjectPackage = Obj->GetOutermost();
 			if( ObjectPackage != NULL )
@@ -446,13 +448,14 @@ namespace ObjectTools
 			bool bOverwriteExistingObjects =
 				EAppReturnType::Yes == FMessageDialog::Open(
 				EAppMsgType::YesNo,
+				EAppReturnType::No,
 				FText::Format(
 				NSLOCTEXT("UnrealEd", "ReplaceExistingObjectInPackage_F", "An object [{0}] of class [{1}] already exists in file [{2}].  Do you want to replace the existing object?  If you click 'Yes', the existing object will be deleted.  Otherwise, click 'No' and choose a unique name for your new object." ),
 				FText::FromString(ObjectsToOverwriteName),
 				FText::FromString(ObjectsToOverwriteClass),
 				FText::FromString(ObjectsToOverwritePackage) ) );					
 
-			// The user didn't want to overwrite the existing opitons, so bail out of the duplicate operation.
+			// The user didn't want to overwrite the existing options, so bail out of the duplicate operation.
 			if( !bOverwriteExistingObjects )
 			{
 				return NULL;
@@ -530,6 +533,12 @@ namespace ObjectTools
 				&&	!DupObject->GetOutermost()->ContainsMap() )
 			{
 				DupObject->SetFlags(RF_Standalone);
+			}
+
+			// Duplicating an asset should respect the export controls of the original.
+			if (Object->GetOutermost()->HasAnyPackageFlags(PKG_DisallowExport))
+			{
+				DupObject->GetOutermost()->SetPackageFlags(PKG_DisallowExport);
 			}
 
 			// Notify the asset registry
@@ -1121,7 +1130,7 @@ namespace ObjectTools
 			Ref += SelectedObjects[Index]->GetPathName();
 		}
 
-		FPlatformMisc::ClipboardCopy( *Ref );
+		FPlatformApplicationMisc::ClipboardCopy( *Ref );
 	}
 
 	/**
@@ -1883,7 +1892,7 @@ namespace ObjectTools
 						Args.Add(TEXT("Filename"), FText::FromString(PackageFilename));
 						const FText Message = FText::Format(NSLOCTEXT("ObjectTools", "DeleteReadOnlyWarning", "File '{Filename}' is read-only on disk, are you sure you want to delete it?"), Args);
 
-						ReturnType = FMessageDialog::Open(EAppMsgType::YesNoYesAllNoAll, Message);
+						ReturnType = FMessageDialog::Open(EAppMsgType::YesNoYesAllNoAll, EAppReturnType::No, Message);
 						bMakeWritable = ReturnType == EAppReturnType::YesAll;
 						bSilent = ReturnType == EAppReturnType::NoAll;
 					}
@@ -2771,7 +2780,7 @@ namespace ObjectTools
 				}
 				// Don't allow a move/rename to occur into a package that has a filename invalid for saving. This is a rare case
 				// that should not happen often, but could occur using packages created before the editor checked against file name length
-				else if ( ExistingOutermostPackage && ExistingOutermostPackageFilename.Len() > 0 && !FEditorFileUtils::IsFilenameValidForSaving( ExistingOutermostPackageFilename, Reason ) )
+				else if ( ExistingOutermostPackage && ExistingOutermostPackageFilename.Len() > 0 && !FFileHelper::IsFilenameValidForSaving( ExistingOutermostPackageFilename, Reason ) )
 				{
 					bMoveFailed = true;
 				}
@@ -2800,6 +2809,12 @@ namespace ObjectTools
 						NewPackage->SetPackageFlags(PKG_FilterEditorOnly);
 					}
 					NewPackage->bIsCookedForEditor = Object->GetOutermost()->bIsCookedForEditor;
+
+					// Renaming an asset should respect the export controls of the original.
+					if (Object->GetOutermost()->HasAnyPackageFlags(PKG_DisallowExport))
+					{
+						NewPackage->SetPackageFlags(PKG_DisallowExport);
+					}
 
 					UObjectRedirector* Redirector = Cast<UObjectRedirector>( StaticFindObject(UObjectRedirector::StaticClass(), NewPackage, *NewObjectName) );
 					bool bFoundCompatibleRedirector = false;
@@ -2839,7 +2854,7 @@ namespace ObjectTools
 								FString Path;
 
 								// Newly renamed objects must have the single asset package extension
-								Path = FPaths::Combine(*FPaths::GameDir(), TEXT("Content"), TEXT("Sounds"), *LanguageExt, *(FPackageName::GetLongPackageAssetName(NewPackageName) + FPackageName::GetAssetPackageExtension()));
+								Path = FPaths::Combine(*FPaths::ProjectDir(), TEXT("Content"), TEXT("Sounds"), *LanguageExt, *(FPackageName::GetLongPackageAssetName(NewPackageName) + FPackageName::GetAssetPackageExtension()));
 
 								// Move the package into the correct file location by saving it
 								GUnrealEd->Exec( NULL, *FString::Printf(TEXT("OBJ SAVEPACKAGE PACKAGE=\"%s\" FILE=\"%s\""), *NewPackageName, *Path) );
@@ -3008,18 +3023,27 @@ namespace ObjectTools
 		}
 	}
 
-	FString SanitizeObjectName (const FString& InObjectName)
+	FString SanitizeObjectName(const FString& InObjectName)
+	{
+		return SanitizeInvalidChars(InObjectName, INVALID_OBJECTNAME_CHARACTERS);
+	}
+
+	FString SanitizeObjectPath(const FString& InObjectPath)
+	{
+		return SanitizeInvalidChars(InObjectPath, INVALID_OBJECTPATH_CHARACTERS);
+	}
+
+	FString SanitizeInvalidChars(const FString& InObjectName, const FString& InvalidChars)
 	{
 		FString SanitizedName;
-		FString InvalidChars = INVALID_OBJECTNAME_CHARACTERS;
 
 		// See if the name contains invalid characters.
 		FString Char;
-		for( int32 CharIdx = 0; CharIdx < InObjectName.Len(); ++CharIdx )
+		for (int32 CharIdx = 0; CharIdx < InObjectName.Len(); ++CharIdx)
 		{
 			Char = InObjectName.Mid(CharIdx, 1);
 
-			if ( InvalidChars.Contains(*Char) )
+			if (InvalidChars.Contains(*Char))
 			{
 				SanitizedName += TEXT("_");
 			}
@@ -3720,7 +3744,7 @@ namespace ThumbnailTools
 				InObject, ImageWidth, ImageHeight, TextureFlushMode, NULL,
 				&NewThumbnail );		// Out
 
-			UPackage* MyOutermostPackage = CastChecked< UPackage >( InObject->GetOutermost() );
+			UPackage* MyOutermostPackage = InObject->GetOutermost();
 			return CacheThumbnail( InObject->GetFullName(), &NewThumbnail, MyOutermostPackage );
 		}
 
@@ -3882,7 +3906,7 @@ namespace ThumbnailTools
 	/** Returns the thumbnail for the specified object or NULL if one doesn't exist yet */
 	FObjectThumbnail* GetThumbnailForObject( UObject* InObject )
 	{
-		UPackage* ObjectPackage = CastChecked< UPackage >( InObject->GetOutermost() );
+		UPackage* ObjectPackage = InObject->GetOutermost();
 		return FindCachedThumbnailInPackage( ObjectPackage, FName( *InObject->GetFullName() ) );
 	}
 
@@ -4146,9 +4170,48 @@ namespace ThumbnailTools
 		return true;
 	}
 
+	bool AssetHasCustomThumbnail(const FString& InAssetDataFullName)
+	{
+		FObjectThumbnail Thumbnail;
+		return AssetHasCustomThumbnail(InAssetDataFullName, Thumbnail);
+	}
 
+	bool AssetHasCustomThumbnail(const FString& InAssetDataFullName, FObjectThumbnail& OutThumbnail)
+	{
+		const FObjectThumbnail* CachedThumbnail = FindCachedThumbnail(InAssetDataFullName);
+		if (CachedThumbnail != NULL && !CachedThumbnail->IsEmpty())
+		{
+			OutThumbnail = *CachedThumbnail;
+			return true;
+		}
 
+		// If we don't yet have a thumbnail map, check the disk
+		FName ObjectFullName = FName(*InAssetDataFullName);
+		TArray<FName> ObjectFullNames;
+		FThumbnailMap LoadedThumbnails;
+		ObjectFullNames.Add(ObjectFullName);
+		if (ConditionallyLoadThumbnailsForObjects(ObjectFullNames, LoadedThumbnails))
+		{
+			const FObjectThumbnail* Thumbnail = LoadedThumbnails.Find(ObjectFullName);
 
+			if (Thumbnail != NULL && !Thumbnail->IsEmpty())
+			{
+				OutThumbnail = *Thumbnail;
+				return true;
+			}
+		}
+		return false;
+	}
 
+	bool AssetHasCustomCreatedThumbnail(const FString& InAssetDataFullName)
+	{
+		FObjectThumbnail Thumbnail;
+		if (AssetHasCustomThumbnail(InAssetDataFullName, Thumbnail))
+		{
+			return Thumbnail.IsCreatedAfterCustomThumbsEnabled();
+		}
+
+		return false;
+	}
 }
 

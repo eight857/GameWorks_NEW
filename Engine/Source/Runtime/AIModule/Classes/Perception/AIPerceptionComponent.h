@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,7 +18,7 @@ class FGameplayDebuggerCategory;
 class UAISenseConfig;
 struct FVisualLogEntry;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPerceptionUpdatedDelegate, TArray<AActor*>, UpdatedActors);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPerceptionUpdatedDelegate, const TArray<AActor*>&, UpdatedActors);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FActorPerceptionUpdatedDelegate, AActor*, Actor, FAIStimulus, Stimulus);
 
 struct AIMODULE_API FActorPerceptionInfo
@@ -298,6 +298,11 @@ public:
 	/** Retrieves whatever has been sensed about given actor */
 	UFUNCTION(BlueprintCallable, Category = "AI|Perception")
 	bool GetActorsPerception(AActor* Actor, FActorPerceptionBlueprintInfo& Info);
+
+	/** Note that this works only if given sense has been already configured for
+	 *	this component instance */
+	UFUNCTION(BlueprintCallable, Category = "AI|Perception")
+	void SetSenseEnabled(TSubclassOf<UAISense> SenseClass, const bool bEnable);
 
 	//////////////////////////////////////////////////////////////////////////
 	// Might want to move these to special "BP_AIPerceptionComponent"

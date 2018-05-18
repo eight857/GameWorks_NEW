@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GenericPlatform/GenericPlatformProcess.h"
 #include "Misc/Timespan.h"
@@ -168,7 +168,7 @@ void FGenericPlatformProcess::AddShaderSourceDirectoryMapping(const FString& Vir
 	// Detect collisions with any other mappings.
 	check(!GShaderSourceDirectoryMappings.Contains(VirtualShaderDirectory));
 
-	// Make sur the real directory to map exists.
+	// Make sure the real directory to map exists.
 	check(FPaths::DirectoryExists(RealShaderDirectory));
 
 	// Make sure the Generated directory does not exist, because is reserved for C++ generated shader source
@@ -184,7 +184,7 @@ void FGenericPlatformProcess::AddShaderSourceDirectoryMapping(const FString& Vir
  */
 const FString FGenericPlatformProcess::ShaderWorkingDir()
 {
-	return (FPaths::GameIntermediateDir() / TEXT("Shaders/tmp/"));
+	return (FPaths::ProjectIntermediateDir() / TEXT("Shaders/tmp/"));
 }
 
 /**
@@ -196,7 +196,7 @@ void FGenericPlatformProcess::CleanShaderWorkingDir()
 	FString ShaderWorkingDirectory =  FPlatformProcess::ShaderWorkingDir();
 	IFileManager::Get().DeleteDirectory(*ShaderWorkingDirectory, false, true);
 
-	FString LegacyShaderWorkingDirectory = FPaths::GameIntermediateDir() / TEXT("Shaders/WorkingDirectory/");
+	FString LegacyShaderWorkingDirectory = FPaths::ProjectIntermediateDir() / TEXT("Shaders/WorkingDirectory/");
 	IFileManager::Get().DeleteDirectory(*LegacyShaderWorkingDirectory, false, true);
 }
 
@@ -317,12 +317,6 @@ FString FGenericPlatformProcess::GetApplicationName( uint32 ProcessId )
 {
 	UE_LOG(LogHAL, Fatal, TEXT("FGenericPlatformProcess::GetApplicationName not implemented on this platform"));
 	return FString(TEXT(""));
-}
-
-bool FGenericPlatformProcess::IsThisApplicationForeground()
-{
-	UE_LOG(LogHAL, Fatal, TEXT("FGenericPlatformProcess::IsThisApplicationForeground not implemented on this platform"));
-	return false;
 }
 
 bool FGenericPlatformProcess::ExecProcess( const TCHAR* URL, const TCHAR* Params, int32* OutReturnCode, FString* OutStdOut, FString* OutStdErr )
@@ -566,6 +560,12 @@ bool FGenericPlatformProcess::ReadPipeToArray(void* ReadPipe, TArray<uint8> & Ou
 }
 
 bool FGenericPlatformProcess::WritePipe(void* WritePipe, const FString& Message, FString* OutWritten)
+{
+	UE_LOG(LogHAL, Fatal, TEXT("FGenericPlatformProcess::WriteToPipe not implemented on this platform"));
+	return false;
+}
+
+bool FGenericPlatformProcess::WritePipe(void* WritePipe, const uint8* Data, const int32 DataLength, int32* OutDataLength)
 {
 	UE_LOG(LogHAL, Fatal, TEXT("FGenericPlatformProcess::WriteToPipe not implemented on this platform"));
 	return false;

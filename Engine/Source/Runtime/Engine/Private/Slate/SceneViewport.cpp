@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "Slate/SceneViewport.h"
@@ -17,8 +17,12 @@
 #include "Slate/DebugCanvas.h"
 
 #include "IHeadMountedDisplay.h"
+#include "IXRTrackingSystem.h"
+#include "StereoRenderTargetManager.h"
 
 extern EWindowMode::Type GetWindowModeType(EWindowMode::Type WindowMode);
+
+static EPixelFormat SceneTargetFormat = PF_A2B10G10R10;
 
 FSceneViewport::FSceneViewport( FViewportClient* InViewportClient, TSharedPtr<SViewport> InViewportWidget )
 	: FViewport( InViewportClient )
@@ -363,6 +367,12 @@ void FSceneViewport::OnDrawViewport( const FGeometry& AllottedGeometry, const FS
 			//check(Window.IsValid());
 			if ( Window->IsViewportSizeDrivenByWindow() )
 			{
+				if (ViewportWidget.Pin()->ShouldRenderDirectly())
+				{
+					InitialPositionX = FMath::Max(0.0f, AllottedGeometry.AbsolutePosition.X);
+					InitialPositionY = FMath::Max(0.0f, AllottedGeometry.AbsolutePosition.Y);
+				}
+
 				ResizeViewport(FMath::Max(0, DrawSize.X), FMath::Max(0, DrawSize.Y), Window->GetWindowMode());
 			}
 		}
@@ -530,7 +540,7 @@ FReply FSceneViewport::AcquireFocusAndCapture(FIntPoint MousePosition)
 		APlayerController* PC = World->GetGameInstance()->GetFirstLocalPlayerController();
 		const bool bShouldShowMouseCursor = PC && PC->ShouldShowMouseCursor();
 
-		if ( ViewportClient->HideCursorDuringCapture() )
+		if ( ViewportClient->HideCursorDuringCapture() && bShouldShowMouseCursor )
 		{
 			bCursorHiddenDueToCapture = true;
 			MousePosBeforeHiddenDueToCapture = MousePosition;
@@ -1065,6 +1075,8 @@ void FSceneViewport::OnFocusLost( const FFocusEvent& InFocusEvent )
 				}
 			});
 		}
+
+		UE_LOG(LogSlate, Log, TEXT("FSceneViewport::OnFocusLost() reason %d"), (int32)InFocusEvent.GetCause());
 	}
 }
 
@@ -1237,8 +1249,9 @@ void FSceneViewport::ResizeFrame(uint32 NewWindowSizeX, uint32 NewWindowSizeY, E
 				}
 			}
 
+#if !PLATFORM_MAC
 			IHeadMountedDisplay::MonitorInfo MonitorInfo;
-			if (GEngine->HMDDevice.IsValid() && GEngine->HMDDevice->GetHMDMonitorInfo(MonitorInfo))
+			if (GEngine->XRSystem.IsValid() && GEngine->XRSystem->GetHMDDevice() && GEngine->XRSystem->GetHMDDevice()->GetHMDMonitorInfo(MonitorInfo))
 			{
 				if (MonitorInfo.DesktopX > 0 || MonitorInfo.DesktopY > 0)
 				{
@@ -1247,7 +1260,7 @@ void FSceneViewport::ResizeFrame(uint32 NewWindowSizeX, uint32 NewWindowSizeY, E
 					NewWindowPos = FVector2D(MonitorInfo.DesktopX, MonitorInfo.DesktopY);
 				}
 			}
-
+#endif
 			// Resize window
 			if (NewWindowSize != OldWindowSize || (NewWindowPos.IsSet() && NewWindowPos != OldWindowPos) || NewWindowMode != OldWindowMode)
 			{
@@ -1466,6 +1479,10 @@ void FSceneViewport::UpdateViewportRHI(bool bDestroyed, uint32 NewSizeX, uint32 
 void FSceneViewport::EnqueueBeginRenderFrame()
 {
 	check( IsInGameThread() );
+	const bool bStereoRenderingAvailable = GEngine->StereoRenderingDevice.IsValid() && IsStereoRenderingAllowed();
+	const bool bStereoRenderingEnabled = bStereoRenderingAvailable && GEngine->StereoRenderingDevice->IsStereoEnabled();
+
+	IStereoRenderTargetManager* StereoRenderTargetManager = bStereoRenderingAvailable ? GEngine->StereoRenderingDevice->GetRenderTargetManager(): nullptr;
 
 	CurrentBufferedTargetIndex = NextBufferedTargetIndex;
 	NextBufferedTargetIndex = (CurrentBufferedTargetIndex + 1) % BufferedSlateHandles.Num();
@@ -1475,11 +1492,11 @@ void FSceneViewport::EnqueueBeginRenderFrame()
 	}
 
 	// check if we need to reallocate rendertarget for HMD and update HMD rendering viewport 
-	if (GEngine->StereoRenderingDevice.IsValid() && IsStereoRenderingAllowed())
+	if (bStereoRenderingAvailable)
 	{
-		bool bHMDWantsSeparateRenderTarget = GEngine->StereoRenderingDevice->ShouldUseSeparateRenderTarget();
+		bool bHMDWantsSeparateRenderTarget = StereoRenderTargetManager != nullptr ? StereoRenderTargetManager->ShouldUseSeparateRenderTarget() : false;
 		if (bHMDWantsSeparateRenderTarget != bForceSeparateRenderTarget ||
-		    (bHMDWantsSeparateRenderTarget && GEngine->StereoRenderingDevice->NeedReAllocateViewportRenderTarget(*this)))
+		    (bHMDWantsSeparateRenderTarget && StereoRenderTargetManager->NeedReAllocateViewportRenderTarget(*this)))
 		{
 			// This will cause RT to be allocated (or freed)
 			bForceSeparateRenderTarget = bHMDWantsSeparateRenderTarget;
@@ -1487,14 +1504,14 @@ void FSceneViewport::EnqueueBeginRenderFrame()
 		}
 	}
 
-	DebugCanvasDrawer->InitDebugCanvas(GetClient()->GetWorld());
+	DebugCanvasDrawer->InitDebugCanvas(GetClient(), GetClient()->GetWorld());
 
 	// Note: ViewportRHI is only updated on the game thread
 
 	// If we dont have the ViewportRHI then we need to get it before rendering
 	// Note, we need ViewportRHI even if UseSeparateRenderTarget() is true when stereo rendering
 	// is enabled.
-	if (!IsValidRef(ViewportRHI) && (!UseSeparateRenderTarget() || (GEngine->StereoRenderingDevice.IsValid() && GEngine->StereoRenderingDevice->IsStereoEnabled() && IsStereoRenderingAllowed())) )
+	if (!IsValidRef(ViewportRHI) && (!UseSeparateRenderTarget() || bStereoRenderingEnabled))
 	{
 		// Get the viewport for this window from the renderer so we can render directly to the backbuffer
 		FSlateRenderer* Renderer = FSlateApplication::Get().GetRenderer();
@@ -1527,9 +1544,9 @@ void FSceneViewport::EnqueueBeginRenderFrame()
 
 	FViewport::EnqueueBeginRenderFrame();
 
-	if (GEngine->StereoRenderingDevice.IsValid() && IsStereoRenderingAllowed())
+	if (StereoRenderTargetManager != nullptr)
 	{
-		GEngine->StereoRenderingDevice->UpdateViewport(UseSeparateRenderTarget(), *this, ViewportWidget.Pin().Get());	
+		StereoRenderTargetManager->UpdateViewport(UseSeparateRenderTarget(), *this, ViewportWidget.Pin().Get());
 	}
 }
 
@@ -1546,11 +1563,6 @@ void FSceneViewport::BeginRenderFrame(FRHICommandListImmediate& RHICmdList)
 		// Get the backbuffer render target to render directly to it
 		RenderTargetTextureRenderThreadRHI = RHICmdList.GetViewportBackBuffer(ViewportRHI);
 		RenderThreadSlateTexture->SetRHIRef(RenderTargetTextureRenderThreadRHI, RenderTargetTextureRenderThreadRHI->GetSizeX(), RenderTargetTextureRenderThreadRHI->GetSizeY());
-		if (GRHIRequiresEarlyBackBufferRenderTarget)
-		{
-			// unused set render targets are bad on Metal
-			SetRenderTarget(RHICmdList, RenderTargetTextureRenderThreadRHI, FTexture2DRHIRef(), true);
-		}
 	}
 }
 
@@ -1685,9 +1697,8 @@ void FSceneViewport::OnPostResizeWindowBackbuffer(void* Backbuffer)
 	if(!UseSeparateRenderTarget() && !IsValidRef(ViewportRHI) && ViewportWidget.IsValid())
 	{
 		FSlateRenderer* Renderer = FSlateApplication::Get().GetRenderer();
-		FWidgetPath WidgetPath;
 
-		TSharedPtr<SWindow> Window = FSlateApplication::Get().FindWidgetWindow(ViewportWidget.Pin().ToSharedRef(), WidgetPath);
+		TSharedPtr<SWindow> Window = FSlateApplication::Get().FindWidgetWindow(ViewportWidget.Pin().ToSharedRef());
 
 		// If the window is not valid then we are likely in a loading movie and the viewport is not attached to the window.  
 		// We'll have to wait until safe
@@ -1718,14 +1729,15 @@ void FSceneViewport::InitDynamicRHI()
 		NumBufferedFrames = 1;
 		
 		// @todo vreditor switch: This code needs to be called when switching between stereo/non when going immersive.  Seems to always work out that way anyway though? (Probably due to resize)
-		const bool bStereo = (IsStereoRenderingAllowed() && GEngine->StereoRenderingDevice.IsValid() && GEngine->StereoRenderingDevice->IsStereoEnabledOnNextFrame());
-		bool bUseCustomPresentTexture = false;
+		IStereoRenderTargetManager * const StereoRenderTargetManager = 
+			(IsStereoRenderingAllowed() && GEngine->StereoRenderingDevice.IsValid() && GEngine->StereoRenderingDevice->IsStereoEnabledOnNextFrame())
+				? GEngine->StereoRenderingDevice->GetRenderTargetManager() 
+				: nullptr;
 
-		if (bStereo)
+		if (StereoRenderTargetManager != nullptr)
 		{
-			GEngine->StereoRenderingDevice->CalculateRenderTargetSize(*this, TexSizeX, TexSizeY);
-			
-			NumBufferedFrames = GEngine->StereoRenderingDevice->GetNumberOfBufferedFrames();
+			StereoRenderTargetManager->CalculateRenderTargetSize(*this, TexSizeX, TexSizeY);
+			NumBufferedFrames = StereoRenderTargetManager->GetNumberOfBufferedFrames();
 		}
 		
 		check(BufferedSlateHandles.Num() == BufferedRenderTargetsRHI.Num() && BufferedSlateHandles.Num() == BufferedShaderResourceTexturesRHI.Num());
@@ -1746,7 +1758,7 @@ void FSceneViewport::InitDynamicRHI()
 			//add sufficient entires for buffering.
 			for (int32 i = BufferedSlateHandles.Num(); i < NumBufferedFrames; i++)
 			{
-				BufferedSlateHandles.Add(new FSlateRenderTargetRHI(nullptr, 0, 0));
+				BufferedSlateHandles.Add(new FSlateRenderTargetRHI(nullptr, 0, 0)); 
 				BufferedRenderTargetsRHI.Add(nullptr);
 				BufferedShaderResourceTexturesRHI.Add(nullptr);
 			}
@@ -1766,9 +1778,9 @@ void FSceneViewport::InitDynamicRHI()
 		for (int32 i = 0; i < NumBufferedFrames; ++i)
 		{
 			// try to allocate texture via StereoRenderingDevice; if not successful, use the default way
-			if (!bStereo || !GEngine->StereoRenderingDevice->AllocateRenderTargetTexture(i, TexSizeX, TexSizeY, PF_B8G8R8A8, 1, TexCreate_None, TexCreate_RenderTargetable, BufferedRTRHI, BufferedSRVRHI))
+			if (StereoRenderTargetManager == nullptr || !StereoRenderTargetManager->AllocateRenderTargetTexture(i, TexSizeX, TexSizeY, PF_B8G8R8A8, 1, TexCreate_None, TexCreate_RenderTargetable, BufferedRTRHI, BufferedSRVRHI))
 			{
-				RHICreateTargetableShaderResource2D(TexSizeX, TexSizeY, PF_B8G8R8A8, 1, TexCreate_None, TexCreate_RenderTargetable, false, CreateInfo, BufferedRTRHI, BufferedSRVRHI);
+				RHICreateTargetableShaderResource2D(TexSizeX, TexSizeY, SceneTargetFormat, 1, TexCreate_None, TexCreate_RenderTargetable, false, CreateInfo, BufferedRTRHI, BufferedSRVRHI);
 			}
 			BufferedRenderTargetsRHI[i] = BufferedRTRHI;
 			BufferedShaderResourceTexturesRHI[i] = BufferedSRVRHI;
@@ -1830,6 +1842,8 @@ void FSceneViewport::ReleaseDynamicRHI()
 	FViewport::ReleaseDynamicRHI();
 
 	ViewportRHI.SafeRelease();
+
+	DebugCanvasDrawer->ReleaseResources();
 
 	for (int32 i = 0; i < BufferedSlateHandles.Num(); ++i)
 	{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PhysXCooking.h"
 #include "Serialization/MemoryWriter.h"
@@ -272,7 +272,7 @@ bool FPhysXCooking::CookTriMeshImp(FName Format, EPhysXMeshCookFlags CookFlags, 
 	PTriMeshDesc.triangles.stride = sizeof(FTriIndices);
 	PTriMeshDesc.materialIndices.data = SrcMaterialIndices.GetData();
 	PTriMeshDesc.materialIndices.stride = sizeof(PxMaterialTableIndex);
-	PTriMeshDesc.flags = FlipNormals ? PxMeshFlag::eFLIPNORMALS : (PxMeshFlags)0;
+	PTriMeshDesc.flags = FlipNormals ? PxMeshFlag::eFLIPNORMALS : static_cast<PxMeshFlag::Enum>(0);
 
 	// Set up cooking
 	const PxCookingParams CurrentParams = PhysXCooking->getParams();
@@ -299,7 +299,6 @@ bool FPhysXCooking::CookTriMeshImp(FName Format, EPhysXMeshCookFlags CookFlags, 
 	}
 
 	PhysXCooking->setParams(NewParams);
-
 	bool bResult = false;
 
 	// Cook TriMesh Data
@@ -519,7 +518,7 @@ void FPhysXPlatformModule::InitPhysXCooking()
 	if (IsInGameThread())
 	{
 		// Make sure PhysX libs are loaded
-		LoadPhysXModules(/*bLoadCookingModule=*/true);
+		PhysDLLHelper::LoadPhysXModules(/*bLoadCookingModule=*/true);
 	}
 }
 

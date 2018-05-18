@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VREditorUISystem.h"
 #include "Misc/CommandLine.h"
@@ -261,13 +261,12 @@ void UVREditorUISystem::Shutdown()
 		AVREditorFloatingUI* UIPanel = CurrentUI.Value;
 		if (UIPanel != nullptr)
 		{
-			UIPanel->Destroy(false, false);
-			UIPanel = nullptr;
+			VRMode->DestroyTransientActor(UIPanel);
 		}
 	}
 	FloatingUIs.Reset();
 
-	QuickRadialMenu->Destroy(false, false);
+	VRMode->DestroyTransientActor(QuickRadialMenu);
 	QuickRadialMenu = nullptr;
 	InfoDisplayPanel = nullptr;
 	CurrentWidgetOnInfoDisplay.Reset();
@@ -287,12 +286,15 @@ void UVREditorUISystem::Shutdown()
 void UVREditorUISystem::OnPreviewInputAction(FEditorViewportClient& ViewportClient, UViewportInteractor* Interactor,
 	const FViewportActionKeyInput& Action, bool& bOutIsInputCaptured, bool& bWasHandled)
 {
+	static const FName SteamVR(TEXT("SteamVR"));
+	static const FName OculusHMD(TEXT("OculusHMD"));
+
 	UVREditorMotionControllerInteractor* VREditorInteractor = Cast<UVREditorMotionControllerInteractor>(Interactor);
 	
 	// If we are releasing a UI panel that started drag from opening it.
 	if (VREditorInteractor && UIInteractor != nullptr && DraggingUI != nullptr && InteractorDraggingUI != nullptr && UIInteractor == InteractorDraggingUI && VREditorInteractor == UIInteractor && 
 		 Action.Event == EInputEvent::IE_Released && 
-		((VRMode->GetHMDDeviceType() != EHMDDeviceType::DT_SteamVR && Action.ActionType == ViewportWorldActionTypes::SelectAndMove) || (VRMode->GetHMDDeviceType() == EHMDDeviceType::DT_SteamVR && Action.ActionType == VRActionTypes::ConfirmRadialSelection)))
+		((VRMode->GetHMDDeviceType() != SteamVR && Action.ActionType == ViewportWorldActionTypes::SelectAndMove) || (VRMode->GetHMDDeviceType() == SteamVR && Action.ActionType == VRActionTypes::ConfirmRadialSelection)))
 	{
 		bDragPanelFromOpen = false;
 		UViewportDragOperationComponent* DragOperationComponent = DraggingUI->GetDragOperationComponent();
@@ -310,7 +312,7 @@ void UVREditorUISystem::OnPreviewInputAction(FEditorViewportClient& ViewportClie
 		(VREditorInteractor->GetDraggingMode() != EViewportInteractionDraggingMode::World || (VREditorInteractor->GetOtherInteractor() != nullptr && VREditorInteractor->GetOtherInteractor()->GetDraggingMode() != EViewportInteractionDraggingMode::World && VREditorInteractor->GetDraggingMode() == EViewportInteractionDraggingMode::AssistingDrag )))
 	{
 		if (Action.Event == EInputEvent::IE_Pressed && 
-			VRMode->GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift 
+			VRMode->GetHMDDeviceType() == OculusHMD 
 			&& Action.ActionType == VRActionTypes::ConfirmRadialSelection
 			&& GIsDemoMode)
 		{
@@ -359,8 +361,8 @@ void UVREditorUISystem::OnPreviewInputAction(FEditorViewportClient& ViewportClie
 				}
 				if (!bWasHandled)
 				{
-					if ((VRMode->GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift && Action.ActionType == ViewportWorldActionTypes::SelectAndMove) || 
-						(VRMode->GetHMDDeviceType() == EHMDDeviceType::DT_SteamVR && Action.ActionType == VRActionTypes::ConfirmRadialSelection))
+					if ((VRMode->GetHMDDeviceType() == OculusHMD && Action.ActionType == ViewportWorldActionTypes::SelectAndMove) || 
+						(VRMode->GetHMDDeviceType() == SteamVR && Action.ActionType == VRActionTypes::ConfirmRadialSelection))
 					{
 						// If the radial menu is showing, select the currently highlighted button by pressing the trigger
 						if (QuickRadialMenu->GetCurrentlyHoveredButton().IsValid())
@@ -589,6 +591,7 @@ void UVREditorUISystem::OnVRAction( FEditorViewportClient& ViewportClient, UView
 
 void UVREditorUISystem::OnVRHoverUpdate(UViewportInteractor* Interactor, FVector& HoverImpactPoint, bool& bWasHandled)
 {
+	static const FName SteamVR(TEXT("SteamVR"));
 	UVREditorMotionControllerInteractor* VREditorInteractor = Cast<UVREditorMotionControllerInteractor>( Interactor );
 	if( VREditorInteractor != nullptr )
 	{
@@ -660,16 +663,13 @@ void UVREditorUISystem::OnVRHoverUpdate(UViewportInteractor* Interactor, FVector
 							
 							bWasHandled = true;
 
-							if ( UVREditorWidgetComponent* VRWidgetComponent = Cast<UVREditorWidgetComponent>(WidgetComponent) )
-							{
-								VRWidgetComponent->SetIsHovering(true);
-								OnHoverBeginEffect(VRWidgetComponent);
-							}
+							WidgetComponent->SetIsHovering(true);
+							OnHoverBeginEffect(WidgetComponent);
 
 							// Route the mouse scrolling
 							if ( VREditorInteractor->IsTrackpadPositionValid( 1 ) )
 							{
-								const bool bIsAbsolute = ( GetOwner().GetHMDDeviceType() == EHMDDeviceType::DT_SteamVR );
+								const bool bIsAbsolute = ( GetOwner().GetHMDDeviceType() == SteamVR );
 
 								float ScrollDelta = 0.0f;
 								// Don't scroll if the radial menu is a number pad
@@ -688,7 +688,7 @@ void UVREditorUISystem::OnVRHoverUpdate(UViewportInteractor* Interactor, FVector
 								}
 
 								// If using a trackpad (Vive), invert scroll direction so that it feels more like scrolling on a mobile device
-								if( GetOwner().GetHMDDeviceType() == EHMDDeviceType::DT_SteamVR )
+								if( GetOwner().GetHMDDeviceType() == SteamVR )
 								{
 									ScrollDelta *= -1.0f;
 								}
@@ -874,6 +874,9 @@ void UVREditorUISystem::Render( const FSceneView* SceneView, FViewport* Viewport
 
 void UVREditorUISystem::CreateUIs()
 {
+	static const FName SteamVR(TEXT("SteamVR"));
+	static const FName OculusHMD(TEXT("OculusHMD"));
+
 	const FIntPoint DefaultResolution( VREd::DefaultEditorUIResolutionX->GetInt(), VREd::DefaultEditorUIResolutionY->GetInt() );
 	const bool bShowUI = UVREditorMode::IsDebugModeEnabled();
 
@@ -886,7 +889,7 @@ void UVREditorUISystem::CreateUIs()
 			const FIntPoint Resolution(512, 64);
 			InfoDisplayPanel->SetSlateWidget(*this, InfoDisplayPanelID, SNullWidget::NullWidget, Resolution, 20.0f, AVREditorBaseActor::EDockedTo::Nothing);
 			InfoDisplayPanel->ShowUI(bShowUI);
-			FVector RelativeOffset = VRMode->GetHMDDeviceType() == EHMDDeviceType::Type::DT_SteamVR ?  FVector(5.0f, 0.0f, 0.0f) : FVector(5.0f, 0.0f, 10.0f);
+			FVector RelativeOffset = VRMode->GetHMDDeviceType() == SteamVR ?  FVector(5.0f, 0.0f, 0.0f) : FVector(5.0f, 0.0f, 10.0f);
 			InfoDisplayPanel->SetRelativeOffset(RelativeOffset);
 			InfoDisplayPanel->SetWindowMesh(VRMode->GetAssetContainer().WindowMesh);
 			FloatingUIs.Add(InfoDisplayPanelID, InfoDisplayPanel);
@@ -896,11 +899,11 @@ void UVREditorUISystem::CreateUIs()
 		{
 			QuickRadialMenu = GetOwner().SpawnTransientSceneActor<AVREditorRadialFloatingUI>(TEXT("QuickRadialmenu"), bWithSceneComponent);
 			FVector RelativeOffset = FVector::ZeroVector;
-			if (VRMode->GetHMDDeviceType() == EHMDDeviceType::Type::DT_SteamVR)
+			if (VRMode->GetHMDDeviceType() == SteamVR)
 			{
 				RelativeOffset = FVector(-5.0f, 0.0f, 5.0f);
 			}
-			else if (VRMode->GetHMDDeviceType() == EHMDDeviceType::Type::DT_OculusRift)
+			else if (VRMode->GetHMDDeviceType() == OculusHMD)
 			{
 				RelativeOffset = FVector(0.0f, 0.0f, 3.0f);
 			}
@@ -1132,18 +1135,21 @@ void UVREditorUISystem::CreateUIs()
 
 void UVREditorUISystem::OnAssetEditorOpened(UObject* Asset)
 {
-	// We need to disable drag drop on the tabs spawned in VR mode.
-	TArray<IAssetEditorInstance*> Editors = FAssetEditorManager::Get().FindEditorsForAsset(Asset);
-	for ( IAssetEditorInstance* Editor : Editors )
+	
 	{
-		if (Editor->GetAssociatedTabManager().IsValid())
+		// We need to disable drag drop on the tabs spawned in VR mode.
+		TArray<IAssetEditorInstance*> Editors = FAssetEditorManager::Get().FindEditorsForAsset(Asset);
+		for ( IAssetEditorInstance* Editor : Editors )
 		{
-			Editor->GetAssociatedTabManager()->SetCanDoDragOperation(false);
-		}
-		else
-		{
-			FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>(TEXT("LevelEditor"));
-			LevelEditorModule.GetLevelEditorTabManager().ToSharedRef()->SetCanDoDragOperation(false);
+			if (Editor->GetAssociatedTabManager().IsValid())
+			{
+				Editor->GetAssociatedTabManager()->SetCanDoDragOperation(false);
+			}
+			else
+			{
+				FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>(TEXT("LevelEditor"));
+				LevelEditorModule.GetLevelEditorTabManager().ToSharedRef()->SetCanDoDragOperation(false);
+			}
 		}
 	}
 }
@@ -1725,7 +1731,7 @@ TSharedRef<SWidget> UVREditorUISystem::SetButtonFormatting(TSharedRef<SWidget>& 
 	{
 		TSharedRef<SImage> Image = StaticCastSharedRef<SImage>(TestWidget);
 		Image->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
-		Image->SetRenderTransform(FSlateRenderTransform::FTransform2D(4.0f));	
+		Image->SetRenderTransform(FTransform2D(4.0f));	
 	}
 
 	// Format the button text
@@ -1935,7 +1941,7 @@ void UVREditorUISystem::BuildNumPadWidget()
 		FSlateIcon(),
 		FUIAction
 		(
-			FExecuteAction::CreateStatic( &FVREditorActionCallbacks::SimulateCharacterEntry, FString::FString( TEXT( "-" ) ) )
+			FExecuteAction::CreateStatic( &FVREditorActionCallbacks::SimulateCharacterEntry, FString( TEXT( "-" ) ) )
 		)
 	);
 	MenuBuilder.AddMenuEntry(
@@ -1944,7 +1950,7 @@ void UVREditorUISystem::BuildNumPadWidget()
 		FSlateIcon(),
 		FUIAction
 		(
-			FExecuteAction::CreateStatic( &FVREditorActionCallbacks::SimulateCharacterEntry, FString::FString( TEXT( "." ) ) )
+			FExecuteAction::CreateStatic( &FVREditorActionCallbacks::SimulateCharacterEntry, FString( TEXT( "." ) ) )
 		)
 	);
 	MenuBuilder.AddMenuEntry(
@@ -2102,8 +2108,16 @@ UVREditorMotionControllerInteractor* UVREditorUISystem::GetUIInteractor()
 
 AVREditorFloatingUI* UVREditorUISystem::GetPanel(const VREditorPanelID& InPanelID) const
 {
-	AVREditorFloatingUI *const * FoundPanel = FloatingUIs.Find(InPanelID);
-	return FoundPanel != nullptr ? *FoundPanel : nullptr;
+	AVREditorFloatingUI* Result = nullptr;
+	if (FloatingUIs.Num() > 0)
+	{
+		AVREditorFloatingUI *const * FoundPanel = FloatingUIs.Find(InPanelID);
+		if (FoundPanel != nullptr)
+		{
+			Result = *FoundPanel;
+		}
+	}
+	return Result;
 }
 
 void UVREditorUISystem::SequencerRadialMenuGenerator(FMenuBuilder& MenuBuilder, TSharedPtr<FUICommandList> CommandList, UVREditorMode* InVRMode, float& RadiusOverride)
@@ -2418,7 +2432,7 @@ void UVREditorUISystem::UpdateActorPreviewUI(TSharedRef<SWidget> InWidget)
 		{
 			TSharedRef<SButton> Button = StaticCastSharedRef<SButton>(TestWidget);
 			Button->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
-			Button->SetRenderTransform(FSlateRenderTransform::FTransform2D(2.0f));
+			Button->SetRenderTransform(FTransform2D(2.0f));
 		}
 		const bool bWithSceneComponent = false;
 		PreviewPanel->SetSlateWidget(WidgetToDraw);

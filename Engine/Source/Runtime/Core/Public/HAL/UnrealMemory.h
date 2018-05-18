@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -144,30 +144,6 @@ struct CORE_API FMemory
 	static FORCEINLINE void Memswap( void* Ptr1, void* Ptr2, SIZE_T Size )
 	{
 		FPlatformMemory::Memswap(Ptr1,Ptr2,Size);
-	}
-
-	template< class T >
-	DEPRECATED(4.8, "Please use Memset.")
-	static FORCEINLINE void MemSet( T& Src, uint8 ValueToSet )
-	{
-		static_assert( !TIsPointer<T>::Value, "For pointers use the three parameters function");
-		FMemory::Memset( &Src, ValueToSet, sizeof( T ) );
-	}
-
-	template< class T > 
-	DEPRECATED(4.8, "Please use Memzero.")
-	static FORCEINLINE void MemZero( T& Src )
-	{
-		static_assert( !TIsPointer<T>::Value, "For pointers use the two parameters function");
-		FMemory::Memset( &Src, 0, sizeof( T ) );
-	}
-
-	template< class T >
-	DEPRECATED(4.8, "Please use Memcpy.")
-	static FORCEINLINE void MemCopy( T& Dest, const T& Src )
-	{
-		static_assert( !TIsPointer<T>::Value, "For pointers use the three parameters function");
-		FMemory::Memcpy( &Dest, &Src, sizeof( T ) );
 	}
 
 	//

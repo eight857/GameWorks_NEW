@@ -1,4 +1,4 @@
-﻿INTSourceChangelist:3275202
+﻿INTSourceChangelist:3481084
 Availability:Public
 Title:詳細パネル
 Crumbs: %ROOT%, Engine, Engine/UI, Engine/UI/LevelEditor
@@ -60,7 +60,33 @@ Version:4.12
 
 1. **[編集]** メニューから **[Editor Preferences...]** を選択します。
 
-	![](EditorPrefs.png)
+	[OBJECT:ToggleButtonContent]
+	[PARAMLITERAL:category]
+	OS
+	[/PARAMLITERAL]
+	[PARAMLITERAL:id]
+	windows
+	[/PARAMLITERAL]
+	[PARAMLITERAL:active]
+	[/PARAMLITERAL]
+	[PARAM:content]
+	![Main Menu Bar](EditorPrefs.png)
+	[/PARAM]
+	[/OBJECT]
+
+	[OBJECT:ToggleButtonContent]
+	[PARAMLITERAL:category]
+	OS
+	[/PARAMLITERAL]
+	[PARAMLITERAL:id]
+	mac
+	[/PARAMLITERAL]
+	[PARAMLITERAL:active]
+	[/PARAMLITERAL]
+	[PARAM:content]
+	![Main Menu Bar](EditorPrefs_Mac.png)
+	[/PARAM]
+	[/OBJECT]
 
 1. **[Experimental (実験的機能)]** で、**[Enable Details Panel Favorites (詳細パネルのお気に入りを有効にする)]** オプションにチェックを入れます。 
 
@@ -261,7 +287,8 @@ Version:4.12
 	[RELATIVE:Engine/UI/LevelEditor/Details/Customizations/StaticMeshes]
 	[/PARAM]
 [/OBJECT]
-<!--
+[COMMENT:none]
+
 [OBJECT:TopicCompact]
 	[PARAM:image]
 	![](Engine/UI/LevelEditor/Details/Customizations/SkeletalMeshes/details_sk_topic.png)
@@ -273,7 +300,8 @@ Version:4.12
 	[RELATIVE:Engine/UI/LevelEditor/Details/Customizations/SkeletalMeshes]
 	[/PARAM]
 [/OBJECT]
--->
+
+[/COMMENT]
 [OBJECT:TopicCompact]
 	[PARAM:image]
 	![](Engine/UI/LevelEditor/Details/Customizations/CodeView/code_view_topic.png)

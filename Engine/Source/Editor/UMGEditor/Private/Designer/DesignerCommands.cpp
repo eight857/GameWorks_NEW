@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Designer/DesignerCommands.h"
 
@@ -14,6 +14,7 @@ void FDesignerCommands::RegisterCommands()
 
 	UI_COMMAND( ToggleOutlines, "Show Outlines", "Enables or disables showing the dashed outlines", EUserInterfaceActionType::ToggleButton, FInputChord(EKeys::G) );
 	UI_COMMAND( ToggleRespectLocks, "Respect Locks", "Enables or disables respecting locks placed on widgets.  Normally locked widgets prevent being selected in the designer.", EUserInterfaceActionType::ToggleButton, FInputChord(EKeys::L) );
+	UI_COMMAND( ToggleLocalizationPreview, "Toggle Localization Preview", "Enables or disables the localization preview for the current preview language (see Editor Settings -> Region & Language).", EUserInterfaceActionType::ToggleButton, FInputChord() );
 }
 
 #undef LOCTEXT_NAMESPACE

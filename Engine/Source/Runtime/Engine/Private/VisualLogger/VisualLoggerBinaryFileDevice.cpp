@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "VisualLogger/VisualLoggerBinaryFileDevice.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
@@ -37,7 +37,7 @@ void FVisualLoggerBinaryFileDevice::StartRecordingToFile(float TimeStamp)
 	LastLogTimeStamp = StartRecordingTime;
 	TempFileName = FVisualLoggerHelpers::GenerateTemporaryFilename(VISLOG_FILENAME_EXT);
 	
-	const FString FullFilename = FPaths::Combine(*FPaths::GameLogDir(), *TempFileName);
+	const FString FullFilename = FPaths::Combine(*FPaths::ProjectLogDir(), *TempFileName);
 	FileArchive = IFileManager::Get().CreateFileWriter(*FullFilename);
 }
 
@@ -60,7 +60,7 @@ void FVisualLoggerBinaryFileDevice::StopRecordingToFile(float TimeStamp)
 	delete FileArchive;
 	FileArchive = nullptr;
 
-	const FString TempFullFilename = FPaths::Combine(*FPaths::GameLogDir(), *TempFileName);
+	const FString TempFullFilename = FPaths::Combine(*FPaths::ProjectLogDir(), *TempFileName);
 	const FString NewFileName = FVisualLoggerHelpers::GenerateFilename(TempFileName, FileName, StartRecordingTime, LastLogTimeStamp);
 
 	if (TotalSize > 0)
@@ -85,7 +85,7 @@ void FVisualLoggerBinaryFileDevice::DiscardRecordingToFile()
 		delete FileArchive;
 		FileArchive = nullptr;
 
-		const FString TempFullFilename = FPaths::Combine(*FPaths::GameLogDir(), *TempFileName);
+		const FString TempFullFilename = FPaths::Combine(*FPaths::ProjectLogDir(), *TempFileName);
 		IFileManager::Get().Delete(*TempFullFilename, false, true, true);
 	}
 }

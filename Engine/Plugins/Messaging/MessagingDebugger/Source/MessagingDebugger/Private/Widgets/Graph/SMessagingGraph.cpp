@@ -1,6 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Graph/SMessagingGraph.h"
+
+#include "Styling/ISlateStyle.h"
 
 
 #define LOCTEXT_NAMESPACE "SMessagingGraph"

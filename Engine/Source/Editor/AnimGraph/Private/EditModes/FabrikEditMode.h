@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,7 +14,6 @@ public:
 	virtual void ExitMode() override;
 	virtual FVector GetWidgetLocation() const override;
 	virtual FWidget::EWidgetMode GetWidgetMode() const override;
-	virtual FName GetSelectedBone() const override;
 	virtual void DoTranslation(FVector& InTranslation) override;
 
 private:

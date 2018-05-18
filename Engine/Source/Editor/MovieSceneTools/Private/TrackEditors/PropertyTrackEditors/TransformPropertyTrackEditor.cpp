@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TrackEditors/PropertyTrackEditors/TransformPropertyTrackEditor.h"
 #include "MatineeImportTools.h"
@@ -26,13 +26,15 @@ TSharedRef<ISequencerSection> FTransformPropertyTrackEditor::MakeSectionInterfac
 
 TSharedPtr<SWidget> FTransformPropertyTrackEditor::BuildOutlinerEditWidget(const FGuid& ObjectBinding, UMovieSceneTrack* Track, const FBuildEditWidgetParams& Params)
 {
-	TSharedPtr<ISequencer> SequencerPtr = GetSequencer();
+	TWeakPtr<ISequencer> WeakSequencer = GetSequencer();
 
 	const int32 RowIndex = Params.TrackInsertRowIndex;
 	auto SubMenuCallback = [=]() -> TSharedRef<SWidget>
 	{
 		FMenuBuilder MenuBuilder(true, nullptr);
-		FSequencerUtilities::PopulateMenu_CreateNewSection(MenuBuilder, RowIndex, Track, SequencerPtr);
+
+		FSequencerUtilities::PopulateMenu_CreateNewSection(MenuBuilder, RowIndex, Track, WeakSequencer);
+
 		return MenuBuilder.MakeWidget();
 	};
 

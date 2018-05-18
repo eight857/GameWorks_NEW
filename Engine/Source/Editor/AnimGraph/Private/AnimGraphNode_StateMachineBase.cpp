@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimGraphNode_StateMachineBase.h"
 #include "EdGraph/EdGraph.h"
@@ -10,6 +10,7 @@
 #include "AnimationStateMachineGraph.h"
 #include "AnimationStateMachineSchema.h"
 #include "AnimGraphNode_StateMachine.h"
+#include "Kismet2/KismetEditorUtilities.h"
 
 /////////////////////////////////////////////////////
 // FAnimStateMachineNodeNameValidator
@@ -124,6 +125,14 @@ UObject* UAnimGraphNode_StateMachineBase::GetJumpTargetForDoubleClick() const
 	return EditorStateMachineGraph;
 }
 
+void UAnimGraphNode_StateMachineBase::JumpToDefinition() const
+{
+	if (UObject* HyperlinkTarget = GetJumpTargetForDoubleClick())
+	{
+		FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(HyperlinkTarget);
+	}
+}
+
 void UAnimGraphNode_StateMachineBase::DestroyNode()
 {
 	UEdGraph* GraphToRemove = EditorStateMachineGraph;
@@ -144,11 +153,17 @@ void UAnimGraphNode_StateMachineBase::PostPasteNode()
 	Super::PostPasteNode();
 
 	// Add the new graph as a child of our parent graph
-	UEdGraph* ParentGraph = CastChecked<UEdGraph>(GetGraph());
+	UEdGraph* ParentGraph = GetGraph();
 
 	if(ParentGraph->SubGraphs.Find(EditorStateMachineGraph) == INDEX_NONE)
 	{
 		ParentGraph->SubGraphs.Add(EditorStateMachineGraph);
+	}
+
+	for (UEdGraphNode* GraphNode : EditorStateMachineGraph->Nodes)
+	{
+		GraphNode->CreateNewGuid();
+		GraphNode->PostPasteNode();
 	}
 
 	// Find an interesting name

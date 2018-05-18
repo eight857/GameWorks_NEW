@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Factories/SoundSubmixEffectFactory.h"
 #include "Sound/SoundSubmix.h"
@@ -8,6 +8,7 @@
 #include "SoundFactoryUtility.h"
 #include "Kismet2/SClassPickerDialog.h"
 #include "Modules/ModuleManager.h"
+#include "Classes/Sound/AudioSettings.h"
 
 #define LOCTEXT_NAMESPACE "AudioEditorFactories"
 
@@ -58,5 +59,11 @@ UObject* USoundSubmixEffectFactory::FactoryCreateNew(UClass* InClass, UObject* I
 	}
 	return NewSoundEffectSubmixPreset;
 }
+
+bool USoundSubmixEffectFactory::CanCreateNew() const
+{
+	return GetDefault<UAudioSettings>()->IsAudioMixerEnabled();
+}
+
 
 #undef LOCTEXT_NAMESPACE

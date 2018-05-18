@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -93,15 +93,6 @@ namespace UnrealGameSync
 
 	class Workspace : IDisposable
 	{
-		readonly string[] DefaultBuildTargets =
-		{
-			"UnrealHeaderTool Win64 Development, 0.1",
-			"$(EditorTarget) Win64 $(EditorConfiguration), 0.7",
-			"ShaderCompileWorker Win64 Development, 0.8",
-			"UnrealLightmass Win64 Development, 0.9",
-			"CrashReportClient Win64 Shipping, 1.0",
-		};
-
 		readonly WorkspaceSyncCategory[] DefaultSyncCategories =
 		{
 			new WorkspaceSyncCategory(new Guid("{6703E989-D912-451D-93AD-B48DE748D282}"), "Content", "*.uasset"),
@@ -158,6 +149,10 @@ namespace UnrealGameSync
 			{
 				SyncPaths.Add(ClientRootPath + "/*");
 				SyncPaths.Add(ClientRootPath + "/Engine/...");
+				if(Utility.IsEnterpriseProject(SelectedLocalFileName))
+				{
+					SyncPaths.Add(ClientRootPath + "/Enterprise/...");
+				}
 				SyncPaths.Add(PerforceUtils.GetClientOrDepotDirectoryName(SelectedClientFileName) + "/...");
 			}
 			else
@@ -253,7 +248,7 @@ namespace UnrealGameSync
 		{
 			if(bSyncing)
 			{
-				Log.WriteLine("SYNC ABORTED");
+				Log.WriteLine("OPERATION ABORTED");
 				if(WorkerThread != null)
 				{
 					WorkerThread.Abort();
@@ -415,8 +410,27 @@ namespace UnrealGameSync
 
 						// Get the branch name
 						string BranchOrStreamName;
-						if(!Perforce.GetActiveStream(out BranchOrStreamName, Log))
+						if(Perforce.GetActiveStream(out BranchOrStreamName, Log))
 						{
+							// If it's a virtual stream, take the concrete parent stream instead
+							for (;;)
+							{
+								PerforceSpec StreamSpec;
+								if (!Perforce.TryGetStreamSpec(BranchOrStreamName, out StreamSpec, Log))
+								{
+									StatusMessage = String.Format("Unable to get stream spec for {0}.", BranchOrStreamName);
+									return WorkspaceUpdateResult.FailedToSync;
+								}
+								if (StreamSpec.GetField("Type") != "virtual")
+								{
+									break;
+								}
+								BranchOrStreamName = StreamSpec.GetField("Parent");
+							}
+						}
+						else
+						{
+							// Otherwise use the depot path for GenerateProjectFiles.bat in the root of the workspace
 							string DepotFileName;
 							if(!Perforce.ConvertToDepotPath(ClientRootPath + "/GenerateProjectFiles.bat", out DepotFileName, Log))
 							{
@@ -428,7 +442,7 @@ namespace UnrealGameSync
 
 						// Find the last code change before this changelist. For consistency in versioning between local builds and precompiled binaries, we need to use the last submitted code changelist as our version number.
 						List<PerforceChangeSummary> CodeChanges;
-						if(!Perforce.FindChanges(new string[]{ ".cs", ".h", ".cpp", ".usf", ".ush" }.SelectMany(x => SyncPaths.Select(y => String.Format("{0}{1}@<={2}", y, x, PendingChangeNumber))), 1, out CodeChanges, Log))
+						if(!Perforce.FindChanges(new string[]{ ".cs", ".h", ".cpp", ".usf", ".ush", ".uproject", ".uplugin" }.SelectMany(x => SyncPaths.Select(y => String.Format("{0}{1}@<={2}", y, x, PendingChangeNumber))), 1, out CodeChanges, Log))
 						{
 							StatusMessage = String.Format("Couldn't determine last code changelist before CL {0}.", PendingChangeNumber);
 							return WorkspaceUpdateResult.FailedToSync;
@@ -877,9 +891,16 @@ namespace UnrealGameSync
 			// Find the valid config file paths
 			List<string> ProjectConfigFileNames = new List<string>();
 			ProjectConfigFileNames.Add(Path.Combine(LocalRootPath, "Engine", "Programs", "UnrealGameSync", "UnrealGameSync.ini"));
+			ProjectConfigFileNames.Add(Path.Combine(LocalRootPath, "Engine", "Programs", "UnrealGameSync", "NotForLicensees", "UnrealGameSync.ini"));
 			if(SelectedLocalFileName.EndsWith(".uproject", StringComparison.InvariantCultureIgnoreCase))
 			{
 				ProjectConfigFileNames.Add(Path.Combine(Path.GetDirectoryName(SelectedLocalFileName), "Build", "UnrealGameSync.ini"));
+				ProjectConfigFileNames.Add(Path.Combine(Path.GetDirectoryName(SelectedLocalFileName), "Build", "NotForLicensees", "UnrealGameSync.ini"));
+			}
+			else
+			{
+				ProjectConfigFileNames.Add(Path.Combine(LocalRootPath, "Engine", "Programs", "UnrealGameSync", "DefaultProject.ini"));
+				ProjectConfigFileNames.Add(Path.Combine(LocalRootPath, "Engine", "Programs", "UnrealGameSync", "NotForLicensees", "DefaultProject.ini"));
 			}
 
 			// Read them in

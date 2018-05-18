@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	TextureDerivedData.cpp: Derived data management for textures.
@@ -21,6 +21,7 @@
 #include "DeviceProfiles/DeviceProfile.h"
 #include "DeviceProfiles/DeviceProfileManager.h"
 #include "TextureDerivedDataTask.h"
+#include "Streaming/TextureStreamingHelpers.h"
 
 #if WITH_EDITOR
 
@@ -143,7 +144,7 @@ static void SerializeForKey(FArchive& Ar, const FTextureBuildSettings& Settings)
 		TextureFormat = TPM->FindTextureFormat(BuildSettings.TextureFormatName);
 		if (TextureFormat)
 		{
-			Version = TextureFormat->GetVersion(BuildSettings.TextureFormatName);
+			Version = TextureFormat->GetVersion(BuildSettings.TextureFormatName, &BuildSettings);
 		}
 	}
 	
@@ -329,6 +330,7 @@ static void GetTextureBuildSettings(
 	OutBuildSettings.ChromaKeyColor = Texture.ChromaKeyColor;
 	OutBuildSettings.bChromaKeyTexture = Texture.bChromaKeyTexture;
 	OutBuildSettings.ChromaKeyThreshold = Texture.ChromaKeyThreshold;
+	OutBuildSettings.CompressionQuality = Texture.CompressionQuality - 1; // translate from enum's 0 .. 5 to desired compression (-1 .. 4, where -1 is default while 0 .. 4 are actual quality setting override)
 }
 
 /**
@@ -814,13 +816,16 @@ bool FTexturePlatformData::TryLoadMips(int32 FirstMipToLoad, void** OutMipData)
 			if (OutMipData)
 			{
 				OutMipData[MipIndex - FirstMipToLoad] = FMemory::Malloc(Mip.BulkData.GetBulkDataSize());
-#if 0
-				checkSlow(!Mip.BulkData.GetFilename().EndsWith(TEXT(".ubulk"))); // We want to make sure that any non-streamed mips are coming from the texture asset file, and not from an external bulk file
-#else
-				UE_CLOG(Mip.BulkData.GetFilename().EndsWith(TEXT(".ubulk")), LogTexture, Error, TEXT("Loading non-streamed mips from an external bulk file.  This is not desireable.  File %s"), *(Mip.BulkData.GetFilename() ) );
+
+#if PLATFORM_SUPPORTS_TEXTURE_STREAMING
+				// We want to make sure that any non-streamed mips are coming from the texture asset file, and not from an external bulk file.
+				// But because "r.TextureStreaming" is driven by the project setting as well as the command line option "-NoTextureStreaming", 
+				// is it possible for streaming mips to be loaded in non streaming ways.
+				if (CVarSetTextureStreaming.GetValueOnAnyThread() != 0)
+				{
+					UE_CLOG(Mip.BulkData.GetFilename().EndsWith(TEXT(".ubulk")), LogTexture, Error, TEXT("Loading non-streamed mips from an external bulk file.  This is not desireable.  File %s"), *(Mip.BulkData.GetFilename() ) );
+				}
 #endif
-				
-				
 				Mip.BulkData.GetCopy(&OutMipData[MipIndex - FirstMipToLoad]);
 			}
 			NumMipsCached++;
@@ -994,8 +999,16 @@ static void SerializePlatformData(
 	if (bCooked && Ar.IsSaving())
 	{
 		int32 MinMipToInline = 0;
-			
+		
+#if WITH_EDITORONLY_DATA
+		check(Ar.CookingTarget());
+		// This also needs to check whether the project enables texture streaming.
+		// Currently, there is no reliable way to implement this because there is no difference
+		// between the project settings (CVar) and the command line setting (from -NoTextureStreaming)
+		if (bStreamable && Ar.CookingTarget()->SupportsFeature(ETargetPlatformFeatures::TextureStreaming))
+#else
 		if (bStreamable)
+#endif
 		{
 			MinMipToInline = FMath::Max(0, NumMips - PlatformData->GetNumNonStreamingMips());
 		}
@@ -1044,62 +1057,6 @@ void FTexturePlatformData::SerializeCooked(FArchive& Ar, UTexture* Owner, bool b
 }
 
 /*------------------------------------------------------------------------------
-	Streaming mips from the derived data cache.
-------------------------------------------------------------------------------*/
-
-#if WITH_EDITORONLY_DATA
-
-/** Initialization constructor. */
-FAsyncStreamDerivedMipWorker::FAsyncStreamDerivedMipWorker(
-	const FString& InDerivedDataKey,
-	void** InDestMipDataPointer,
-	int32 InMipSize,
-	FThreadSafeCounter* InThreadSafeCounter
-	)
-	: DerivedDataKey(InDerivedDataKey)
-	, DestMipDataPointer(InDestMipDataPointer)
-	, ExpectedMipSize(InMipSize)
-	, bRequestFailed(false)
-	, ThreadSafeCounter(InThreadSafeCounter)
-{
-	check(DestMipDataPointer != NULL);
-
-	// Make sure the pixel format enum is cached -- we access it on another thread.
-	UTexture::GetPixelFormatEnum();
-}
-
-/** Retrieves the derived mip from the derived data cache. */
-void FAsyncStreamDerivedMipWorker::DoWork()
-{
-	TArray<uint8> DerivedMipData;
-
-	if (GetDerivedDataCacheRef().GetSynchronous(*DerivedDataKey, DerivedMipData))
-	{
-		FMemoryReader Ar(DerivedMipData, true);
-
-		int32 MipSize = 0;
-		Ar << MipSize;
-		checkf(MipSize == ExpectedMipSize, TEXT("MipSize(%d) == ExpectedSize(%d)"), MipSize, ExpectedMipSize);
-
-		// Allocate memory for the mip unless the caller has already done so.
-		if (*DestMipDataPointer == NULL)
-		{
-			*DestMipDataPointer = FMemory::Malloc(MipSize);
-		}
-
-		Ar.Serialize(*DestMipDataPointer, MipSize);
-	}
-	else
-	{
-		bRequestFailed = true;
-	}
-	FPlatformMisc::MemoryBarrier();
-	ThreadSafeCounter->Decrement();
-}
-
-#endif // #if WITH_EDITORONLY_DATA
-
-/*------------------------------------------------------------------------------
 	Texture derived data interface.
 ------------------------------------------------------------------------------*/
 
@@ -1123,9 +1080,9 @@ void UTexture2D::GetMipData(int32 FirstMipToLoad, void** OutMipData)
 	}
 }
 
-void UTexture::UpdateCachedLODBias( bool bIncTextureMips )
+void UTexture::UpdateCachedLODBias()
 {
-	CachedCombinedLODBias = UDeviceProfileManager::Get().GetActiveProfile()->GetTextureLODSettings()->CalculateLODBias(this, bIncTextureMips);
+	CachedCombinedLODBias = UDeviceProfileManager::Get().GetActiveProfile()->GetTextureLODSettings()->CalculateLODBias(this);
 }
 
 #if WITH_EDITOR
@@ -1371,31 +1328,6 @@ bool UTexture::IsCachedCookedPlatformDataLoaded( const ITargetPlatform* TargetPl
 	}
 	// if we get here all our stuff is cached :)
 	return true;
-}
-
-void UTexture2D::WillNeverCacheCookedPlatformDataAgain()
-{
-	Super::WillNeverCacheCookedPlatformDataAgain();
-#if WITH_EDITORONLY_DATA 
-	// "Source" is only in WITH_EDITORONLY_DATA
-	// UE_LOG(LogTemp, Display, TEXT("Cleared source texture data for texture %s"), *GetName());
-	// clear source mips if we are in the editor then we don't have this luxury 
-	check( IsAsyncCacheComplete());
-
-	const TMap<FString, FTexturePlatformData*> *CookedPlatformDataPtr = GetCookedPlatformData();
-	if ( CookedPlatformDataPtr != NULL )
-	{
-		for ( const auto& TexturePlatformData : *CookedPlatformDataPtr )
-		{
-			check( TexturePlatformData.Value->AsyncTask == NULL);
-		}
-	}
-
-	// Don't release the source memory because at build time, textures may need other texture source data.
-	// Releasing it would make the source data unavailable for texture referenced through CompositeTexture.
-	// Otherwise, texture data is usually already released when loaded with AllowAsyncLoading.
-	//	Source.ReleaseSourceMemory();
-#endif
 }
 
 bool UTexture::IsAsyncCacheComplete()

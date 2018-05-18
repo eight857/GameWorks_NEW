@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "K2Node_ExecutionSequence.h"
@@ -30,23 +30,22 @@ public:
 		ExpectedPinType.PinCategory = UEdGraphSchema_K2::PC_Exec;
 
 		UEdGraphPin* ExecTriggeringPin = Context.FindRequiredPinByName(Node, UEdGraphSchema_K2::PN_Execute, EGPD_Input);
-		if ((ExecTriggeringPin == NULL) || !Context.ValidatePinType(ExecTriggeringPin, ExpectedPinType))
+		if ((ExecTriggeringPin == nullptr) || !Context.ValidatePinType(ExecTriggeringPin, ExpectedPinType))
 		{
-			CompilerContext.MessageLog.Error(*FString::Printf(*LOCTEXT("NoValidExecutionPinForExecSeq_Error", "@@ must have a valid execution pin @@").ToString()), Node, ExecTriggeringPin);
+			CompilerContext.MessageLog.Error(*LOCTEXT("NoValidExecutionPinForExecSeq_Error", "@@ must have a valid execution pin @@").ToString(), Node, ExecTriggeringPin);
 			return;
 		}
 		else if (ExecTriggeringPin->LinkedTo.Num() == 0)
 		{
-			CompilerContext.MessageLog.Warning(*FString::Printf(*LOCTEXT("NodeNeverExecuted_Warning", "@@ will never be executed").ToString()), Node);
+			CompilerContext.MessageLog.Warning(*LOCTEXT("NodeNeverExecuted_Warning", "@@ will never be executed").ToString(), Node);
 			return;
 		}
 
 		// Find the valid, connected output pins, and add them to the processing list
 		TArray<UEdGraphPin*> OutputPins;
-		for (int32 i = 0; i < Node->Pins.Num(); i++)
+		for (UEdGraphPin* CurrentPin : Node->Pins)
 		{
-			UEdGraphPin* CurrentPin = Node->Pins[i];
-			if ((CurrentPin->Direction == EGPD_Output) && (CurrentPin->PinName.StartsWith(CompilerContext.GetSchema()->PN_Then)) && (CurrentPin->LinkedTo.Num() > 0))
+			if ((CurrentPin->Direction == EGPD_Output) && (CurrentPin->LinkedTo.Num() > 0) && (CurrentPin->PinName.ToString().StartsWith(UEdGraphSchema_K2::PN_Then.ToString())))
 			{
 				OutputPins.Add(CurrentPin);
 			}
@@ -60,7 +59,6 @@ public:
 			if (Context.IsDebuggingOrInstrumentationRequired() && (OutputPins.Num() > 1))
 			{
 				const FString NodeComment = Node->NodeComment.IsEmpty() ? Node->GetName() : Node->NodeComment;
-				const bool bInstrumentedVersion = Context.bInstrumentScriptCode;
 
 				// Assuming sequence X goes to A, B, C, we want to emit:
 				//   X: push X1
@@ -74,14 +72,6 @@ public:
 				// A push statement we need to patch up on the next pass (e.g., push X1 before we know where X1 is)
 				FBlueprintCompiledStatement* LastPushStatement = NULL;
 
-				if (bInstrumentedVersion)
-				{
-					// Emit a sequence instruction
-					FBlueprintCompiledStatement& SequenceStart = Context.AppendStatementForNode(Node);
-					SequenceStart.Type = KCST_InstrumentedStatePush;
-					SequenceStart.Comment = NodeComment;
-				}
-
 				for (int32 i = 0; i < OutputPins.Num(); ++i)
 				{
 					// Emit the debug site and patch up the previous jump if we're on subsequent steps
@@ -90,7 +80,7 @@ public:
 					{
 						// Emit a debug site
 						FBlueprintCompiledStatement& DebugSiteAndJumpTarget = Context.AppendStatementForNode(Node);
-						DebugSiteAndJumpTarget.Type = bInstrumentedVersion ? KCST_InstrumentedStateRestore : Context.GetBreakpointType();
+						DebugSiteAndJumpTarget.Type = Context.GetBreakpointType();
 						DebugSiteAndJumpTarget.Comment = NodeComment;
 						DebugSiteAndJumpTarget.bIsJumpTarget = true;
 
@@ -100,7 +90,7 @@ public:
 					}
 
 					// Emit a push to get to the next step in the sequence, unless we're the last one or this is an instrumented build
-					const bool bNotLastIndex = ((i + 1) < OutputPins.Num()) || bInstrumentedVersion;
+					const bool bNotLastIndex = ((i + 1) < OutputPins.Num());
 					if (bNotLastIndex)
 					{
 						FBlueprintCompiledStatement& PushExecutionState = Context.AppendStatementForNode(Node);
@@ -115,18 +105,6 @@ public:
 				}
 
 				check(LastPushStatement);
-
-				if (bInstrumentedVersion)
-				{
-					// For instrumented builds jump back to node and pop the execution state then exit the thread.
-					FBlueprintCompiledStatement& SequenceEnd = Context.AppendStatementForNode(Node);
-					SequenceEnd.Type = KCST_InstrumentedStatePop;
-					SequenceEnd.Comment = NodeComment;
-					SequenceEnd.bIsJumpTarget = true;
-					LastPushStatement->TargetLabel = &SequenceEnd;
-					FBlueprintCompiledStatement& NextExecutionState = Context.AppendStatementForNode(Node);
-					NextExecutionState.Type = KCST_EndOfThread;
-				}
 			}
 			else
 			{
@@ -161,13 +139,11 @@ UK2Node_ExecutionSequence::UK2Node_ExecutionSequence(const FObjectInitializer& O
 
 void UK2Node_ExecutionSequence::AllocateDefaultPins()
 {
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-
-	CreatePin(EGPD_Input, K2Schema->PC_Exec, FString(), nullptr, K2Schema->PN_Execute);
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Execute);
 
 	// Add two default pins
-	CreatePin(EGPD_Output, K2Schema->PC_Exec, FString(), nullptr, GetPinNameGivenIndex(0));
-	CreatePin(EGPD_Output, K2Schema->PC_Exec, FString(), nullptr, GetPinNameGivenIndex(1));
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, GetPinNameGivenIndex(0));
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, GetPinNameGivenIndex(1));
 
 	Super::AllocateDefaultPins();
 }
@@ -193,11 +169,9 @@ FText UK2Node_ExecutionSequence::GetTooltipText() const
 	return NSLOCTEXT("K2Node", "ExecutePinInOrder_Tooltip", "Executes a series of pins in order");
 }
 
-FString UK2Node_ExecutionSequence::GetUniquePinName()
+FName UK2Node_ExecutionSequence::GetUniquePinName()
 {
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-
-	FString NewPinName;
+	FName NewPinName;
 	int32 i = 0;
 	while (true)
 	{
@@ -214,8 +188,7 @@ FString UK2Node_ExecutionSequence::GetUniquePinName()
 void UK2Node_ExecutionSequence::AddInputPin()
 {
 	Modify();
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-	CreatePin(EGPD_Output, K2Schema->PC_Exec, FString(), nullptr, GetUniquePinName());
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, GetUniquePinName());
 }
 
 void UK2Node_ExecutionSequence::RemovePinFromExecutionNode(UEdGraphPin* TargetPin) 
@@ -227,13 +200,11 @@ void UK2Node_ExecutionSequence::RemovePinFromExecutionNode(UEdGraphPin* TargetPi
 		TargetPin->MarkPendingKill();
 
 		// Renumber the pins so the numbering is compact
-		const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-
 		int32 ThenIndex = 0;
 		for (int32 i = 0; i < OwningSeq->Pins.Num(); ++i)
 		{
 			UEdGraphPin* PotentialPin = OwningSeq->Pins[i];
-			if (K2Schema->IsExecPin(*PotentialPin) && (PotentialPin->Direction == EGPD_Output))
+			if (UEdGraphSchema_K2::IsExecPin(*PotentialPin) && (PotentialPin->Direction == EGPD_Output))
 			{
 				PotentialPin->PinName = GetPinNameGivenIndex(ThenIndex);
 				++ThenIndex;
@@ -246,11 +217,10 @@ bool UK2Node_ExecutionSequence::CanRemoveExecutionPin() const
 {
 	int32 NumOutPins = 0;
 
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
 	for (int32 i = 0; i < Pins.Num(); ++i)
 	{
 		UEdGraphPin* PotentialPin = Pins[i];
-		if (K2Schema->IsExecPin(*PotentialPin) && (PotentialPin->Direction == EGPD_Output))
+		if (UEdGraphSchema_K2::IsExecPin(*PotentialPin) && (PotentialPin->Direction == EGPD_Output))
 		{
 			NumOutPins++;
 		}
@@ -259,10 +229,9 @@ bool UK2Node_ExecutionSequence::CanRemoveExecutionPin() const
 	return (NumOutPins > 2);
 }
 
-FString UK2Node_ExecutionSequence::GetPinNameGivenIndex(int32 Index) const
+FName UK2Node_ExecutionSequence::GetPinNameGivenIndex(int32 Index) const
 {
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-	return K2Schema->PN_Then + FString::Printf(TEXT("_%d"), Index);
+	return *FString::Printf(TEXT("%s_%d"), *UEdGraphSchema_K2::PN_Then.ToString(), Index);
 }
 
 void UK2Node_ExecutionSequence::ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>& OldPins)
@@ -270,32 +239,30 @@ void UK2Node_ExecutionSequence::ReallocatePinsDuringReconstruction(TArray<UEdGra
 	Super::AllocateDefaultPins();
 
 	// Create the execution input pin
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-	CreatePin(EGPD_Input, K2Schema->PC_Exec, FString(), nullptr, K2Schema->PN_Execute);
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Execute);
 
 	// Create a new pin for each old execution output pin, and coerce the names to match on both sides
 	int32 ExecOutPinCount = 0;
 	for (int32 i = 0; i < OldPins.Num(); ++i)
 	{
 		UEdGraphPin* TestPin = OldPins[i];
-		if (K2Schema->IsExecPin(*TestPin) && (TestPin->Direction == EGPD_Output))
+		if (UEdGraphSchema_K2::IsExecPin(*TestPin) && (TestPin->Direction == EGPD_Output))
 		{
-			FString NewPinName = GetPinNameGivenIndex(ExecOutPinCount);
+			const FName NewPinName(GetPinNameGivenIndex(ExecOutPinCount));
 			ExecOutPinCount++;
 
 			// Make sure the old pin and new pin names match
 			TestPin->PinName = NewPinName;
 
 			// Create the new output pin to match
-			CreatePin(EGPD_Output, K2Schema->PC_Exec, FString(), nullptr, NewPinName);
+			CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, NewPinName);
 		}
 	}
 }
 
-UEdGraphPin * UK2Node_ExecutionSequence::GetThenPinGivenIndex(int32 Index)
+UEdGraphPin* UK2Node_ExecutionSequence::GetThenPinGivenIndex(const int32 Index) 
 {
-	FString PinName = GetPinNameGivenIndex(Index);
-	return FindPin(PinName);
+	return FindPin(GetPinNameGivenIndex(Index));
 }
 
 FNodeHandlingFunctor* UK2Node_ExecutionSequence::CreateNodeHandler(FKismetCompilerContext& CompilerContext) const

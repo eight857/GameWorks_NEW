@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneEventParametersCustomization.h"
 
@@ -75,7 +75,7 @@ void FMovieSceneEventParametersCustomization::CustomizeChildren(TSharedRef<IProp
 		}
 	}
 
-	TSharedRef<const SWidget> DetailsView = ChildBuilder.GetParentCategory().GetParentLayout().GetDetailsView().AsShared();
+	TSharedRef<const SWidget> DetailsView = ChildBuilder.GetParentCategory().GetParentLayout().GetDetailsView()->AsShared();
 
 	PropertyUtilities->EnqueueDeferredAction(FSimpleDelegate::CreateLambda(
 		[DetailsView]

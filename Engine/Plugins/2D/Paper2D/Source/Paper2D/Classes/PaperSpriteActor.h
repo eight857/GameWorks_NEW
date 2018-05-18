@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -32,7 +32,3 @@ public:
 	/** Returns RenderComponent subobject **/
 	FORCEINLINE class UPaperSpriteComponent* GetRenderComponent() const { return RenderComponent; }
 };
-
-// Allow the old name to continue to work for one release
-DEPRECATED(4.3, "APaperRenderActor has been renamed to APaperSpriteActor")
-typedef APaperSpriteActor APaperRenderActor;

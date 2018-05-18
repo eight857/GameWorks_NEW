@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -60,11 +60,12 @@ namespace Audio
 		AUNode      OutputNode;
 		AudioUnit	OutputUnit;
         uint8*      SubmittedBufferPtr;
-        
-#if PLATFORM_IOS || PLATFORM_TVOS
+        int32 SubmittedBytes = 0;
+
         int32       RemainingBytesInCurrentSubmittedBuffer;
         int32       BytesPerSubmittedBuffer;
-#endif //#if PLATFORM_IOS || PLATFORM_TVOS
+        
+        double GraphSampleRate;
         
 		bool PerformCallback(AudioBufferList* OutputBufferData);
 		void HandleError(const TCHAR* InLogOutput, bool bTeardown = true);
@@ -75,4 +76,3 @@ namespace Audio
 	};
 
 }
-

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/WidgetSwitcher.h"
 #include "SlateFwd.h"
@@ -15,7 +15,7 @@ UWidgetSwitcher::UWidgetSwitcher(const FObjectInitializer& ObjectInitializer)
 	bIsVariable = true;
 
 	SWidgetSwitcher::FArguments Defaults;
-	Visibility = Visiblity_DEPRECATED = UWidget::ConvertRuntimeToSerializedVisibility(Defaults._Visibility.Get());
+	Visibility = UWidget::ConvertRuntimeToSerializedVisibility(Defaults._Visibility.Get());
 }
 
 void UWidgetSwitcher::ReleaseSlateResources(bool bReleaseChildren)
@@ -75,6 +75,11 @@ UWidget* UWidgetSwitcher::GetWidgetAtIndex( int32 Index ) const
 	}
 
 	return nullptr;
+}
+
+UWidget* UWidgetSwitcher::GetActiveWidget()const
+{
+	return GetWidgetAtIndex(GetActiveWidgetIndex());
 }
 
 UClass* UWidgetSwitcher::GetSlotClass() const

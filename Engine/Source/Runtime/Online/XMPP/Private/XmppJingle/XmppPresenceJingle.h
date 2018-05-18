@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -56,7 +56,7 @@ public:
 	virtual ~FXmppPresenceJingle();
 
 	static void ConvertFromPresence(buzz::PresenceStatus& OutStatus, const FXmppUserPresence& InPresence);
-	static void ConvertToPresence(FXmppUserPresence& OutPresence, const buzz::PresenceStatus& InStatus, const FXmppUserJid& InJid);
+	static void ConvertToPresence(FXmppUserPresence& OutPresence, const buzz::PresenceStatus& InStatus, const FXmppUserJid& InJid, const FString& InResourceOverride = FString());
 	static void ConvertToMucPresence(FXmppMucPresence& OutMucPresence, const class FXmppMucPresenceStatus& InMucStatus, const FXmppUserJid& InJid);
 
 private:

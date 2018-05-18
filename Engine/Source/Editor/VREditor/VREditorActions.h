@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "VREditorUISystem.h"
@@ -215,6 +215,9 @@ public:
 	/** Deselects everything currently selected */
 	static void DeselectAll();
 
+	/** Exit the VR mode */
+	static void ExitVRMode(UVREditorMode* InVRMode);
+
 public:
 	
 	static FText GizmoCoordinateSystemText;
@@ -223,6 +226,4 @@ public:
 
 	static FText SelectingCandidateActorsText;
 
-}
-;
-
+};

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,20 +7,32 @@
 #include "Types/SlateEnums.h"
 #include "IDetailCustomization.h"
 #include "Factories/FbxImportUI.h"
+#include "EditorUndoClient.h"
 
 class IDetailLayoutBuilder;
 class IDetailPropertyRow;
 class IPropertyHandle;
 
-class FFbxImportUIDetails : public IDetailCustomization
+class FFbxImportUIDetails : public IDetailCustomization, public FEditorUndoClient
 {
 public:
+	~FFbxImportUIDetails();
+
 	/** Makes a new instance of this detail layout class for a specific detail view requesting it */
 	static TSharedRef<IDetailCustomization> MakeInstance();
 
 	/** IDetailCustomization interface */
 	virtual void CustomizeDetails( IDetailLayoutBuilder& DetailBuilder ) override;
 	/** End IDetailCustomization interface */
+
+	void AddSubCategory(IDetailLayoutBuilder& DetailBuilder, FName MainCategoryName, TMap<FString, TArray<TSharedPtr<IPropertyHandle>>>& SubCategoriesProperties, TMap<FString, bool >& SubCategoriesAdvanced, TMap<FString, FText >& SubCategoriesTooltip);
+
+	void RefreshCustomDetail();
+
+	/** FEditorUndoClient interface */
+	virtual void PostUndo(bool bSuccess) override;
+	virtual void PostRedo(bool bSuccess) override;
+	/** End FEditorUndoClient interface */
 
 	void CollectChildPropertiesRecursive(TSharedPtr<IPropertyHandle> Node, TArray<TSharedPtr<IPropertyHandle>>& OutProperties);
 	

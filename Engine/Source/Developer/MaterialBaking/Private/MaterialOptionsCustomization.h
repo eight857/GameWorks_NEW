@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -20,6 +20,7 @@ protected:
 protected:
 	/** Property restriction instance used for limiting EMaterialProperty selection */
 	TSharedPtr<FPropertyRestriction> PropertyRestriction;
+	class UMaterialOptions* CurrentOptions;
 };
 
 /** Detail customization for UMaterialOptions */

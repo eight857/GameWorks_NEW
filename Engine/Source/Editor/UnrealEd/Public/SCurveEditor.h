@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -126,6 +126,7 @@ public:
 
 DECLARE_DELEGATE_TwoParams( FOnSetInputViewRange, float, float )
 DECLARE_DELEGATE_TwoParams( FOnSetOutputViewRange, float, float )
+DECLARE_DELEGATE_OneParam( FOnSetAreCurvesVisible, bool )
 
 class SCurveEditor : 
 	public SCompoundWidget,
@@ -208,6 +209,7 @@ public:
 		SLATE_ATTRIBUTE( bool, ShowTimeInFrames )
 		SLATE_ATTRIBUTE( float, TimelineLength )
 		SLATE_ATTRIBUTE( FVector2D, DesiredSize )
+		SLATE_ATTRIBUTE( bool, AreCurvesVisible )
 		SLATE_ARGUMENT( bool, DrawCurve )
 		SLATE_ARGUMENT( bool, HideUI )
 		SLATE_ARGUMENT( bool, AllowZoomOutput )
@@ -223,6 +225,7 @@ public:
 		SLATE_ARGUMENT( FLinearColor, GridColor )
 		SLATE_EVENT( FOnSetInputViewRange, OnSetInputViewRange )
 		SLATE_EVENT( FOnSetOutputViewRange, OnSetOutputViewRange )
+		SLATE_EVENT( FOnSetAreCurvesVisible, OnSetAreCurvesVisible )
 		SLATE_EVENT( FSimpleDelegate, OnCreateAsset )
 	SLATE_END_ARGS()
 
@@ -278,6 +281,11 @@ public:
 	UNREALED_API void ZoomToFitHorizontal(const bool bZoomToFitAll = false);
 	UNREALED_API void ZoomToFitVertical(const bool bZoomToFitAll = false);
 	UNREALED_API void ZoomToFit(const bool bZoomToFitAll = false);
+
+	/* Set flag that allows scrolling up/down over the widget from the outside without it handling the scroll wheel event */
+	UNREALED_API void SetRequireFocusToZoom(bool bInRequireFocusToZoom);
+
+	UNREALED_API virtual TOptional<bool> OnQueryShowFocus(const EFocusCause InFocusCause) const override;
 
 private:
 	/** Used to track a key and the curve that owns it */
@@ -450,7 +458,7 @@ private:
 	void OnCreateExternalCurveClicked();
 
 	/** Called when "Show Curves" is selected from the context menu */
-	void OnShowCurveToggled() { bAreCurvesVisible = !bAreCurvesVisible; }
+	void OnShowCurveToggled();
 
 	/** Called when "Show Gradient" is selected from the context menu */
 	void OnShowGradientToggled() { bIsGradientEditorVisible = !bIsGradientEditorVisible; }
@@ -573,7 +581,7 @@ private:
 	UNREALED_API virtual void PostRedo(bool bSuccess) override { PostUndo(bSuccess); }
 	// End of FEditorUndoClient
 
-	bool AreCurvesVisible() const { return bAlwaysDisplayColorCurves || bAreCurvesVisible; }
+	bool AreCurvesVisible() const { return bAlwaysDisplayColorCurves || bAreCurvesVisible.Get(); }
 	bool IsGradientEditorVisible() const { return bIsGradientEditorVisible; }
 	bool IsLinearColorCurve() const;
 
@@ -693,6 +701,9 @@ private:
 	/** Handler for adjust timeline panning viewing */
 	FOnSetOutputViewRange	SetOutputViewRangeHandler;
 
+	/** Handler for setting whether or not curves are being displayed. */
+	FOnSetAreCurvesVisible SetAreCurvesVisibleHandler;
+
 	/** Index for the current transaction if any */
 	int32					TransactionIndex;
 
@@ -702,9 +713,6 @@ private:
 
 	/**Flag to enable/disable track editing*/
 	bool		bCanEditTrack;
-
-	/** True if the curves are being displayed */
-	bool bAreCurvesVisible;
 	
 	/** True if the gradient editor is being displayed */
 	bool bIsGradientEditorVisible;
@@ -717,6 +725,9 @@ private:
 
 	/** Flag to allow auto framing */
 	bool bAllowAutoFrame;
+
+	/** Flag to allow scrolling up/down over the widget from the outside without it handling the scroll wheel event */
+	bool bRequireFocusToZoom;
 
 protected:
 	/** Minimum input of view range  */
@@ -745,6 +756,9 @@ protected:
 
 	/** Show time in frames. */
 	TAttribute<bool> bShowTimeInFrames;
+
+	/** Whether or not curves are being displayed */
+	TAttribute<bool> bAreCurvesVisible;
 
 	/** True if you want the curve editor to fit to zoom **/
 	bool bZoomToFitVertical;

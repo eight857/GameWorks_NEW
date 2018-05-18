@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/NavRelevantComponent.h"
 #include "AI/Navigation/NavigationSystem.h"
@@ -85,11 +85,6 @@ void UNavRelevantComponent::UpdateNavigationBounds()
 UObject* UNavRelevantComponent::GetNavigationParent() const
 {
 	return CachedNavParent;
-}
-
-void UNavRelevantComponent::CalcBounds()
-{
-	CalcAndCacheBounds();
 }
 
 void UNavRelevantComponent::CalcAndCacheBounds() const

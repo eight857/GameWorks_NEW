@@ -1,19 +1,21 @@
-﻿INTSourceChangelist:3432707
-Title:구글 VR 개발
+﻿INTSourceChangelist:3782314
+Availability: Public
+Crumbs: %ROOT%
+Title: Google VR 개발
+Description:UE4 를 사용하여 Google VR 개발을 하는 데 관련된 정보입니다.
+Version: 4.17
 Crumbs:%ROOT%, Platforms
-Description:
-Availability:Public
-Navigation:platform
-Platform:GoogleVR
-Version: 4.12
 type:landing
-parent:Platforms/VR
-tags:VR
+Parent: Platforms/VR
+Order: 1
 tags:Google VR
 tags:Platform
-prereq: Platforms/Android/GettingStarted/
+tags:VR
+Tags: Mobile VR
+prereq: Platforms/Android/GettingStarted
 social-image:googlevr_social.png
 topic-image:GoogleVR_Topic_Image.png
+
 
 ![](googlevr_social.png)
 
@@ -21,17 +23,18 @@ topic-image:GoogleVR_Topic_Image.png
 Google 에서는 Daydream 을 최대한 활용하기 위해 알아야하는 것들이 총망라된 매우 자세한 문서를 제공하고 있습니다. [공식 Google Daydream Unreal](https://developers.google.com/vr/unreal/) 도움말 사이트에서 문서를 찾아보실 수 있습니다.
 [/region]
 
-## 시작하기
+## 입문서
 
-GoogleVR 퀵스타트는 PC 와 안드로이드 기반 스마트폰에서 UE4 와 Google VR (구글 VR) 이 작동하도록 하기 위한 준비작업을 안내해 드립니다.
+[DIR(end:"1" output:"topic" type:"quick start" parent:"Platforms/GoogleVR")]
 
-[DIR(output:"topic" type:"quick start" parent:"Platforms/GoogleVR")]
+## 삼성 기어 VR 개발
 
-## 구글 VR 데이드림
+[DIR(end:"1" output:"topic" type:"reference,overview" parent:"Platforms/GoogleVR")]
 
-Daydream (데이드림)은 구글 VR 의 일부로, 몇 가지 렌더링 최적화 기능 및 모션 콘트롤러 사용을 지원합니다.
+## 안내서
 
-[DIR(output:"topic" type:"overview" parent:"Platforms/GoogleVR")]
+[DIR(output:"fancy" type:"how-to" skilllevel:"Beginner" parent:"Platforms/GoogleVR" org:"flat")]
+[DIR(output:"fancy" type:"how-to" skilllevel:"Intermediate" parent:"Platforms/GoogleVR" org:"flat")]
+[DIR(output:"fancy" type:"how-to" skilllevel:"Advanced" parent:"Platforms/GoogleVR" org:"flat")]
+[DIR(output:"fancy" type:"how-to" skilllevel:"Expert" parent:"Platforms/GoogleVR" org:"flat")]
 
-
- 

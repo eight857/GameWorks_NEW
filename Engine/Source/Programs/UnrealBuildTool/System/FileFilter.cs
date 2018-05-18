@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -347,7 +348,7 @@ namespace UnrealBuildTool
 		/// </summary>
 		public void ExcludeRestrictedFolders()
 		{
-			foreach(string RestrictedFolderName in PlatformExports.RestrictedFolderNames)
+			foreach(FileSystemName RestrictedFolderName in PlatformExports.RestrictedFolderNames)
 			{
 				AddRule(String.Format(".../{0}/...", RestrictedFolderName), FileFilterType.Exclude);
 			}

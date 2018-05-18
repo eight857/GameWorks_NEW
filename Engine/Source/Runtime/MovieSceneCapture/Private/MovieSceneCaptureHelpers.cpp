@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneCaptureHelpers.h"
 #include "MovieScene.h"
@@ -364,7 +364,7 @@ bool MovieSceneCaptureHelpers::ImportEDL(UMovieScene* InMovieScene, float InFram
 	TArray<FShotData> ShotDataArray;
 	ParseFromEDL(InputString, InFrameRate, ShotDataArray);
 
-	UMovieSceneCinematicShotTrack* CinematicShotTrack = Cast<UMovieSceneCinematicShotTrack>(InMovieScene->FindMasterTrack<UMovieSceneCinematicShotTrack>());
+	UMovieSceneCinematicShotTrack* CinematicShotTrack = InMovieScene->FindMasterTrack<UMovieSceneCinematicShotTrack>();
 	if (!CinematicShotTrack)
 	{
 		CinematicShotTrack = InMovieScene->AddMasterTrack<UMovieSceneCinematicShotTrack>();
@@ -465,7 +465,7 @@ bool MovieSceneCaptureHelpers::ExportEDL(const UMovieScene* InMovieScene, float 
 					continue;
 				}
 
-				FString ShotName = CinematicShotSection->GetShotDisplayName().ToString();
+				FString ShotName = CinematicShotSection->GetShotDisplayName();
 				FString ShotPath = CinematicShotSection->GetSequence()->GetMovieScene()->GetOuter()->GetPathName();
 
 				float HandleFrameTime = (float)InHandleFrames / (float)InFrameRate;
@@ -508,16 +508,17 @@ bool MovieSceneCaptureHelpers::ExportEDL(const UMovieScene* InMovieScene, float 
 	for (auto SaveFilename : SaveFilenames)
 	{
 		FString OutputString;
+		const FString SaveFilenameExtension = FPaths::GetExtension(SaveFilename);
 
-		if (FPaths::GetExtension(SaveFilename).ToUpper() == TEXT("EDL"))
+		if (SaveFilenameExtension == TEXT("EDL"))
 		{
 			FormatForEDL(OutputString, SequenceName, InFrameRate, ShotDataArray);
 		}
-		else if (FPaths::GetExtension(SaveFilename).ToUpper() == TEXT("RV"))
+		else if (SaveFilenameExtension == TEXT("RV"))
 		{
 			FormatForRV(OutputString, SequenceName, InFrameRate, ShotDataArray);
 		}
-		else if (FPaths::GetExtension(SaveFilename).ToUpper() == TEXT("BAT"))
+		else if (SaveFilenameExtension == TEXT("BAT"))
 		{
 			FormatForRVBat(OutputString, SequenceName, InFrameRate, ShotDataArray);
 		}

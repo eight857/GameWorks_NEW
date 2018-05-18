@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -189,4 +189,12 @@ public:
 	 */
 	virtual void BeginDilateSection() {}
 	virtual void DilateSection(float DilationFactor, float Origin, TSet<FKeyHandle>& KeyHandles) { GetSectionObject()->DilateSection(DilationFactor, Origin, KeyHandles); }
+
+	/**
+	 * Slips the section by a specific factor
+	 *
+	 * @param SlipTime The amount to slip this section by
+	 */
+	virtual void BeginSlipSection() {}
+	virtual void SlipSection(float SlipTime) {}
 };

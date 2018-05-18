@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,7 +9,7 @@
 /**
  * Instance of a plugin in memory
  */
-class FPlugin : public IPlugin
+class FPlugin final : public IPlugin
 {
 public:
 	/** The name of the plugin */
@@ -21,8 +21,8 @@ public:
 	/** The plugin's settings */
 	FPluginDescriptor Descriptor;
 
-	/** Where does this plugin live? */
-	EPluginLoadedFrom LoadedFrom;
+	/** Type of plugin */
+	EPluginType Type;
 
 	/** True if the plugin is marked as enabled */
 	bool bEnabled;
@@ -30,7 +30,7 @@ public:
 	/**
 	 * FPlugin constructor
 	 */
-	FPlugin(const FString &FileName, const FPluginDescriptor& InDescriptor, EPluginLoadedFrom InLoadedFrom);
+	FPlugin(const FString &FileName, const FPluginDescriptor& InDescriptor, EPluginType InType);
 
 	/**
 	 * Destructor.
@@ -38,19 +38,48 @@ public:
 	virtual ~FPlugin();
 
 	/* IPluginInfo interface */
-	virtual FString GetName() const override;
-	virtual FString GetDescriptorFileName() const override;
+	virtual const FString& GetName() const override
+	{
+		return Name;
+	}
+
+	virtual const FString& GetDescriptorFileName() const override
+	{
+		return FileName;
+	}
+
 	virtual FString GetBaseDir() const override;
 	virtual FString GetContentDir() const override;
 	virtual FString GetMountedAssetPath() const override;
-	virtual bool IsEnabled() const override;
-	virtual bool IsHidden() const override;
-	virtual bool CanContainContent() const override;
+
+	virtual bool IsEnabled() const override
+	{
+		return bEnabled;
+	}
+
+	virtual bool IsEnabledByDefault() const override;
+
+	virtual bool IsHidden() const override
+	{
+		return Descriptor.bIsHidden;
+	}
+
+	virtual bool CanContainContent() const override
+	{
+		return Descriptor.bCanContainContent;
+	}
+
+	virtual EPluginType GetType() const override
+	{
+		return Type;
+	}
+
 	virtual EPluginLoadedFrom GetLoadedFrom() const override;
 	virtual const FPluginDescriptor& GetDescriptor() const override;
 	virtual bool UpdateDescriptor(const FPluginDescriptor& NewDescriptor, FText& OutFailReason) override;
 };
 
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 /**
  * FPluginManager manages available code and content extensions (both loaded and not loaded.)
  */
@@ -72,6 +101,7 @@ public:
 	virtual bool CheckModuleCompatibility( TArray<FString>& OutIncompatibleModules ) override;
 	virtual TSharedPtr<IPlugin> FindPlugin(const FString& Name) override;
 	virtual TArray<TSharedRef<IPlugin>> GetEnabledPlugins() override;
+	virtual TArray<TSharedRef<IPlugin>> GetEnabledPluginsWithContent() const override;
 	virtual TArray<TSharedRef<IPlugin>> GetDiscoveredPlugins() override;
 	virtual TArray< FPluginStatus > QueryStatusForAllPlugins() const override;
 	virtual void AddPluginSearchPath(const FString& ExtraDiscoveryPath, bool bRefresh = true) override;
@@ -89,10 +119,16 @@ private:
 	static void ReadAllPlugins(TMap<FString, TSharedRef<FPlugin>>& Plugins, const TSet<FString>& ExtraSearchPaths);
 
 	/** Reads all the plugin descriptors from disk */
-	static void ReadPluginsInDirectory(const FString& PluginsDirectory, const EPluginLoadedFrom LoadedFrom, TMap<FString, TSharedRef<FPlugin>>& Plugins);
+	static void ReadPluginsInDirectory(const FString& PluginsDirectory, const EPluginType Type, TMap<FString, TSharedRef<FPlugin>>& Plugins);
+
+	/** Creates a FPlugin object and adds it to the given map */
+	static void CreatePluginObject(const FString& FileName, const FPluginDescriptor& Descriptor, const EPluginType Type, TMap<FString, TSharedRef<FPlugin>>& Plugins);
 
 	/** Finds all the plugin descriptors underneath a given directory */
 	static void FindPluginsInDirectory(const FString& PluginsDirectory, TArray<FString>& FileNames);
+
+	/** Finds all the plugin manifests in a given directory */
+	static void FindPluginManifestsInDirectory(const FString& PluginManifestDirectory, TArray<FString>& FileNames);
 
 	/** Sets the bPluginEnabled flag on all plugins found from DiscoverAllPlugins that are enabled in config */
 	bool ConfigureEnabledPlugins();
@@ -143,5 +179,6 @@ private:
 	/** Callback for notifications that a new plugin was mounted */
 	FNewPluginMountedEvent NewPluginMountedEvent;
 };
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 

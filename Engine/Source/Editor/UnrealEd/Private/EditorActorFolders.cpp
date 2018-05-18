@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EditorActorFolders.h"
 #include "GameFramework/Actor.h"
@@ -24,11 +24,11 @@ FString GetWorldStateFilename(UPackage* Package)
 {
 	const FString PathName = Package->GetPathName();
 	const uint32 PathNameCrc = FCrc::MemCrc32(*PathName, sizeof(TCHAR)*PathName.Len());
-	return FPaths::Combine(*FPaths::GameSavedDir(), TEXT("Config"), TEXT("WorldState"), *FString::Printf(TEXT("%u.json"), PathNameCrc));
+	return FPaths::Combine(*FPaths::ProjectSavedDir(), TEXT("Config"), TEXT("WorldState"), *FString::Printf(TEXT("%u.json"), PathNameCrc));
 }
 
 /** Convert an old path to a new path, replacing an ancestor branch with something else */
-FName OldPathToNewPath(const FString& InOldBranch, const FString& InNewBranch, const FString& PathToMove)
+static FName OldPathToNewPath(const FString& InOldBranch, const FString& InNewBranch, const FString& PathToMove)
 {
 	return FName(*(InNewBranch + PathToMove.RightChop(InOldBranch.Len())));
 }

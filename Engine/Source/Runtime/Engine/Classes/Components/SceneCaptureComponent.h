@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -44,10 +44,10 @@ struct FEngineShowFlagsSetting
 };
 
 UENUM()
-enum ESceneCapturePrimitiveRenderMode
+enum class ESceneCapturePrimitiveRenderMode : uint8
 {
 	/** Legacy */
-	PRM_LegacySceneCapture UMETA(DisplayName = "Render Scene Primitives"),
+	PRM_LegacySceneCapture UMETA(DisplayName = "Legacy"),
 	/** Render primitives in the scene, minus HiddenActors. */
 	PRM_RenderScenePrimitives UMETA(DisplayName = "Render Scene Primitives"),
 	/** Render only primitives in the ShowOnlyActors list, or components specified with ShowOnlyComponent(). */
@@ -62,7 +62,7 @@ class ENGINE_API USceneCaptureComponent : public USceneComponent
 
 	/** Controls what primitives get rendered into the scene capture. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=SceneCapture)
-	TEnumAsByte<enum ESceneCapturePrimitiveRenderMode> PrimitiveRenderMode;
+	ESceneCapturePrimitiveRenderMode PrimitiveRenderMode;
 
 	/** The components won't rendered by current component.*/
  	UPROPERTY()

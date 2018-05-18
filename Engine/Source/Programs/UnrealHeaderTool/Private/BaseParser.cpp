@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BaseParser.h"
 #include "UnrealHeaderTool.h"
@@ -1130,8 +1130,8 @@ void FBaseParser::InsertMetaDataPair(TMap<FName, FString>& MetaData, const FStri
 	FString Value = InValue;
 
 	// trim extra white space and quotes
-	Key = Key.Trim().TrimTrailing();
-	Value = Value.Trim().TrimTrailing();
+	Key.TrimStartAndEndInline();
+	Value.TrimStartAndEndInline();
 	Value = Value.TrimQuotes();
 
 	// make sure the key is valid

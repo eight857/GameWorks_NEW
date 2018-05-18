@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System.IO;
 using UnrealBuildTool;
@@ -32,7 +32,7 @@ public class SimplygonMeshReduction : ModuleRules
 
         AddEngineThirdPartyPrivateStaticDependencies(Target, "Simplygon");
 
-		string SimplygonPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "NotForLicensees/Simplygon/Simplygon-latest/Inc/SimplygonSDK.h";
+		string SimplygonPath = Target.UEThirdPartySourceDirectory + "NotForLicensees/Simplygon/Simplygon-latest/Inc/SimplygonSDK.h";
 		if (Target.Platform == UnrealTargetPlatform.Win64 && File.Exists(SimplygonPath))
 		{
 			PrecompileForTargets = PrecompileTargetsType.Editor;

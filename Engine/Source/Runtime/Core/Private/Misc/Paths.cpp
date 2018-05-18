@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // Core includes.
 #include "Misc/Paths.h"
@@ -30,7 +30,7 @@ namespace UE4Paths_Private
 
 	FString GameSavedDir()
 	{
-		FString Result = FPaths::GameUserDir();
+		FString Result = FPaths::ProjectUserDir();
 
 		FString NonDefaultSavedDirSuffix;
 		if (FParse::Value(FCommandLine::Get(), TEXT("-saveddirsuffix="), NonDefaultSavedDirSuffix))
@@ -160,21 +160,26 @@ FString FPaths::EnterprisePluginsDir()
 	return EnterpriseDir() + TEXT("Plugins/");
 }
 
+FString FPaths::EnterpriseFeaturePackDir()
+{
+	return FPaths::EnterpriseDir() + TEXT("FeaturePacks/");
+}
+
 FString FPaths::RootDir()
 {
 	return FString(FPlatformMisc::RootDir());
 }
 
-FString FPaths::GameDir()
+FString FPaths::ProjectDir()
 {
-	return FString(FPlatformMisc::GameDir());
+	return FString(FPlatformMisc::ProjectDir());
 }
 
-FString FPaths::GameUserDir()
+FString FPaths::ProjectUserDir()
 {
 	if (ShouldSaveToUserDir())
 	{
-		return FPaths::Combine(FPlatformProcess::UserSettingsDir(), FApp::GetGameName()) + TEXT("/");
+		return FPaths::Combine(FPlatformProcess::UserSettingsDir(), FApp::GetProjectName()) + TEXT("/");
 	}
 	else
 	{
@@ -183,50 +188,55 @@ FString FPaths::GameUserDir()
 		{
 			if (FPaths::IsRelative(UserDir))
 			{
-				return FPaths::Combine(*FPaths::GameDir(), *UserDir) + TEXT("/");
+				return FPaths::Combine(*FPaths::ProjectDir(), *UserDir) + TEXT("/");
 			}
 			FPaths::NormalizeDirectoryName(UserDir);
 			return UserDir + TEXT("/");
 		}
 
-		return FPaths::GameDir();
+		return FPaths::ProjectDir();
 	}
 }
 
-FString FPaths::GameContentDir()
+FString FPaths::ProjectContentDir()
 {
-	return FPaths::GameDir() + TEXT("Content/");
+	return FPaths::ProjectDir() + TEXT("Content/");
 }
 
-FString FPaths::GameConfigDir()
+FString FPaths::ProjectConfigDir()
 {
-	return FPaths::GameDir() + TEXT("Config/");
+	return FPaths::ProjectDir() + TEXT("Config/");
 }
 
-FString FPaths::GameSavedDir()
+FString FPaths::ProjectSavedDir()
 {
 	static FString Result = UE4Paths_Private::GameSavedDir();
 	return Result;
 }
 
-FString FPaths::GameIntermediateDir()
+FString FPaths::ProjectIntermediateDir()
 {
-	return GameUserDir() + TEXT("Intermediate/");
+	return ProjectUserDir() + TEXT("Intermediate/");
 }
 
-FString FPaths::GamePluginsDir()
+FString FPaths::ProjectPluginsDir()
 {
-	return FPaths::GameDir() + TEXT("Plugins/");
+	return FPaths::ProjectDir() + TEXT("Plugins/");
 }
 
-FString FPaths::GamePersistentDownloadDir()
+FString FPaths::ProjectModsDir()
+{
+	return FPaths::ProjectDir() + TEXT("Mods/");
+}
+
+FString FPaths::ProjectPersistentDownloadDir()
 {
 	return FPlatformMisc::GamePersistentDownloadDir();
 }
 
 FString FPaths::SourceConfigDir()
 {
-	return FPaths::GameDir() + TEXT("Config/");
+	return FPaths::ProjectDir() + TEXT("Config/");
 }
 
 FString FPaths::GeneratedConfigDir()
@@ -234,47 +244,47 @@ FString FPaths::GeneratedConfigDir()
 #if PLATFORM_MAC
 	return FPlatformProcess::UserPreferencesDir();
 #else
-	return FPaths::GameSavedDir() + TEXT("Config/");
+	return FPaths::ProjectSavedDir() + TEXT("Config/");
 #endif
 }
 
 FString FPaths::SandboxesDir()
 {
-	return FPaths::GameDir() + TEXT("Saved/Sandboxes");
+	return FPaths::ProjectDir() + TEXT("Saved/Sandboxes");
 }
 
 FString FPaths::ProfilingDir()
 {
-	return FPaths::GameSavedDir() + TEXT("Profiling/");
+	return FPaths::ProjectSavedDir() + TEXT("Profiling/");
 }
 
 FString FPaths::ScreenShotDir()
 {
-	return FPaths::GameSavedDir() + TEXT("Screenshots/") + FPlatformProperties::PlatformName() + TEXT("/");
+	return FPaths::ProjectSavedDir() + TEXT("Screenshots/") + FPlatformProperties::PlatformName() + TEXT("/");
 }
 
 FString FPaths::BugItDir()
 {
-	return FPaths::GameSavedDir() + TEXT("BugIt/") + FPlatformProperties::PlatformName() + TEXT("/");
+	return FPaths::ProjectSavedDir() + TEXT("BugIt/") + FPlatformProperties::PlatformName() + TEXT("/");
 }
 
 FString FPaths::VideoCaptureDir()
 {
-	return FPaths::GameSavedDir() + TEXT("VideoCaptures/");
+	return FPaths::ProjectSavedDir() + TEXT("VideoCaptures/");
 }
 
-FString FPaths::GameLogDir()
+FString FPaths::ProjectLogDir()
 {
 #if PLATFORM_MAC || PLATFORM_XBOXONE
 	return FPlatformProcess::UserLogsDir();
 #else
-	return FPaths::GameSavedDir() + TEXT("Logs/");
+	return FPaths::ProjectSavedDir() + TEXT("Logs/");
 #endif
 }
 
 FString FPaths::AutomationDir()
 {
-	return FPaths::GameSavedDir() + TEXT("Automation/");
+	return FPaths::ProjectSavedDir() + TEXT("Automation/");
 }
 
 FString FPaths::AutomationTransientDir()
@@ -294,7 +304,7 @@ FString FPaths::CloudDir()
 
 FString FPaths::GameDevelopersDir()
 {
-	return FPaths::GameContentDir() + TEXT("Developers/");
+	return FPaths::ProjectContentDir() + TEXT("Developers/");
 }
 
 FString FPaths::GameUserDeveloperDir()
@@ -321,7 +331,7 @@ FString FPaths::GameUserDeveloperDir()
 
 FString FPaths::DiffDir()
 {
-	return FPaths::GameSavedDir() + TEXT("Diff/");
+	return FPaths::ProjectSavedDir() + TEXT("Diff/");
 }
 
 const TArray<FString>& FPaths::GetEngineLocalizationPaths()
@@ -458,7 +468,7 @@ FString FPaths::EngineSourceDir()
 
 FString FPaths::GameSourceDir()
 {
-	return FPaths::GameDir() + TEXT("Source/");
+	return FPaths::ProjectDir() + TEXT("Source/");
 }
 
 FString FPaths::FeaturePackDir()
@@ -472,7 +482,7 @@ bool FPaths::IsProjectFilePathSet()
 	return !GameProjectFilePath.IsEmpty();
 }
 
-const FString& FPaths::GetProjectFilePath()
+FString FPaths::GetProjectFilePath()
 {
 	FScopeLock Lock(GameProjectFilePathLock());
 	return GameProjectFilePath;
@@ -736,15 +746,24 @@ bool FPaths::IsDrive(const FString& InPath)
 	return false;
 }
 
+#if WITH_EDITOR
+FString FPaths::RootPrefix = TEXT("root:/");
+#endif // WITH_EDITOR
+
 bool FPaths::IsRelative(const FString& InPath)
 {
 	// The previous implementation of this function seemed to handle normalized and unnormalized paths, so this one does too for legacy reasons.
-
-	const bool IsRooted = InPath.StartsWith(TEXT("\\"), ESearchCase::CaseSensitive)	||					// Root of the current directory on Windows. Also covers "\\" for UNC or "network" paths.
-						  InPath.StartsWith(TEXT("/"), ESearchCase::CaseSensitive)	||					// Root of the current directory on Windows, root on UNIX-likes.  Also covers "\\", considering normalization replaces "\\" with "//".						
-						  InPath.StartsWith(TEXT("root:/"), ESearchCase::IgnoreCase) ||					// Feature packs use this
-						  (InPath.Len() >= 2 && FChar::IsAlpha(InPath[0]) && InPath[1] == TEXT(':'));	// Starts with "<DriveLetter>:"
-
+	const uint32 PathLen = InPath.Len();
+	const bool IsRooted = PathLen &&
+		((InPath[0] == '/') ||												// Root of the current directory on Windows, root on UNIX-likes.  Also covers "\\", considering normalization replaces "\\" with "//".
+		(PathLen >= 2 && (													// Check it's safe to access InPath[1]!
+			((InPath[0] == '\\') && (InPath[1] == '\\'))					// Root of the current directory on Windows. Also covers "\\" for UNC or "network" paths.
+			|| (InPath[1] == ':' && FChar::IsAlpha(InPath[0]))				// Starts with "<DriveLetter>:"
+#if WITH_EDITOR
+			|| (InPath.StartsWith(RootPrefix, ESearchCase::IgnoreCase))		// Feature packs use this
+#endif // WITH_EDITOR
+			))
+		);
 	return !IsRooted;
 }
 
@@ -847,7 +866,7 @@ void FPaths::MakeStandardFilename(FString& InPath)
 
 	FString WithSlashes = InPath.Replace(TEXT("\\"), TEXT("/"), ESearchCase::CaseSensitive);
 
-	FString RootDirectory = FPaths::ConvertRelativePathToFull(FPaths::RootDir());
+	FString RootDirectory = FPaths::RootDir();
 
 	// look for paths that cannot be made relative, and are therefore left alone
 	// UNC (windows) network path

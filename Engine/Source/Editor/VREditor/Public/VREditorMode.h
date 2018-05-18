@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -190,7 +190,7 @@ public:
 	EGizmoHandleTypes GetCurrentGizmoType() const;
 
 	/** @return Returns the type of HMD we're dealing with */
-	EHMDDeviceType::Type GetHMDDeviceType() const;
+	FName GetHMDDeviceType() const;
 
 	/** @return Checks to see if the specified interactor is aiming roughly toward the specified capsule */
 	bool IsHandAimingTowardsCapsule(class UViewportInteractor* Interactor, const FTransform& CapsuleTransform, const FVector CapsuleStart, const FVector CapsuleEnd, const float CapsuleRadius, const float MinDistanceToCapsule, const FVector CapsuleFrontDirection, const float MinDotForAimingAtCapsule) const;
@@ -297,6 +297,7 @@ public:
 
 	/** Return true if currently aiming to teleport. */
 	bool IsAimingTeleport() const;
+	bool IsTeleporting() const;
 
 	/** Toggles the debug mode. */
 	static void ToggleDebugMode();
@@ -309,9 +310,8 @@ public:
 	FOnToggleVRModeDebug& OnToggleDebugMode() { return OnToggleDebugModeEvent; };
 
 protected:
-
+	
 	virtual void TransitionWorld(UWorld* NewWorld) override;
-	virtual void LeftSimulateInEditor(UWorld* SimulateWorld) override;
 
 private:
 
@@ -373,6 +373,7 @@ protected:
 	//
 
 	/** Actor with components to represent the VR avatar in the world, including motion controller meshes */
+	UPROPERTY()
 	class AVREditorAvatarActor* AvatarActor;
 
 

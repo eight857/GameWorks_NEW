@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tracks/MovieSceneLevelVisibilityTrack.h"
 #include "Sections/MovieSceneLevelVisibilitySection.h"
@@ -6,7 +6,7 @@
 #include "Evaluation/PersistentEvaluationData.h"
 #include "Evaluation/MovieSceneLevelVisibilityTemplate.h"
 #include "Evaluation/MovieSceneEvaluationTrack.h"
-
+#include "IMovieSceneTracksModule.h"
 
 #define LOCTEXT_NAMESPACE "MovieSceneLevelVisibilityTrack"
 
@@ -18,8 +18,8 @@ UMovieSceneLevelVisibilityTrack::UMovieSceneLevelVisibilityTrack( const FObjectI
 
 void UMovieSceneLevelVisibilityTrack::PostCompile(FMovieSceneEvaluationTrack& OutTrack, const FMovieSceneTrackCompilerArgs& Args) const
 {
-	// Set priority to highest possible
-	OutTrack.SetEvaluationPriority(GetEvaluationPriority());
+	// Apply level visibility as part of the spawning flush group
+	OutTrack.SetEvaluationGroup(IMovieSceneTracksModule::GetEvaluationGroupName(EBuiltInEvaluationGroup::SpawnObjects));
 }
 
 

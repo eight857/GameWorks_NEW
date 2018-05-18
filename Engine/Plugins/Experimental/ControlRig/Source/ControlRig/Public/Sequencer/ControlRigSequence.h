@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -36,11 +36,11 @@ public:
 public:
 	/** The last animation sequence this control rig sequence was exported to */
 	UPROPERTY(AssetRegistrySearchable)
-	TAssetPtr<UAnimSequence> LastExportedToAnimationSequence;
+	TSoftObjectPtr<UAnimSequence> LastExportedToAnimationSequence;
 
 	/** The skeletal mesh that was used the last time we exported this sequence */
 	UPROPERTY(AssetRegistrySearchable)
-	TAssetPtr<USkeletalMesh> LastExportedUsingSkeletalMesh;
+	TSoftObjectPtr<USkeletalMesh> LastExportedUsingSkeletalMesh;
 
 	/** The frame rate that was used the last time we exported this sequence */
 	UPROPERTY(AssetRegistrySearchable)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -29,9 +29,11 @@ class UMG_API UImage : public UWidget
 
 public:
 
+#if WITH_EDITORONLY_DATA
 	/** Image to draw */
 	UPROPERTY()
 	USlateBrushAsset* Image_DEPRECATED;
+#endif
 
 	/** Image to draw */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Appearance)
@@ -96,9 +98,11 @@ public:
 	virtual void ReleaseSlateResources(bool bReleaseChildren) override;
 	//~ End UVisual Interface
 
+#if WITH_EDITORONLY_DATA
 	//~ Begin UObject Interface
 	virtual void PostLoad() override;
 	//~ End UObject Interface
+#endif
 
 #if WITH_EDITOR
 	//~ Begin UWidget Interface

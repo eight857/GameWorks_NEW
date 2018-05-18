@@ -1,10 +1,13 @@
-﻿using System;
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -126,11 +129,6 @@ namespace UnrealBuildTool
 		/// The directory for this module's generated code
 		/// </summary>
 		public readonly DirectoryReference GeneratedCodeDirectory;
-
-		/// <summary>
-		/// The preprocessor definitions used to compile this module's private implementation.
-		/// </summary>
-		HashSet<string> Definitions;
 
 		/// When set, allows this module to report compiler definitions and include paths for Intellisense
 		IntelliSenseGatherer IntelliSenseGatherer;
@@ -308,8 +306,12 @@ namespace UnrealBuildTool
 				SourceFilesToBuild.CopyFrom(SourceFilesFound);
 			}
 
-			Definitions = HashSetFromOptionalEnumerableStringParameter(InRules.Definitions);
-			foreach (string Def in Definitions)
+			foreach (string Def in PublicDefinitions)
+			{
+				Log.TraceVerbose("Compile Env {0}: {1}", Name, Def);
+			}
+
+			foreach (string Def in Rules.PrivateDefinitions)
 			{
 				Log.TraceVerbose("Compile Env {0}: {1}", Name, Def);
 			}
@@ -324,7 +326,7 @@ namespace UnrealBuildTool
 		}
 
 		// UEBuildModule interface.
-		public override List<FileItem> Compile(ReadOnlyTargetRules Target, UEToolChain ToolChain, CppCompileEnvironment BinaryCompileEnvironment, List<PrecompiledHeaderTemplate> SharedPCHs, ActionGraph ActionGraph)
+		public override List<FileItem> Compile(ReadOnlyTargetRules Target, UEToolChain ToolChain, CppCompileEnvironment BinaryCompileEnvironment, List<PrecompiledHeaderTemplate> SharedPCHs, ISourceFileWorkingSet WorkingSet, ActionGraph ActionGraph)
 		{
 			UEBuildPlatform BuildPlatform = UEBuildPlatform.GetBuildPlatformForCPPTargetPlatform(BinaryCompileEnvironment.Platform);
 
@@ -523,7 +525,7 @@ namespace UnrealBuildTool
 			List<FileItem> CPPFilesToCompile = SourceFilesToBuild.CPPFiles;
 			if (bModuleUsesUnityBuild)
 			{
-				CPPFilesToCompile = Unity.GenerateUnityCPPs(Target, CPPFilesToCompile, CompileEnvironment, Rules.ShortName ?? Name);
+				CPPFilesToCompile = Unity.GenerateUnityCPPs(Target, CPPFilesToCompile, CompileEnvironment, WorkingSet, Rules.ShortName ?? Name);
 				LinkInputFiles.AddRange(CompileUnityFilesWithToolChain(Target, ToolChain, CompileEnvironment, ModuleCompileEnvironment, CPPFilesToCompile, ActionGraph).ObjectFiles);
 			}
 			else
@@ -559,7 +561,7 @@ namespace UnrealBuildTool
 
 					if (bModuleUsesUnityBuild)
 					{
-						GeneratedFileItems = Unity.GenerateUnityCPPs(Target, GeneratedFileItems, GeneratedCPPCompileEnvironment, (Rules.ShortName ?? Name) + ".gen");
+						GeneratedFileItems = Unity.GenerateUnityCPPs(Target, GeneratedFileItems, GeneratedCPPCompileEnvironment, WorkingSet, (Rules.ShortName ?? Name) + ".gen");
 						LinkInputFiles.AddRange(CompileUnityFilesWithToolChain(Target, ToolChain, GeneratedCPPCompileEnvironment, ModuleCompileEnvironment, GeneratedFileItems, ActionGraph).ObjectFiles);
 					}
 					else
@@ -578,8 +580,12 @@ namespace UnrealBuildTool
 			// Compile MM files directly.
 			LinkInputFiles.AddRange(ToolChain.CompileCPPFiles(CompileEnvironment, SourceFilesToBuild.MMFiles, Name, ActionGraph).ObjectFiles);
 
-			// Compile RC files.
-			LinkInputFiles.AddRange(ToolChain.CompileRCFiles(ModuleCompileEnvironment, SourceFilesToBuild.RCFiles, ActionGraph).ObjectFiles);
+			// Compile RC files. The resource compiler does not work with response files, and using the regular compile environment can easily result in the 
+			// command line length exceeding the OS limit. Use the binary compile environment to keep the size down, and require that all include paths
+			// must be specified relative to the resource file itself or Engine/Source.
+			CppCompileEnvironment ResourceCompileEnvironment = new CppCompileEnvironment(BinaryCompileEnvironment);
+			ResourceCompileEnvironment.OutputDirectory = ModuleCompileEnvironment.OutputDirectory;
+			LinkInputFiles.AddRange(ToolChain.CompileRCFiles(ResourceCompileEnvironment, SourceFilesToBuild.RCFiles, ActionGraph).ObjectFiles);
 
 			return LinkInputFiles;
 		}
@@ -999,7 +1005,6 @@ namespace UnrealBuildTool
 			{
 				case "D3D11RHI":
 				case "D3D12RHI":
-				case "XboxOneD3D11RHI":
 				case "VulkanRHI":
 				case "OpenGLDrv":
 				case "MetalRHI":
@@ -1068,16 +1073,16 @@ namespace UnrealBuildTool
 			// Override compile environment
 			Result.bFasterWithoutUnity = Rules.bFasterWithoutUnity;
 			Result.bOptimizeCode = ShouldEnableOptimization(Rules.OptimizeCode, Target.Configuration, bIsEngineModule);
-			Result.bUseRTTI = Rules.bUseRTTI || Target.bForceEnableRTTI; 
+			Result.bUseRTTI |= Rules.bUseRTTI;
 			Result.bUseAVX = Rules.bUseAVX;
 			Result.bEnableBufferSecurityChecks = Rules.bEnableBufferSecurityChecks;
 			Result.MinSourceFilesForUnityBuildOverride = Rules.MinSourceFilesForUnityBuildOverride;
 			Result.MinFilesUsingPrecompiledHeaderOverride = Rules.MinFilesUsingPrecompiledHeaderOverride;
 			Result.bBuildLocallyWithSNDBS = Rules.bBuildLocallyWithSNDBS;
 			Result.bEnableExceptions |= Rules.bEnableExceptions;
+			Result.bEnableObjCExceptions |= Rules.bEnableObjCExceptions;
 			Result.bEnableShadowVariableWarnings = Rules.bEnableShadowVariableWarnings;
 			Result.bEnableUndefinedIdentifierWarnings = Rules.bEnableUndefinedIdentifierWarnings;
-			Result.bUseStaticCRT = Target.bUseStaticCRT;
 			Result.OutputDirectory = DirectoryReference.Combine(Binary.Config.IntermediateDirectory, Rules.ShortName ?? Name);
 			Result.PCHOutputDirectory = (Result.PCHOutputDirectory == null)? null : DirectoryReference.Combine(Result.PCHOutputDirectory, Name);
 
@@ -1120,8 +1125,9 @@ namespace UnrealBuildTool
 				}
 			}
 
-			// Add the module's private definitions.
-			Result.Definitions.AddRange(Definitions);
+			// Add the module's public and private definitions.
+			Result.Definitions.AddRange(PublicDefinitions);
+			Result.Definitions.AddRange(Rules.PrivateDefinitions);
 
 			// Setup the compile environment for the module.
 			SetupPrivateCompileEnvironment(Result.IncludePaths.UserIncludePaths, Result.IncludePaths.SystemIncludePaths, Result.Definitions, Result.AdditionalFrameworks);
@@ -1153,7 +1159,6 @@ namespace UnrealBuildTool
 			// Override compile environment
 			CompileEnvironment.bIsBuildingDLL = !Target.ShouldCompileMonolithic();
 			CompileEnvironment.bIsBuildingLibrary = false;
-			CompileEnvironment.bUseStaticCRT = (Target.Rules != null && Target.Rules.bUseStaticCRT);
 			CompileEnvironment.OutputDirectory = DirectoryReference.Combine(Binary.Config.IntermediateDirectory, Name);
 			CompileEnvironment.PCHOutputDirectory = (CompileEnvironment.PCHOutputDirectory == null)? null : DirectoryReference.Combine(CompileEnvironment.PCHOutputDirectory, Name);
 
@@ -1181,7 +1186,7 @@ namespace UnrealBuildTool
 			}
 
 			// Add the module's private definitions.
-			CompileEnvironment.Definitions.AddRange(Definitions);
+			CompileEnvironment.Definitions.AddRange(PublicDefinitions);
 
 			// Find all the modules that are part of the public compile environment for this module.
 			List<UEBuildModule> Modules = new List<UEBuildModule>();
@@ -1228,7 +1233,7 @@ namespace UnrealBuildTool
 				List<FileReference> HeaderFiles = new List<FileReference>();
 				FileSystemName[] ExcludedFolders = UEBuildPlatform.GetBuildPlatform(Rules.Target.Platform, true).GetExcludedFolderNames();
 				FindHeaders(new DirectoryInfo(ModuleDirectory.FullName), ExcludedFolders, HeaderFiles);
-				UHTModuleInfo Info = ExternalExecution.CreateUHTModuleInfo(HeaderFiles, Name, ModuleDirectory, Type, GeneratedCodeVersion);
+				UHTModuleInfo Info = ExternalExecution.CreateUHTModuleInfo(HeaderFiles, Name, RulesFile, ModuleDirectory, Type, GeneratedCodeVersion);
 				UHTModuleInfoCache = new UHTModuleInfoCacheType(Info.PublicUObjectHeaders.Concat(Info.PublicUObjectClassesHeaders).Concat(Info.PrivateUObjectHeaders).Select(x => x.AbsolutePath).ToList(), Info);
 			}
 

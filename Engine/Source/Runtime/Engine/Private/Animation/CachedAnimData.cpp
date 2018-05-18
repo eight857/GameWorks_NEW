@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CachedAnimData.h"
 #include "Animation/AnimInstance.h"
@@ -56,6 +56,11 @@ bool FCachedAnimStateData::IsFullWeight(UAnimInstance& InAnimInstance) const
 bool FCachedAnimStateData::IsRelevant(UAnimInstance& InAnimInstance) const
 {
 	return FAnimWeight::IsRelevant(GetWeight(InAnimInstance));
+}
+
+bool FCachedAnimStateData::IsActiveState(class UAnimInstance& InAnimInstance) const
+{
+	return IsValid(InAnimInstance) ? (InAnimInstance.GetCurrentStateName(MachineIndex) == StateName) : false;
 }
 
 bool FCachedAnimStateArray::IsValid(UAnimInstance& InAnimInstance) const

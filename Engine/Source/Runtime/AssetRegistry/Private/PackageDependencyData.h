@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -32,7 +32,7 @@ public:
 	{
 		Ar << PackageName;
 		Ar << ImportMap;
-		Ar << StringAssetReferencesMap;
+		Ar << SoftPackageReferenceList;
 		Ar << SearchableNamesMap;
 		
 		PackageData.SerializeForCache(Ar);

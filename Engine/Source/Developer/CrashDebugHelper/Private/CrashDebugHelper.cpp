@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CrashDebugHelper.h"
 #include "HAL/FileManager.h"
@@ -236,7 +236,7 @@ bool ICrashDebugHelper::Init()
 		if (CrashInfo.bMutexPDBCache && !CrashInfo.PDBCacheLockName.IsEmpty())
 		{
 			// Scoped lock
-			FSystemWideCriticalSection PDBCacheLock(CrashInfo.PDBCacheLockName, FTimespan(0, 0, 10, 0, 0));
+			FSystemWideCriticalSection PDBCacheLock(CrashInfo.PDBCacheLockName, FTimespan::FromMinutes(10.0));
 			if (PDBCacheLock.IsValid())
 			{
 				FPDBCache::Get().Init();

@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VehicleWheel.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 #include "PhysxUserData.h"
 #include "Engine/StaticMesh.h"
 #include "Vehicles/TireType.h"
@@ -10,7 +11,6 @@
 #include "TireConfig.h"
 #include "PhysXVehicleManager.h"
 #include "PhysXPublic.h"
-
 
 UVehicleWheel::UVehicleWheel(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -38,37 +38,65 @@ UVehicleWheel::UVehicleWheel(const FObjectInitializer& ObjectInitializer)
 	SweepType = EWheelSweepType::SimpleAndComplex;
 }
 
+#if WITH_PHYSX
+FPhysXVehicleManager* UVehicleWheel::GetVehicleManager() const
+{
+	UWorld* World = GEngine->GetWorldFromContextObject(VehicleSim, EGetWorldErrorMode::LogAndReturnNull);
+	return World ? FPhysXVehicleManager::GetVehicleManagerFromScene(World->GetPhysicsScene()) : nullptr;
+}
+#endif // WITH_PHYSX
+
 float UVehicleWheel::GetSteerAngle() const
 {
-	FPhysXVehicleManager* VehicleManager = FPhysXVehicleManager::GetVehicleManagerFromScene(VehicleSim->GetWorld()->GetPhysicsScene());
-	SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
-	return FMath::RadiansToDegrees( VehicleManager->GetWheelsStates_AssumesLocked(VehicleSim)[WheelIndex].steerAngle );
+#if WITH_PHYSX
+	if (FPhysXVehicleManager* VehicleManager = GetVehicleManager())
+	{
+		SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
+		return FMath::RadiansToDegrees(VehicleManager->GetWheelsStates_AssumesLocked(VehicleSim)[WheelIndex].steerAngle);
+	}
+#endif // WITH_PHYSX
+	return 0.0f;
 }
 
 float UVehicleWheel::GetRotationAngle() const
 {
-	FPhysXVehicleManager* VehicleManager = FPhysXVehicleManager::GetVehicleManagerFromScene(VehicleSim->GetWorld()->GetPhysicsScene());
-	SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
+#if WITH_PHYSX
+	if (FPhysXVehicleManager* VehicleManager = GetVehicleManager())
+	{
+		SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
 
-	float RotationAngle = -1.0f * FMath::RadiansToDegrees( VehicleSim->PVehicle->mWheelsDynData.getWheelRotationAngle( WheelIndex ) );
-	check(!FMath::IsNaN(RotationAngle));
-	return RotationAngle;
+		float RotationAngle = -1.0f * FMath::RadiansToDegrees(VehicleSim->PVehicle->mWheelsDynData.getWheelRotationAngle(WheelIndex));
+		ensure(!FMath::IsNaN(RotationAngle));
+		return RotationAngle;
+	}
+#endif // WITH_PHYSX
+	return 0.0f;
 }
 
 float UVehicleWheel::GetSuspensionOffset() const
 {
-	FPhysXVehicleManager* VehicleManager = FPhysXVehicleManager::GetVehicleManagerFromScene(VehicleSim->GetWorld()->GetPhysicsScene());
-	SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
+#if WITH_PHYSX
+	if (FPhysXVehicleManager* VehicleManager = GetVehicleManager())
+	{
+		SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
 
-	return VehicleManager->GetWheelsStates_AssumesLocked(VehicleSim)[WheelIndex].suspJounce;
+		return VehicleManager->GetWheelsStates_AssumesLocked(VehicleSim)[WheelIndex].suspJounce;
+	}
+#endif // WITH_PHYSX
+	return 0.0f;
 }
 
 bool UVehicleWheel::IsInAir() const
 {
-	FPhysXVehicleManager* VehicleManager = FPhysXVehicleManager::GetVehicleManagerFromScene(VehicleSim->GetWorld()->GetPhysicsScene());
-	SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
+#if WITH_PHYSX
+	if (FPhysXVehicleManager* VehicleManager = GetVehicleManager())
+	{
+		SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
 
-	return VehicleManager->GetWheelsStates_AssumesLocked(VehicleSim)[WheelIndex].isInAir;
+		return VehicleManager->GetWheelsStates_AssumesLocked(VehicleSim)[WheelIndex].isInAir;
+	}
+#endif // WITH_PHYSX
+	return false;
 }
 
 void UVehicleWheel::Init( UWheeledVehicleMovementComponent* InVehicleSim, int32 InWheelIndex )
@@ -78,6 +106,8 @@ void UVehicleWheel::Init( UWheeledVehicleMovementComponent* InVehicleSim, int32 
 
 	VehicleSim = InVehicleSim;
 	WheelIndex = InWheelIndex;
+
+#if WITH_PHYSX
 	WheelShape = NULL;
 
 	FPhysXVehicleManager* VehicleManager = FPhysXVehicleManager::GetVehicleManagerFromScene(VehicleSim->GetWorld()->GetPhysicsScene());
@@ -88,6 +118,7 @@ void UVehicleWheel::Init( UWheeledVehicleMovementComponent* InVehicleSim, int32 
 
 	VehicleSim->PVehicle->getRigidDynamicActor()->getShapes( &WheelShape, 1, WheelShapeIdx );
 	check(WheelShape);
+#endif // WITH_PHYSX
 
 	Location = GetPhysicsLocation();
 	OldLocation = Location;
@@ -95,7 +126,9 @@ void UVehicleWheel::Init( UWheeledVehicleMovementComponent* InVehicleSim, int32 
 
 void UVehicleWheel::Shutdown()
 {
+#if WITH_PHYSX
 	WheelShape = NULL;
+#endif // WITH_PHYSX
 }
 
 FWheelSetup& UVehicleWheel::GetWheelSetup()
@@ -112,16 +145,19 @@ void UVehicleWheel::Tick( float DeltaTime )
 
 FVector UVehicleWheel::GetPhysicsLocation()
 {
+#if WITH_PHYSX
 	if ( WheelShape )
 	{
-		FPhysXVehicleManager* VehicleManager = FPhysXVehicleManager::GetVehicleManagerFromScene(VehicleSim->GetWorld()->GetPhysicsScene());
-		SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
+		if (FPhysXVehicleManager* VehicleManager = GetVehicleManager())
+		{
+			SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
 
-		PxVec3 PLocation = VehicleSim->PVehicle->getRigidDynamicActor()->getGlobalPose().transform( WheelShape->getLocalPose() ).p;
-		return P2UVector( PLocation );
+			PxVec3 PLocation = VehicleSim->PVehicle->getRigidDynamicActor()->getGlobalPose().transform(WheelShape->getLocalPose()).p;
+			return P2UVector(PLocation);
+		}
 	}
-
-	return FVector(0.0f);
+#endif // WITH_PHYSX
+	return FVector::ZeroVector;
 }
 
 #if WITH_EDITOR
@@ -130,8 +166,10 @@ void UVehicleWheel::PostEditChangeProperty( FPropertyChangedEvent& PropertyChang
 {
 	Super::PostEditChangeProperty( PropertyChangedEvent );
 
+#if WITH_PHYSX
 	// Trigger a runtime rebuild of the PhysX vehicle
 	FPhysXVehicleManager::VehicleSetupTag++;
+#endif // WITH_PHYSX
 }
 
 #endif //WITH_EDITOR
@@ -141,6 +179,7 @@ UPhysicalMaterial* UVehicleWheel::GetContactSurfaceMaterial()
 {
 	UPhysicalMaterial* PhysMaterial = NULL;
 
+#if WITH_PHYSX
 	FPhysXVehicleManager* VehicleManager = FPhysXVehicleManager::GetVehicleManagerFromScene(VehicleSim->GetWorld()->GetPhysicsScene());
 	SCOPED_SCENE_READ_LOCK(VehicleManager->GetScene());
 
@@ -149,6 +188,7 @@ UPhysicalMaterial* UVehicleWheel::GetContactSurfaceMaterial()
 	{
 		PhysMaterial = FPhysxUserData::Get<UPhysicalMaterial>(ContactSurface->userData);
 	}
+#endif // WITH_PHYSX
 
 	return PhysMaterial;
 }

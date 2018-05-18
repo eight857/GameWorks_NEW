@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
 	Concrete implementation of FAudioDevice for XAudio2
@@ -193,26 +193,26 @@ namespace Audio
 		WindowsNotificationClient->RegisterDeviceChangedListener(this);
 	}
 
-	void FMixerPlatformXAudio2::UnRegisterDeviceChangedListener() 
+	void FMixerPlatformXAudio2::UnregisterDeviceChangedListener() 
 	{
 		WindowsNotificationClient->UnRegisterDeviceDeviceChangedListener(this);
 	}
 
 	void FMixerPlatformXAudio2::OnDefaultCaptureDeviceChanged(const EAudioDeviceRole InAudioDeviceRole, const FString& DeviceId)
 	{
-		UE_LOG(LogTemp, Log, TEXT("OnDefaultCaptureDeviceChanged: %s"), *DeviceId);
 	}
 
 	void FMixerPlatformXAudio2::OnDefaultRenderDeviceChanged(const EAudioDeviceRole InAudioDeviceRole, const FString& DeviceId)
 	{
-		UE_LOG(LogTemp, Log, TEXT("OnDefaultRenderDeviceChanged: %s"), *DeviceId);
+		FScopeLock Lock(&AudioDeviceSwapCriticalSection);
+
 		NewAudioDeviceId = "";
 		bMoveAudioStreamToNewAudioDevice = true;
 	}
 
 	void FMixerPlatformXAudio2::OnDeviceAdded(const FString& DeviceId)
 	{
-		UE_LOG(LogTemp, Log, TEXT("OnDeviceAdded: %s"), *DeviceId);
+		FScopeLock Lock(&AudioDeviceSwapCriticalSection);
 
 		// If the device that was added is our original device and our current device is NOT our original device, 
 		// move our audio stream to this newly added device.
@@ -225,7 +225,7 @@ namespace Audio
 
 	void FMixerPlatformXAudio2::OnDeviceRemoved(const FString& DeviceId)
 	{
-		UE_LOG(LogTemp, Log, TEXT("OnDeviceRemoved: %s"), *DeviceId);
+		FScopeLock Lock(&AudioDeviceSwapCriticalSection);
 
 		// If the device we're currently using was removed... then switch to the new default audio device.
 		if (AudioStreamInfo.DeviceInfo.DeviceId == DeviceId)
@@ -238,7 +238,6 @@ namespace Audio
 
 	void FMixerPlatformXAudio2::OnDeviceStateChanged(const FString& DeviceId, const EAudioDeviceState InState)
 	{
-		UE_LOG(LogTemp, Log, TEXT("OnDeviceStateChanged: %s"), *DeviceId);
 	}
 
 	FString FMixerPlatformXAudio2::GetDeviceId() const
@@ -255,7 +254,7 @@ namespace Audio
 namespace Audio
 {
 	void FMixerPlatformXAudio2::RegisterDeviceChangedListener() {}
-	void FMixerPlatformXAudio2::UnRegisterDeviceChangedListener() {}
+	void FMixerPlatformXAudio2::UnregisterDeviceChangedListener() {}
 	void FMixerPlatformXAudio2::OnDefaultCaptureDeviceChanged(const EAudioDeviceRole InAudioDeviceRole, const FString& DeviceId) {}
 	void FMixerPlatformXAudio2::OnDefaultRenderDeviceChanged(const EAudioDeviceRole InAudioDeviceRole, const FString& DeviceId) {}
 	void FMixerPlatformXAudio2::OnDeviceAdded(const FString& DeviceId) {}

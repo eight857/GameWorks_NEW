@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Slate/SGameLayerManager.h"
 #include "Widgets/SOverlay.h"
@@ -210,15 +210,20 @@ void SGameLayerManager::ClearWidgets()
 {
 	PlayerCanvas->ClearChildren();
 
-	for(const auto& LayerIt : PlayerLayers)
+	// Potential for removed layers to impact the map, so need to
+	// remove & delete as separate steps
+	while (PlayerLayers.Num())
 	{
-		const TSharedPtr<FPlayerLayer>& Layer = LayerIt.Value;
+		const auto LayerIt = PlayerLayers.CreateIterator();
+		const TSharedPtr<FPlayerLayer> Layer = LayerIt.Value();
+
 		if (Layer.IsValid())
 		{
 			Layer->Slot = nullptr;
 		}
+
+		PlayerLayers.Remove(LayerIt.Key());
 	}
-	PlayerLayers.Reset();
 
 	WindowTitleBarContentStack.Empty();
 	bIsWindowTitleBarVisible = false;
@@ -234,9 +239,8 @@ void SGameLayerManager::Tick(const FGeometry& AllottedGeometry, const double InC
 
 int32 SGameLayerManager::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
-	FPlatformMisc::BeginNamedEvent(FColor::Green, "Paint: Game UI");
+	SCOPED_NAMED_EVENT_TEXT("Paint: Game UI", FColor::Green);
 	const int32 ResultLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
-	FPlatformMisc::EndNamedEvent();
 	return ResultLayer;
 }
 
@@ -387,8 +391,11 @@ void SGameLayerManager::AddOrUpdatePlayerLayers(const FGeometry& AllottedGeometr
 
 			FVector2D AspectRatioInset = GetAspectRatioInset(Player);
 
-			Size = ( Size * AllottedGeometry.GetLocalSize() - ( AspectRatioInset * 2.0f ) ) * InverseDPIScale;
-			Position = ( Position * AllottedGeometry.GetLocalSize() + AspectRatioInset ) * InverseDPIScale;
+			Position += AspectRatioInset;
+			Size -= (AspectRatioInset * 2.0f);
+
+			Size = Size * AllottedGeometry.GetLocalSize() * InverseDPIScale;
+			Position = Position * AllottedGeometry.GetLocalSize() * InverseDPIScale;
 
 			if (bIsWindowTitleBarVisible)
 			{
@@ -417,8 +424,9 @@ FVector2D SGameLayerManager::GetAspectRatioInset(ULocalPlayer* LocalPlayer) cons
 			FIntRect ViewRect = ViewInitOptions.GetViewRect();
 			FIntRect ConstrainedViewRect = ViewInitOptions.GetConstrainedViewRect();
 
-			Offset.X = ( ConstrainedViewRect.Min.X - ViewRect.Min.X );
-			Offset.Y = ( ConstrainedViewRect.Min.Y - ViewRect.Min.Y );
+			// Return normalized coordinates.
+			Offset.X = ( ConstrainedViewRect.Min.X - ViewRect.Min.X ) / (float)ViewRect.Width();
+			Offset.Y = ( ConstrainedViewRect.Min.Y - ViewRect.Min.Y ) / (float)ViewRect.Height();
 		}
 	}
 

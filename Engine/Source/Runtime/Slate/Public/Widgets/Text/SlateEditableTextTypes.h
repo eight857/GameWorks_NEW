@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -182,6 +182,26 @@ public:
 
 protected:
 	FTextSelectionHighlighter();
+
+	/** true if the parent widget has keyboard focus, false otherwise */
+	bool bHasKeyboardFocus;
+};
+
+/** Run highlighter used to draw search ranges */
+class SLATE_API FTextSearchHighlighter : public ISlateLineHighlighter
+{
+public:
+	static TSharedRef< FTextSearchHighlighter > Create();
+
+	virtual int32 OnPaint(const FPaintArgs& Args, const FTextLayout::FLineView& Line, const float OffsetX, const float Width, const FTextBlockStyle& DefaultStyle, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+
+	void SetHasKeyboardFocus(const bool bInHasKeyboardFocus)
+	{
+		bHasKeyboardFocus = bInHasKeyboardFocus;
+	}
+
+protected:
+	FTextSearchHighlighter();
 
 	/** true if the parent widget has keyboard focus, false otherwise */
 	bool bHasKeyboardFocus;

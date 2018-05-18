@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,7 +7,7 @@
 #include "RHI.h"
 #include "RHIResources.h"
 #include "Engine/Texture2D.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "OculusHMDTypes.generated.h"
 
 USTRUCT()
@@ -18,7 +18,7 @@ struct FOculusSplashDesc
 	UPROPERTY(config, EditAnywhere, Category = Settings, meta = (
 		AllowedClasses = "Texture2D",
 		ToolTip = "Texture to display"))
-	FStringAssetReference TexturePath;
+	FSoftObjectPath TexturePath;
 
 	UPROPERTY(config, EditAnywhere, Category = Settings, meta = (
 		ToolTip = "transform of center of quad (meters)."))

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,6 +10,7 @@
 #include "Editor/EditorEngine.h"
 #include "IPackageAutoSaver.h"
 #include "ISourceControlProvider.h"
+#include "IDDCNotifications.h"
 #include "ComponentVisualizer.h"
 #include "ComponentVisualizerManager.h"
 #include "UnrealEdEngine.generated.h"
@@ -420,14 +421,15 @@ public:
 	virtual void edactSelectRelevantLights( UWorld* InWorld );
 
 	/**
-	 * Deletes all selected actors.  bIgnoreKismetReferenced is ignored when bVerifyDeletionCanHappen is true.
+	 * Deletes all selected actors
 	 *
-	 * @param	InWorld						World context
+	 * @param	InWorld				World context
 	 * @param	bVerifyDeletionCanHappen	[opt] If true (default), verify that deletion can be performed.
-	 * @param	bWarnAboutReferences		[opt] If true (default), we prompt the user about referenced actours they are about to delete
+	 * @param	bWarnAboutReferences		[opt] If true (default), we prompt the user about referenced actors they are about to delete
+	 * @param	bWarnAboutSoftReferences	[opt] If true (default), we prompt the user about soft references to actors they are about to delete
 	 * @return								true unless the delete operation was aborted.
 	 */
-	virtual bool edactDeleteSelected( UWorld* InWorld, bool bVerifyDeletionCanHappen=true, bool bWarnAboutReferences = true) override;
+	virtual bool edactDeleteSelected( UWorld* InWorld, bool bVerifyDeletionCanHappen=true, bool bWarnAboutReferences = true, bool bWarnAboutSoftReferences = true) override;
 
 	/**
 	 * Creates a new group from the current selection removing any existing groups.
@@ -780,11 +782,18 @@ public:
 		return *PackageAutoSaver;
 	}
 
+	/** @return The DDC notifications instance used by the editor */
+	IDDCNotifications& GetDDCNotifications() const
+	{
+		return *DDCNotifications;
+	}
+
 	/**
 	 * Exec command handlers
 	 */
 	bool HandleDumpModelGUIDCommand( const TCHAR* Str, FOutputDevice& Ar );
 	bool HandleModalTestCommand( const TCHAR* Str, FOutputDevice& Ar );
+	bool HandleDisallowExportCommand( const TCHAR* Str, FOutputDevice& Ar );
 	bool HandleDumpBPClassesCommand( const TCHAR* Str, FOutputDevice& Ar );
 	bool HandleFindOutdateInstancesCommand( const TCHAR* Str, FOutputDevice& Ar );
 	bool HandleDumpSelectionCommand( const TCHAR* Str, FOutputDevice& Ar );
@@ -811,6 +820,9 @@ protected:
 	
 	/** The package auto-saver instance used by the editor */
 	TUniquePtr<IPackageAutoSaver> PackageAutoSaver;
+
+	/** The DDC notifications instance used by the editor */
+	TUniquePtr<IDDCNotifications> DDCNotifications;
 
 	/**
 	 * The list of visualizers to draw when selection changes

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/NavLinkRenderingComponent.h"
 #include "EngineGlobals.h"
@@ -36,7 +36,7 @@ UNavLinkRenderingComponent::UNavLinkRenderingComponent(const FObjectInitializer&
 
 FBoxSphereBounds UNavLinkRenderingComponent::CalcBounds(const FTransform& InLocalToWorld) const
 {
-	AActor* LinkOwnerActor = Cast<AActor>(GetOwner());
+	AActor* LinkOwnerActor = GetOwner();
 	INavLinkHostInterface* LinkOwnerHost = Cast<INavLinkHostInterface>(GetOwner());
 
 	if (LinkOwnerActor != NULL && LinkOwnerHost != NULL)
@@ -102,7 +102,7 @@ bool UNavLinkRenderingComponent::ComponentIsTouchingSelectionFrustum(const FConv
 FNavLinkRenderingProxy::FNavLinkRenderingProxy(const UPrimitiveComponent* InComponent)
 	: FPrimitiveSceneProxy(InComponent)
 {
-	LinkOwnerActor = Cast<AActor>(InComponent->GetOwner());
+	LinkOwnerActor = InComponent->GetOwner();
 	LinkOwnerHost = Cast<INavLinkHostInterface>(InComponent->GetOwner());
 
 	if (LinkOwnerActor != NULL && LinkOwnerHost != NULL)
@@ -128,6 +128,12 @@ FNavLinkRenderingProxy::FNavLinkRenderingProxy(const UPrimitiveComponent* InComp
 			StoreSegmentLinks(LinkOwnerLocalToWorld, SegmentLinks);
 		}
 	}
+}
+
+SIZE_T FNavLinkRenderingProxy::GetTypeHash() const
+{
+	static size_t UniquePointer;
+	return reinterpret_cast<size_t>(&UniquePointer);
 }
 
 void FNavLinkRenderingProxy::StorePointLinks(const FTransform& InLocalToWorld, const TArray<FNavigationLink>& LinksArray)

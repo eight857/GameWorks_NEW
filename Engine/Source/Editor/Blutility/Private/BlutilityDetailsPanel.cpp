@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BlutilityDetailsPanel.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -37,7 +37,7 @@ TSharedRef<IDetailCustomization> FEditorUtilityInstanceDetails::MakeInstance()
 
 void FEditorUtilityInstanceDetails::CustomizeDetails(IDetailLayoutBuilder& DetailLayoutBuilder)
 {
-	SelectedObjectsList = DetailLayoutBuilder.GetDetailsView().GetSelectedObjects();
+	SelectedObjectsList = DetailLayoutBuilder.GetSelectedObjects();
 
 	// Hide some useless categories
 	//@TODO: How to hide Actors, Layers, etc...?

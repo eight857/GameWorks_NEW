@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SWorldHierarchyImpl.h"
 #include "SLevelsTreeWidget.h"
@@ -761,11 +761,13 @@ void SWorldHierarchyImpl::OnUpdateSelection()
 					if (TreeItemPtr->HasModel(*SelectedItemIt))
 					{
 						ItemsSelectedAfterRefresh.Add(It->Key);
+						break;
 					}
 				}
 			}
 		}
 	}
+
 
 	RefreshView();
 

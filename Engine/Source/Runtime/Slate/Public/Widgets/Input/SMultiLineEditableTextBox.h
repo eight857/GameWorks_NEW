@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -40,13 +40,14 @@ public:
 		, _Marshaller()
 		, _Text()
 		, _HintText()
+		, _SearchText()
 		, _Font()
 		, _ForegroundColor()
 		, _ReadOnlyForegroundColor()
 		, _Justification(ETextJustify::Left)
 		, _LineHeightPercentage(1.0f)
 		, _IsReadOnly( false )
-		, _IsPassword( false )
+		, _AllowMultiLine( true )
 		, _IsCaretMovedWhenGainFocus ( true )
 		, _SelectAllTextWhenFocused( false )
 		, _ClearTextSelectionOnFocusLoss( true )
@@ -86,6 +87,9 @@ public:
 		/** Hint text that appears when there is no text in the text box */
 		SLATE_ATTRIBUTE( FText, HintText )
 
+		/** Text to search for (a new search is triggered whenever this text changes) */
+		SLATE_ATTRIBUTE( FText, SearchText )
+
 		/** Font color and opacity (overrides Style) */
 		SLATE_ATTRIBUTE( FSlateFontInfo, Font )
 
@@ -104,8 +108,8 @@ public:
 		/** Sets whether this text box can actually be modified interactively by the user */
 		SLATE_ATTRIBUTE( bool, IsReadOnly )
 
-		/** Sets whether this text box is for storing a password */
-		SLATE_ATTRIBUTE( bool, IsPassword )
+		/** Whether to allow multi-line text */
+		SLATE_ATTRIBUTE(bool, AllowMultiLine)
 
 		/** Workaround as we loose focus when the auto completion closes. */
 		SLATE_ATTRIBUTE( bool, IsCaretMovedWhenGainFocus )
@@ -143,6 +147,14 @@ public:
 		/** Delegate to call before a context menu is opened. User returns the menu content or null to the disable context menu */
 		SLATE_EVENT(FOnContextMenuOpening, OnContextMenuOpening)
 
+		/**
+		 * This is NOT for validating input!
+		 * 
+		 * Called whenever a character is typed.
+		 * Not called for copy, paste, or any other text changes!
+		 */
+		SLATE_EVENT( FOnIsTypedCharValid, OnIsTypedCharValid )
+
 		/** Called whenever the text is changed interactively by the user */
 		SLATE_EVENT( FOnTextChanged, OnTextChanged )
 
@@ -157,6 +169,9 @@ public:
 
 		/** Called when the cursor is moved within the text area */
 		SLATE_EVENT( SMultiLineEditableText::FOnCursorMoved, OnCursorMoved )
+
+		/** Callback delegate to have first chance handling of the OnKeyChar event */
+		SLATE_EVENT(FOnKeyChar, OnKeyCharHandler)
 
 		/** Callback delegate to have first chance handling of the OnKeyDown event */
 		SLATE_EVENT(FOnKeyDown, OnKeyDownHandler)
@@ -255,6 +270,12 @@ public:
 	 */
 	void SetHintText( const TAttribute< FText >& InHintText );
 
+	/** Set the text that is currently being searched for (if any) */
+	void SetSearchText(const TAttribute<FText>& InSearchText);
+
+	/** Get the text that is currently being searched for (if any) */
+	FText GetSearchText() const;
+
 	/**
 	 * Sets the text color and opacity (overrides Style)
 	 *
@@ -303,6 +324,9 @@ public:
 	/** See the AllowContextMenu attribute */
 	void SetAllowContextMenu(const TAttribute< bool >& InAllowContextMenu);
 
+	/** Set the VirtualKeyboardDismissAction attribute */
+	void SetVirtualKeyboardDismissAction(TAttribute< EVirtualKeyboardDismissAction > InVirtualKeyboardDismissAction);
+	
 	/** Set the ReadOnly attribute */
 	void SetIsReadOnly(const TAttribute< bool >& InIsReadOnly);
 
@@ -352,6 +376,12 @@ public:
 	/** Apply the given style to the currently selected text (or insert a new run at the current cursor position if no text is selected) */
 	void ApplyToSelection(const FRunInfo& InRunInfo, const FTextBlockStyle& InStyle);
 
+	/** Begin a new text search (this is called automatically when the bound search text changes) */
+	void BeginSearch(const FText& InSearchText, const ESearchCase::Type InSearchCase = ESearchCase::IgnoreCase, const bool InReverse = false);
+
+	/** Advance the current search to the next match (does nothing if not currently searching) */
+	void AdvanceSearch(const bool InReverse = false);
+
 	/** Get the run currently under the cursor, or null if there is no run currently under the cursor */
 	TSharedPtr<const IRun> GetRunUnderCursor() const;
 
@@ -368,11 +398,24 @@ public:
 	void Refresh();
 
 	/**
+	 * Sets the OnKeyCharHandler to provide first chance handling of the SMultiLineEditableText's OnKeyChar event
+	 *
+	 * @param InOnKeyCharHandler			Delegate to call during OnKeyChar event
+	 */
+	void SetOnKeyCharHandler(FOnKeyChar InOnKeyCharHandler);
+
+	/**
 	 * Sets the OnKeyDownHandler to provide first chance handling of the SMultiLineEditableText's OnKeyDown event
 	 *
 	 * @param InOnKeyDownHandler			Delegate to call during OnKeyDown event
 	 */
 	void SetOnKeyDownHandler(FOnKeyDown InOnKeyDownHandler);
+
+
+	/**
+	 * 
+	 */
+	void ForceScroll(int32 UserIndex, float ScrollAxisMagnitude);
 
 protected:
 
@@ -428,9 +471,9 @@ protected:
 	/** SomeWidget reporting */
 	TSharedPtr<class IErrorReportingWidget> ErrorReporting;
 
-private:
-
 	const FEditableTextBoxStyle* Style;
+
+private:
 
 	FMargin FORCEINLINE DeterminePadding() const { check(Style);  return PaddingOverride.IsSet() ? PaddingOverride.Get() : Style->Padding; }
 	FMargin FORCEINLINE DetermineHScrollBarPadding() const { check(Style);  return HScrollBarPaddingOverride.IsSet() ? HScrollBarPaddingOverride.Get() : Style->HScrollBarPadding; }

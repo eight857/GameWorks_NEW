@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -40,20 +40,8 @@ enum class EFocusCause : uint8
 	WindowActivate,
 };
 
-/** DEPRECATED 4.6 - Do not use */
-//@Todo slate: Remove this as soon as the 4.6 deprecated API is Removed.
-namespace EKeyboardFocusCause
-{
-	DEPRECATED(4.6, "EFocusCause::Type is deprecated and was renamed to EFocusCause. Please use that type instead.")
-	typedef ::EFocusCause Type;
-
-	const EFocusCause Mouse = EFocusCause::Mouse;
-	const EFocusCause Keyboard = EFocusCause::Navigation;
-	const EFocusCause SetDirectly = EFocusCause::SetDirectly;
-	const EFocusCause Cleared = EFocusCause::Cleared;
-	const EFocusCause OtherWidgetLostFocus = EFocusCause::OtherWidgetLostFocus;
-	const EFocusCause WindowActivate = EFocusCause::WindowActivate;
-}
+DEPRECATED(4.18, "EKeyboardFocusCause is deprecated and was renamed to EFocusCause. Please use that type instead.")
+typedef EFocusCause EKeyboardFocusCause;
 
 /**
  * FFocusEvent is used when notifying widgets about keyboard focus changes

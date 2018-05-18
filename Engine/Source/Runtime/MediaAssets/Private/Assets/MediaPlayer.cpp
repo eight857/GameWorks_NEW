@@ -1,21 +1,26 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MediaPlayer.h"
+#include "MediaAssetsPrivate.h"
 
+#include "IMediaClock.h"
 #include "IMediaControls.h"
 #include "IMediaModule.h"
-#include "IMediaOutput.h"
 #include "IMediaPlayer.h"
 #include "IMediaPlayerFactory.h"
+#include "IMediaTicker.h"
 #include "IMediaTracks.h"
-#include "MediaOverlays.h"
+#include "MediaPlayerFacade.h"
+#include "Misc/App.h"
 #include "Misc/Paths.h"
-#include "MediaAssetsPrivate.h"
+#include "Misc/ScopeLock.h"
+#include "Modules/ModuleManager.h"
+#include "UObject/Package.h"
+#include "UObject/UObjectGlobals.h"
+
 #include "MediaPlaylist.h"
 #include "MediaSource.h"
-#include "MediaSoundWave.h"
-#include "MediaTexture.h"
-#include "Modules/ModuleManager.h"
+#include "StreamMediaSource.h"
 
 
 /* UMediaPlayer structors
@@ -23,16 +28,25 @@
 
 UMediaPlayer::UMediaPlayer(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
+	, CacheAhead(FTimespan::FromMilliseconds(100))
+	, CacheBehind(FTimespan::FromMilliseconds(3000))
+	, CacheBehindGame(FTimespan::FromMilliseconds(100))
 	, PlayOnOpen(true)
 	, Shuffle(false)
 	, Loop(false)
 	, PlaylistIndex(INDEX_NONE)
-	, Player(MakeShareable(new FMediaPlayerBase))
+	, HorizontalFieldOfView(90.0f)
+	, VerticalFieldOfView(60.0f)
+	, ViewRotation(FRotator::ZeroRotator)
+	, PlayerFacade(MakeShareable(new FMediaPlayerFacade))
+	, PlayerGuid(FGuid::NewGuid())
+	, PlayOnNext(false)
 #if WITH_EDITOR
 	, WasPlayingInPIE(false)
 #endif
 {
-	Player->OnMediaEvent().AddUObject(this, &UMediaPlayer::HandlePlayerMediaEvent);
+	PlayerFacade->OnMediaEvent().AddUObject(this, &UMediaPlayer::HandlePlayerMediaEvent);
+	Playlist = NewObject<UMediaPlaylist>(GetTransientPackage(), NAME_None, RF_Transactional | RF_Transient);
 }
 
 
@@ -41,7 +55,7 @@ UMediaPlayer::UMediaPlayer(const FObjectInitializer& ObjectInitializer)
 
 bool UMediaPlayer::CanPause() const
 {
-	return Player->CanPause();
+	return PlayerFacade->CanPause();
 }
 
 
@@ -52,147 +66,279 @@ bool UMediaPlayer::CanPlaySource(UMediaSource* MediaSource)
 		return false;
 	}
 
-	return Player->CanPlayUrl(MediaSource->GetUrl(), *MediaSource);
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.CanPlaySource"), *GetFName().ToString(), *MediaSource->GetFName().ToString());
+
+	return PlayerFacade->CanPlayUrl(MediaSource->GetUrl(), MediaSource);
 }
 
 
 bool UMediaPlayer::CanPlayUrl(const FString& Url)
 {
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.CanPlayUrl"), *GetFName().ToString(), *Url);
+
 	if (Url.IsEmpty())
 	{
 		return false;
 	}
 
-	return Player->CanPlayUrl(Url, *GetDefault<UMediaSource>());
+	return PlayerFacade->CanPlayUrl(Url, GetDefault<UMediaSource>());
 }
 
 
 void UMediaPlayer::Close()
 {
-	Player->Close();
+	UE_LOG(LogMediaAssets, VeryVerbose, TEXT("%s.Close"), *GetFName().ToString());
 
-	LastUrl.Empty();
-	Playlist = nullptr;
+	PlayerFacade->Close();
+
+	Playlist = NewObject<UMediaPlaylist>(GetTransientPackage(), NAME_None, RF_Transactional | RF_Transient);
 	PlaylistIndex = INDEX_NONE;
+	PlayOnNext = false;
 }
 
 
-FMediaPlayerBase& UMediaPlayer::GetBasePlayer()
+int32 UMediaPlayer::GetAudioTrackChannels(int32 TrackIndex, int32 FormatIndex) const
 {
-	return *Player;
+	return PlayerFacade->GetAudioTrackChannels(TrackIndex, FormatIndex);
+}
+
+
+int32 UMediaPlayer::GetAudioTrackSampleRate(int32 TrackIndex, int32 FormatIndex) const
+{
+	return PlayerFacade->GetAudioTrackSampleRate(TrackIndex, FormatIndex);
+}
+
+
+FString UMediaPlayer::GetAudioTrackType(int32 TrackIndex, int32 FormatIndex) const
+{
+	return PlayerFacade->GetAudioTrackType(TrackIndex, FormatIndex);
 }
 
 
 FName UMediaPlayer::GetDesiredPlayerName() const
 {
-	return Player->DesiredPlayerName;
+	return PlayerFacade->DesiredPlayerName;
 }
 
 
 FTimespan UMediaPlayer::GetDuration() const
 {
-	return Player->GetDuration();
+	return PlayerFacade->GetDuration();
 }
 
 
-FFloatRange UMediaPlayer::GetForwardRates(bool Unthinned)
+float UMediaPlayer::GetHorizontalFieldOfView() const
 {
-	return Player->GetForwardRates(Unthinned);
+	float OutHorizontal = 0.0f;
+	float OutVertical = 0.0f;
+
+	if (!PlayerFacade->GetViewField(OutHorizontal, OutVertical))
+	{
+		return 0.0f;
+	}
+
+	return OutHorizontal;
+}
+
+
+FText UMediaPlayer::GetMediaName() const
+{
+	return PlayerFacade->GetMediaName();
 }
 
 
 int32 UMediaPlayer::GetNumTracks(EMediaPlayerTrack TrackType) const
 {
-	return Player->GetNumTracks((EMediaTrackType)TrackType);
+	return PlayerFacade->GetNumTracks((EMediaTrackType)TrackType);
+}
+
+
+int32 UMediaPlayer::GetNumTrackFormats(EMediaPlayerTrack TrackType, int32 TrackIndex) const
+{
+	return PlayerFacade->GetNumTrackFormats((EMediaTrackType)TrackType, TrackIndex);
+}
+
+
+TSharedRef<FMediaPlayerFacade, ESPMode::ThreadSafe> UMediaPlayer::GetPlayerFacade() const
+{
+	return PlayerFacade.ToSharedRef();
 }
 
 
 FName UMediaPlayer::GetPlayerName() const
 {
-	return Player->GetPlayerName();
+	return PlayerFacade->GetPlayerName();
 }
 
 
 float UMediaPlayer::GetRate() const
 {
-	return Player->GetRate();
-}
-
-
-FFloatRange UMediaPlayer::GetReverseRates(bool Unthinned)
-{
-	return Player->GetReverseRates(Unthinned);
+	return PlayerFacade->GetRate();
 }
 
 
 int32 UMediaPlayer::GetSelectedTrack(EMediaPlayerTrack TrackType) const
 {
-	return Player->GetSelectedTrack((EMediaTrackType)TrackType);
+	return PlayerFacade->GetSelectedTrack((EMediaTrackType)TrackType);
+}
+
+
+void UMediaPlayer::GetSupportedRates(TArray<FFloatRange>& OutRates, bool Unthinned) const
+{
+	const TRangeSet<float> Rates = PlayerFacade->GetSupportedRates(Unthinned);
+	Rates.GetRanges((TArray<TRange<float>>&)OutRates);
 }
 
 
 FTimespan UMediaPlayer::GetTime() const
 {
-	return Player->GetTime();
+	return PlayerFacade->GetTime();
 }
 
 
 FText UMediaPlayer::GetTrackDisplayName(EMediaPlayerTrack TrackType, int32 TrackIndex) const
 {
-	return Player->GetTrackDisplayName((EMediaTrackType)TrackType, TrackIndex);
+	return PlayerFacade->GetTrackDisplayName((EMediaTrackType)TrackType, TrackIndex);
+}
+
+
+int32 UMediaPlayer::GetTrackFormat(EMediaPlayerTrack TrackType, int32 TrackIndex) const
+{
+	return PlayerFacade->GetTrackFormat((EMediaTrackType)TrackType, TrackIndex);
 }
 
 
 FString UMediaPlayer::GetTrackLanguage(EMediaPlayerTrack TrackType, int32 TrackIndex) const
 {
-	return Player->GetTrackLanguage((EMediaTrackType)TrackType, TrackIndex);
+	return PlayerFacade->GetTrackLanguage((EMediaTrackType)TrackType, TrackIndex);
 }
 
 
 const FString& UMediaPlayer::GetUrl() const
 {
-	return Player->GetUrl();
+	return PlayerFacade->GetUrl();
+}
+
+
+float UMediaPlayer::GetVerticalFieldOfView() const
+{
+	float OutHorizontal = 0.0f;
+	float OutVertical = 0.0f;
+
+	if (!PlayerFacade->GetViewField(OutHorizontal, OutVertical))
+	{
+		return 0.0f;
+	}
+
+	return OutVertical;
+}
+
+
+float UMediaPlayer::GetVideoTrackAspectRatio(int32 TrackIndex, int32 FormatIndex) const
+{
+	return PlayerFacade->GetVideoTrackAspectRatio(TrackIndex, FormatIndex);
+}
+
+
+FIntPoint UMediaPlayer::GetVideoTrackDimensions(int32 TrackIndex, int32 FormatIndex) const
+{
+	return PlayerFacade->GetVideoTrackDimensions(TrackIndex, FormatIndex);
+}
+
+
+float UMediaPlayer::GetVideoTrackFrameRate(int32 TrackIndex, int32 FormatIndex) const
+{
+	return PlayerFacade->GetVideoTrackFrameRate(TrackIndex, FormatIndex);
+}
+
+
+FFloatRange UMediaPlayer::GetVideoTrackFrameRates(int32 TrackIndex, int32 FormatIndex) const
+{
+	return PlayerFacade->GetVideoTrackFrameRates(TrackIndex, FormatIndex);
+}
+
+
+FString UMediaPlayer::GetVideoTrackType(int32 TrackIndex, int32 FormatIndex) const
+{
+	return PlayerFacade->GetVideoTrackType(TrackIndex, FormatIndex);
+}
+
+
+FRotator UMediaPlayer::GetViewRotation() const
+{
+	FQuat OutOrientation;
+
+	if (!PlayerFacade->GetViewOrientation(OutOrientation))
+	{
+		return FRotator::ZeroRotator;
+	}
+
+	return OutOrientation.Rotator();
+}
+
+
+bool UMediaPlayer::HasError() const
+{
+	return PlayerFacade->HasError();
+}
+
+
+bool UMediaPlayer::IsBuffering() const
+{
+	return PlayerFacade->IsBuffering();
+}
+
+
+bool UMediaPlayer::IsConnecting() const
+{
+	return PlayerFacade->IsConnecting();
 }
 
 
 bool UMediaPlayer::IsLooping() const
 {
-	return Player->IsLooping();
+	return PlayerFacade->IsLooping();
 }
 
 
 bool UMediaPlayer::IsPaused() const
 {
-	return Player->IsPaused();
+	return PlayerFacade->IsPaused();
 }
 
 
 bool UMediaPlayer::IsPlaying() const
 {
-	return Player->IsPlaying();
+	return PlayerFacade->IsPlaying();
 }
 
 
 bool UMediaPlayer::IsPreparing() const
 {
-	return Player->IsPreparing();
+	return PlayerFacade->IsPreparing();
 }
 
 
 bool UMediaPlayer::IsReady() const
 {
-	return Player->IsReady();
+	UE_LOG(LogMediaAssets, VeryVerbose, TEXT("%s.IsReady"), *GetFName().ToString());
+	return PlayerFacade->IsReady();
 }
 
 
 bool UMediaPlayer::Next()
 {
-	if (Playlist == nullptr)
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.Next"), *GetFName().ToString());
+
+	check(Playlist != nullptr);
+	int32 RemainingAttempts = Playlist->Num();
+
+	if (RemainingAttempts == 0)
 	{
 		return false;
 	}
 
-	int32 RemainingAttempts = Playlist->Num();
+	PlayOnNext |= PlayerFacade->IsPlaying();
 
 	while (RemainingAttempts-- > 0)
 	{
@@ -200,7 +346,7 @@ bool UMediaPlayer::Next()
 			? Playlist->GetRandom(PlaylistIndex)
 			: Playlist->GetNext(PlaylistIndex);
 
-		if ((NextSource != nullptr) && NextSource->Validate() && Player->Open(NextSource->GetUrl(), *NextSource))
+		if ((NextSource != nullptr) && NextSource->Validate() && PlayerFacade->Open(NextSource->GetUrl(), NextSource))
 		{
 			return true;
 		}
@@ -212,19 +358,18 @@ bool UMediaPlayer::Next()
 
 bool UMediaPlayer::OpenFile(const FString& FilePath)
 {
-	FString FullPath;
-	
-	if (FPaths::IsRelative(FilePath))
+	Close();
+
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.OpenFile %s"), *GetFName().ToString(), *FilePath);
+
+	check(Playlist != nullptr);
+
+	if (!Playlist->AddFile(FilePath))
 	{
-		FullPath = FPaths::ConvertRelativePathToFull(FilePath);
-	}
-	else
-	{
-		FullPath = FilePath;
-		FPaths::NormalizeFilename(FullPath);
+		return false;
 	}
 
-	return OpenUrl(FString(TEXT("file://")) + FullPath);
+	return Next();
 }
 
 
@@ -234,9 +379,11 @@ bool UMediaPlayer::OpenPlaylistIndex(UMediaPlaylist* InPlaylist, int32 Index)
 
 	if (InPlaylist == nullptr)
 	{
-		UE_LOG(LogMediaAssets, Warning, TEXT("UMediaPlayer::OpenPlaylistIndex called with null MediaPlaylist"));
+		UE_LOG(LogMediaAssets, Warning, TEXT("%s.OpenPlaylistIndex called with null MediaPlaylist"), *GetFName().ToString());
 		return false;
 	}
+
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.OpenSource %s %i"), *GetFName().ToString(), *InPlaylist->GetFName().ToString(), Index);
 
 	Playlist = InPlaylist;
 
@@ -249,21 +396,19 @@ bool UMediaPlayer::OpenPlaylistIndex(UMediaPlaylist* InPlaylist, int32 Index)
 
 	if (MediaSource == nullptr)
 	{
-		UE_LOG(LogMediaAssets, Warning, TEXT("UMediaPlayer::OpenPlaylistIndex called with invalid PlaylistIndex %i"), Index);
+		UE_LOG(LogMediaAssets, Warning, TEXT("%s.OpenPlaylistIndex called with invalid PlaylistIndex %i"), *GetFName().ToString(), Index);
 		return false;
 	}
-	
-	LastUrl = MediaSource->GetUrl();
+
 	PlaylistIndex = Index;
 
 	if (!MediaSource->Validate())
 	{
 		UE_LOG(LogMediaAssets, Error, TEXT("Failed to validate media source %s (%s)"), *MediaSource->GetName(), *MediaSource->GetUrl());
-
 		return false;
 	}
 
-	return Player->Open(LastUrl, *MediaSource);
+	return PlayerFacade->Open(MediaSource->GetUrl(), MediaSource);
 }
 
 
@@ -273,20 +418,22 @@ bool UMediaPlayer::OpenSource(UMediaSource* MediaSource)
 
 	if (MediaSource == nullptr)
 	{
-		UE_LOG(LogMediaAssets, Warning, TEXT("UMediaPlayer::OpenSource called with null MediaSource"));
+		UE_LOG(LogMediaAssets, Warning, TEXT("%s.OpenSource called with null MediaSource"), *GetFName().ToString());
 		return false;
 	}
 
-	LastUrl = MediaSource->GetUrl();
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.OpenSource %s"), *GetFName().ToString(), *MediaSource->GetFName().ToString());
 
 	if (!MediaSource->Validate())
 	{
 		UE_LOG(LogMediaAssets, Error, TEXT("Failed to validate media source %s (%s)"), *MediaSource->GetName(), *MediaSource->GetUrl());
-
 		return false;
 	}
 
-	return Player->Open(LastUrl, *MediaSource);
+	check(Playlist != nullptr);
+	Playlist->Add(MediaSource);
+
+	return Next();
 }
 
 
@@ -294,45 +441,54 @@ bool UMediaPlayer::OpenUrl(const FString& Url)
 {
 	Close();
 
-	if (Url.IsEmpty())
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.OpenUrl %s"), *GetFName().ToString(), *Url);
+
+	check(Playlist != nullptr);
+
+	if (!Playlist->AddUrl(Url))
 	{
 		return false;
 	}
 
-	LastUrl = Url;
-
-	return Player->Open(LastUrl, *GetDefault<UMediaSource>());
+	return Next();
 }
 
 
 bool UMediaPlayer::Pause()
 {
-	return Player->SetRate(0.0f);
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.Pause"), *GetFName().ToString());
+	return PlayerFacade->SetRate(0.0f);
 }
 
 
 bool UMediaPlayer::Play()
 {
-	return Player->SetRate(1.0f);
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.Play"), *GetFName().ToString());
+	return PlayerFacade->SetRate(1.0f);
 }
 
 
 bool UMediaPlayer::Previous()
 {
-	if (Playlist == nullptr)
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.Previous"), *GetFName().ToString());
+
+	check(Playlist != nullptr);
+	int32 RemainingAttempts = Playlist->Num();
+
+	if (RemainingAttempts == 0)
 	{
 		return false;
 	}
 
-	int32 RemainingAttempts = Playlist->Num();
+	PlayOnNext |= PlayerFacade->IsPlaying();
 
 	while (--RemainingAttempts >= 0)
 	{
 		UMediaSource* PrevSource = Shuffle
 			? Playlist->GetRandom(PlaylistIndex)
-			: Playlist->GetNext(PlaylistIndex);
+			: Playlist->GetPrevious(PlaylistIndex);
 
-		if ((PrevSource != nullptr) && PrevSource->Validate() && Player->Open(PrevSource->GetUrl(), *PrevSource))
+		if ((PrevSource != nullptr) && PrevSource->Validate() && PlayerFacade->Open(PrevSource->GetUrl(), PrevSource))
 		{
 			return true;
 		}
@@ -344,122 +500,98 @@ bool UMediaPlayer::Previous()
 
 bool UMediaPlayer::Reopen()
 {
-	if (Playlist != nullptr)
-	{
-		return OpenPlaylistIndex(Playlist, PlaylistIndex);
-	}
-
-	return Player->Open(LastUrl, *GetDefault<UMediaSource>());
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.Reopen"), *GetFName().ToString());
+	return OpenPlaylistIndex(Playlist, PlaylistIndex);
 }
 
 
 bool UMediaPlayer::Rewind()
 {
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.Rewind"), *GetFName().ToString());
 	return Seek(FTimespan::Zero());
 }
 
 
 bool UMediaPlayer::Seek(const FTimespan& Time)
 {
-	return Player->Seek(Time);
+	UE_LOG(LogMediaAssets, VeryVerbose, TEXT("%s.Seek %s"), *GetFName().ToString(), *Time.ToString());
+	return PlayerFacade->Seek(Time);
 }
 
 
 bool UMediaPlayer::SelectTrack(EMediaPlayerTrack TrackType, int32 TrackIndex)
 {
-	return Player->SelectTrack((EMediaTrackType)TrackType, TrackIndex);
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.SelectTrack %s %i"), *GetFName().ToString(), *UEnum::GetValueAsString(TEXT("MediaAssets.EMediaPlayerTrack"), TrackType), TrackIndex);
+	return PlayerFacade->SelectTrack((EMediaTrackType)TrackType, TrackIndex);
 }
 
 
 void UMediaPlayer::SetDesiredPlayerName(FName PlayerName)
 {
-	Player->DesiredPlayerName = PlayerName;
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.SetDesiredPlayerName %s"), *GetFName().ToString(), *PlayerName.ToString());
+	PlayerFacade->DesiredPlayerName = PlayerName;
 }
 
 
 bool UMediaPlayer::SetLooping(bool Looping)
 {
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.SetLooping %s"), *GetFName().ToString(), *(Looping ? GTrue : GFalse).ToString());
+
 	Loop = Looping;
 
-	return Player->SetLooping(Looping);
-}
-
-
-void UMediaPlayer::SetOverlays(UMediaOverlays* NewOverlays)
-{
-	if (Overlays != nullptr)
-	{
-		Overlays->OnBeginDestroy().RemoveAll(this);
-	}
-
-	if (NewOverlays != nullptr)
-	{
-		NewOverlays->OnBeginDestroy().AddUObject(this, &UMediaPlayer::HandleMediaOverlaysBeginDestroy);
-	}
-
-	Player->SetOverlaySink(NewOverlays);
-
-	Overlays = NewOverlays;
+	return PlayerFacade->SetLooping(Looping);
 }
 
 
 bool UMediaPlayer::SetRate(float Rate)
 {
-	return Player->SetRate(Rate);
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.SetRate %f"), *GetFName().ToString(), Rate);
+	return PlayerFacade->SetRate(Rate);
 }
 
 
-void UMediaPlayer::SetSoundWave(UMediaSoundWave* NewSoundWave)
+bool UMediaPlayer::SetTrackFormat(EMediaPlayerTrack TrackType, int32 TrackIndex, int32 FormatIndex)
 {
-	if (SoundWave != nullptr)
-	{
-		SoundWave->OnBeginDestroy().RemoveAll(this);
-	}
-
-	if (NewSoundWave != nullptr)
-	{
-		NewSoundWave->OnBeginDestroy().AddUObject(this, &UMediaPlayer::HandleMediaSoundWaveBeginDestroy);
-	}
-
-	Player->SetAudioSink(NewSoundWave);
-
-	SoundWave = NewSoundWave;
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.SetTrackFormat %s %i %i"), *GetFName().ToString(), *UEnum::GetValueAsString(TEXT("MediaAssets.EMediaPlayerTrack"), TrackType), TrackIndex, FormatIndex);
+	return PlayerFacade->SetTrackFormat((EMediaTrackType)TrackType, TrackIndex, FormatIndex);
 }
 
 
-void UMediaPlayer::SetVideoTexture(UMediaTexture* NewTexture)
+bool UMediaPlayer::SetVideoTrackFrameRate(int32 TrackIndex, int32 FormatIndex, float FrameRate)
 {
-	if (VideoTexture != nullptr)
-	{
-		VideoTexture->OnBeginDestroy().RemoveAll(this);
-	}
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.SetVideoTrackFrameRate %i %i %f"), *GetFName().ToString(), TrackIndex, FormatIndex, FrameRate);
+	return PlayerFacade->SetVideoTrackFrameRate(TrackIndex, FormatIndex, FrameRate);
+}
 
-	if (NewTexture != nullptr)
-	{
-		NewTexture->OnBeginDestroy().AddUObject(this, &UMediaPlayer::HandleMediaTextureBeginDestroy);
-	}
+bool UMediaPlayer::SetViewField(float Horizontal, float Vertical, bool Absolute)
+{
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.SetViewField %f %f %s"), *GetFName().ToString(), Horizontal, Vertical, *(Absolute ? GTrue : GFalse).ToString());
+	return PlayerFacade->SetViewField(Horizontal, Vertical, Absolute);
+}
 
-	Player->SetVideoSink(NewTexture);
 
-	VideoTexture = NewTexture;
+bool UMediaPlayer::SetViewRotation(const FRotator& Rotation, bool Absolute)
+{
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.SetViewRotation %s %s"), *GetFName().ToString(), *Rotation.ToString(), *(Absolute ? GTrue : GFalse).ToString());
+	return PlayerFacade->SetViewOrientation(FQuat(Rotation), Absolute);
 }
 
 
 bool UMediaPlayer::SupportsRate(float Rate, bool Unthinned) const
 {
-	return Player->SupportsRate(Rate, Unthinned);
+	return PlayerFacade->SupportsRate(Rate, Unthinned);
 }
 
 
 bool UMediaPlayer::SupportsScrubbing() const
 {
-	return Player->SupportsScrubbing();
+	return PlayerFacade->CanScrub();
 }
 
 
 bool UMediaPlayer::SupportsSeeking() const
 {
-	return Player->SupportsSeeking();
+	return PlayerFacade->CanSeek();
 }
 
 
@@ -467,6 +599,8 @@ bool UMediaPlayer::SupportsSeeking() const
 
 void UMediaPlayer::PausePIE()
 {
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.PausePIE"), *GetFName().ToString());
+
 	WasPlayingInPIE = IsPlaying();
 
 	if (WasPlayingInPIE)
@@ -478,6 +612,8 @@ void UMediaPlayer::PausePIE()
 
 void UMediaPlayer::ResumePIE()
 {
+	UE_LOG(LogMediaAssets, Verbose, TEXT("%s.ResumePIE"), *GetFName().ToString());
+
 	if (WasPlayingInPIE)
 	{
 		Play();
@@ -492,13 +628,17 @@ void UMediaPlayer::ResumePIE()
 
 void UMediaPlayer::BeginDestroy()
 {
+	IMediaModule* MediaModule = FModuleManager::LoadModulePtr<IMediaModule>("Media");
+
+	if (MediaModule != nullptr)
+	{
+		MediaModule->GetClock().RemoveSink(PlayerFacade.ToSharedRef());
+		MediaModule->GetTicker().RemoveTickable(PlayerFacade.ToSharedRef());
+	}
+
+	PlayerFacade->Close();
+
 	Super::BeginDestroy();
-
-	Close();
-
-	SetOverlays(nullptr);
-	SetSoundWave(nullptr);
-	SetVideoTexture(nullptr);
 }
 
 
@@ -508,24 +648,40 @@ FString UMediaPlayer::GetDesc()
 }
 
 
+void UMediaPlayer::PostDuplicate(bool bDuplicateForPIE)
+{
+	Super::PostDuplicate(bDuplicateForPIE);
+
+	PlayerGuid = FGuid::NewGuid();
+	PlayerFacade->SetGuid(PlayerGuid);
+}
+
+
+void UMediaPlayer::PostInitProperties()
+{
+	Super::PostInitProperties();
+
+	PlayerFacade->SetGuid(PlayerGuid);
+
+	if (HasAnyFlags(RF_ClassDefaultObject))
+	{
+		return; // don't register CDO
+	}
+
+	IMediaModule* MediaModule = FModuleManager::LoadModulePtr<IMediaModule>("Media");
+
+	if (MediaModule != nullptr)
+	{
+		MediaModule->GetClock().AddSink(PlayerFacade.ToSharedRef());
+		MediaModule->GetTicker().AddTickable(PlayerFacade.ToSharedRef());
+	}
+}
+
 void UMediaPlayer::PostLoad()
 {
 	Super::PostLoad();
 
-	if (Overlays != nullptr)
-	{
-		Overlays->OnBeginDestroy().AddUObject(this, &UMediaPlayer::HandleMediaOverlaysBeginDestroy);
-	}
-
-	if (SoundWave != nullptr)
-	{
-		SoundWave->OnBeginDestroy().AddUObject(this, &UMediaPlayer::HandleMediaSoundWaveBeginDestroy);
-	}
-
-	if (VideoTexture != nullptr)
-	{
-		VideoTexture->OnBeginDestroy().AddUObject(this, &UMediaPlayer::HandleMediaTextureBeginDestroy);
-	}
+	PlayerFacade->SetGuid(PlayerGuid);
 }
 
 
@@ -537,19 +693,7 @@ void UMediaPlayer::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
 		? PropertyChangedEvent.Property->GetFName()
 		: NAME_None;
 
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(UMediaPlayer, Overlays))
-	{
-		SetOverlays(Overlays);
-	}
-	else if (PropertyName == GET_MEMBER_NAME_CHECKED(UMediaPlayer, SoundWave))
-	{
-		SetSoundWave(SoundWave);
-	}
-	else if (PropertyName == GET_MEMBER_NAME_CHECKED(UMediaPlayer, VideoTexture))
-	{
-		SetVideoTexture(VideoTexture);
-	}
-	else if (PropertyName == GET_MEMBER_NAME_CHECKED(UMediaPlayer, Loop))
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UMediaPlayer, Loop))
 	{
 		SetLooping(Loop);
 	}
@@ -557,85 +701,11 @@ void UMediaPlayer::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 }
 
-
-void UMediaPlayer::PreEditChange(UProperty* PropertyAboutToChange)
-{
-	const FName PropertyName = (PropertyAboutToChange != nullptr)
-		? PropertyAboutToChange->GetFName()
-		: NAME_None;
-
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(UMediaPlayer, Overlays))
-	{
-		SetOverlays(nullptr);
-	}
-	else if (PropertyName == GET_MEMBER_NAME_CHECKED(UMediaPlayer, SoundWave))
-	{
-		SetSoundWave(nullptr);
-	}
-	else if (PropertyName == GET_MEMBER_NAME_CHECKED(UMediaPlayer, VideoTexture))
-	{
-		SetVideoTexture(nullptr);
-	}
-
-	Super::PreEditChange(PropertyAboutToChange);
-}
-
 #endif
-
-
-/* FTickerObjectBase interface
- *****************************************************************************/
-
-bool UMediaPlayer::Tick(float DeltaTime)
-{
-	Player->TickPlayer(DeltaTime);
-
-	typedef TWeakPtr<FMediaPlayerBase, ESPMode::ThreadSafe> FMediaPlayerBasePtr;
-
-	ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(MediaPlayerTickRender,
-		FMediaPlayerBasePtr, PlayerPtr, Player,
-		float, DeltaTime, DeltaTime,
-		{
-			auto PinnedPlayer = PlayerPtr.Pin();
-			if (PinnedPlayer.IsValid())
-			{
-				PinnedPlayer->TickVideo(DeltaTime);
-			}
-		});
-
-	return true;
-}
 
 
 /* UMediaPlayer callbacks
  *****************************************************************************/
-
-void UMediaPlayer::HandleMediaOverlaysBeginDestroy(UMediaOverlays& DestroyedOverlays)
-{
-	if (&DestroyedOverlays == Overlays)
-	{
-		Player->SetOverlaySink(nullptr);
-	}
-}
-
-
-void UMediaPlayer::HandleMediaSoundWaveBeginDestroy(UMediaSoundWave& DestroyedSoundWave)
-{
-	if (&DestroyedSoundWave == SoundWave)
-	{
-		Player->SetAudioSink(nullptr);
-	}
-}
-
-
-void UMediaPlayer::HandleMediaTextureBeginDestroy(UMediaTexture& DestroyedMediaTexture)
-{
-	if (&DestroyedMediaTexture == VideoTexture)
-	{
-		Player->SetVideoSink(nullptr);
-	}
-}
-
 
 void UMediaPlayer::HandlePlayerMediaEvent(EMediaEvent Event)
 {
@@ -648,35 +718,24 @@ void UMediaPlayer::HandlePlayerMediaEvent(EMediaEvent Event)
 		break;
 
 	case EMediaEvent::MediaOpened:
-		Player->SetLooping(Loop);
+		PlayerFacade->SetCacheWindow(CacheAhead, FApp::IsGame() ? CacheBehindGame : CacheBehind);
+		PlayerFacade->SetLooping(Loop && (Playlist->Num() == 1));
+		PlayerFacade->SetViewField(HorizontalFieldOfView, VerticalFieldOfView, true);
+		PlayerFacade->SetViewOrientation(FQuat(ViewRotation), true);
 
-		if (Overlays != nullptr)
+		OnMediaOpened.Broadcast(PlayerFacade->GetUrl());
+
+		if (PlayOnOpen || PlayOnNext)
 		{
-			Player->SetOverlaySink(Overlays);
-		}
-
-		if (SoundWave != nullptr)
-		{
-			Player->SetAudioSink(SoundWave);
-		}
-
-		if (VideoTexture != nullptr)
-		{
-			Player->SetVideoSink(VideoTexture);
-		}
-
-		OnMediaOpened.Broadcast(Player->GetUrl());
-
-		if (PlayOnOpen)
-		{
+			PlayOnNext = false;
 			Play();
 		}
 		break;
 
 	case EMediaEvent::MediaOpenFailed:
-		OnMediaOpenFailed.Broadcast(Player->GetUrl());
+		OnMediaOpenFailed.Broadcast(PlayerFacade->GetUrl());
 
-		if (!Loop && (Playlist != nullptr))
+		if ((Loop && (Playlist->Num() != 1)) || (PlaylistIndex + 1 < Playlist->Num()))
 		{
 			Next();
 		}
@@ -685,8 +744,11 @@ void UMediaPlayer::HandlePlayerMediaEvent(EMediaEvent Event)
 	case EMediaEvent::PlaybackEndReached:
 		OnEndReached.Broadcast();
 
-		if (!Loop && (Playlist != nullptr))
+		check(Playlist != nullptr);
+
+		if ((Loop && (Playlist->Num() != 1)) || (PlaylistIndex + 1 < Playlist->Num()))
 		{
+			PlayOnNext = true;
 			Next();
 		}
 		break;
@@ -697,6 +759,14 @@ void UMediaPlayer::HandlePlayerMediaEvent(EMediaEvent Event)
 
 	case EMediaEvent::PlaybackSuspended:
 		OnPlaybackSuspended.Broadcast();
+		break;
+
+	case EMediaEvent::SeekCompleted:
+		OnSeekCompleted.Broadcast();
+		break;
+
+	case EMediaEvent::TracksChanged:
+		OnTracksChanged.Broadcast();
 		break;
 	}
 }

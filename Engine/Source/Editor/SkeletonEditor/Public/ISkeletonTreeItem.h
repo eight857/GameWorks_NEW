@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -30,8 +30,8 @@ enum class ESkeletonTreeFilterResult : int32
 
 #define SKELETON_TREE_BASE_ITEM_TYPE(TYPE) \
 	static const FName& GetTypeId() { static FName Type(TEXT(#TYPE)); return Type; } \
-	virtual bool IsOfTypeByName(const FName& Type) const { return GetTypeId() == Type; } \
-	virtual FName GetTypeName() const { return GetTypeId(); }
+	virtual bool IsOfTypeByName(const FName& Type) const { return TYPE::GetTypeId() == Type; } \
+	virtual FName GetTypeName() const { return TYPE::GetTypeId(); }
 
 /** Interface for a skeleton tree item */
 class ISkeletonTreeItem : public TSharedFromThis<ISkeletonTreeItem>
@@ -40,7 +40,7 @@ public:
 	SKELETON_TREE_BASE_ITEM_TYPE(ISkeletonTreeItem)
 
 	/** Check if this item can cast safely to the specified template type */
-	template<class TType> bool IsOfType() const
+	template<typename TType> bool IsOfType() const
 	{
 		return IsOfTypeByName(TType::GetTypeId());
 	}
@@ -74,6 +74,9 @@ public:
 	/** Return the name used to attach to this item */
 	virtual FName GetAttachName() const = 0;
 
+	/** @return true if this item can be renamed */
+	virtual bool CanRenameItem() const = 0;
+
 	/** Requests a rename on the the tree row item */
 	virtual void RequestRename() = 0;
 
@@ -88,6 +91,12 @@ public:
 
 	/** Handle a drag and drop drop event */
 	virtual FReply HandleDrop(const FDragDropEvent& DragDropEvent) = 0;
+
+	/** Get this item's parent  */
+	virtual TSharedPtr<ISkeletonTreeItem> GetParent() const = 0;
+
+	/** Set this item's parent */
+	virtual void SetParent(TSharedPtr<ISkeletonTreeItem> InParent) = 0;
 
 	/** The array of children for this item */
 	virtual TArray<TSharedPtr<ISkeletonTreeItem>>& GetChildren() = 0;
@@ -106,6 +115,12 @@ public:
 
 	/** Set the current filter result */
 	virtual void SetFilterResult(ESkeletonTreeFilterResult InResult) = 0;
+
+	/** Get the object represented by this item, if any */
+	virtual UObject* GetObject() const = 0;
+
+	/** Get whether this item begins expanded or not */
+	virtual bool IsInitiallyExpanded() const = 0;
 };
 
 /**
@@ -120,4 +135,5 @@ public:
  */
 #define SKELETON_TREE_ITEM_TYPE(TYPE, BASE) \
 	static const FName& GetTypeId() { static FName Type(TEXT(#TYPE)); return Type; } \
-	virtual bool IsOfTypeByName(const FName& Type) const override { return GetTypeId() == Type || BASE::IsOfTypeByName(Type); }
+	virtual bool IsOfTypeByName(const FName& Type) const override { return GetTypeId() == Type || BASE::IsOfTypeByName(Type); } \
+	virtual FName GetTypeName() const { return TYPE::GetTypeId(); }

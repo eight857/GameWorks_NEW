@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SoundSubmixEditor.h"
 
@@ -89,7 +89,7 @@ void FSoundSubmixEditor::InitSoundSubmixEditor( const EToolkitMode::Type Mode, c
 		USoundSubmixGraph* SoundSubmixGraph = CastChecked<USoundSubmixGraph>(FBlueprintEditorUtils::CreateNewGraph(SoundSubmix, NAME_None, USoundSubmixGraph::StaticClass(), USoundSubmixGraphSchema::StaticClass()));
 		SoundSubmixGraph->SetRootSoundSubmix(SoundSubmix);
 
-		SoundSubmix->SoundSubmixGraph = Cast<UEdGraph>(SoundSubmixGraph);
+		SoundSubmix->SoundSubmixGraph = SoundSubmixGraph;
 	}
 
 	CastChecked<USoundSubmixGraph>(SoundSubmix->SoundSubmixGraph)->RebuildGraph();
@@ -249,7 +249,7 @@ TSharedRef<SGraphEditor> FSoundSubmixEditor::CreateGraphEditorWidget()
 		.AdditionalCommands(GraphEditorCommands)
 		.IsEditable(true)
 		.Appearance(AppearanceInfo)
-		.GraphToEdit(CastChecked<UEdGraph>(SoundSubmix->SoundSubmixGraph))
+		.GraphToEdit(SoundSubmix->SoundSubmixGraph)
 		.GraphEvents(InEvents)
 		.ShowGraphStateOverlay(false);
 }

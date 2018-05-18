@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/MessageDialog.h"
@@ -1646,10 +1646,10 @@ public:
 
 								switch (EdMode->UISettings->PasteMode)
 								{
-								case ELandscapeToolNoiseMode::Add:
+								case ELandscapeToolPasteMode::Raise:
 									PaintAmount = OriginalValue < DestValue ? PaintAmount : 0.0f;
 									break;
-								case ELandscapeToolNoiseMode::Sub:
+								case ELandscapeToolPasteMode::Lower:
 									PaintAmount = OriginalValue > DestValue ? PaintAmount : 0.0f;
 									break;
 								default:

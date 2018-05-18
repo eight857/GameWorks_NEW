@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CineCameraComponent.h"
 #include "UObject/ConstructorHelpers.h"
@@ -163,6 +163,66 @@ float UCineCameraComponent::GetVerticalFieldOfView() const
 	return (CurrentFocalLength > 0.f)
 		? FMath::RadiansToDegrees(2.f * FMath::Atan(FilmbackSettings.SensorHeight / (2.f * CurrentFocalLength)))
 		: 0.f;
+}
+
+FString UCineCameraComponent::GetFilmbackPresetName() const
+{
+	TArray<FNamedFilmbackPreset> const& Presets = UCineCameraComponent::GetFilmbackPresets();
+	int32 const NumPresets = Presets.Num();
+	for (int32 PresetIdx = 0; PresetIdx < NumPresets; ++PresetIdx)
+	{
+		FNamedFilmbackPreset const& P = Presets[PresetIdx];
+		if (P.FilmbackSettings == FilmbackSettings)
+		{
+			return P.Name;
+		}
+	}
+
+	return FString();
+}
+
+void UCineCameraComponent::SetFilmbackPresetByName(const FString& InPresetName)
+{
+	TArray<FNamedFilmbackPreset> const& Presets = UCineCameraComponent::GetFilmbackPresets();
+	int32 const NumPresets = Presets.Num();
+	for (int32 PresetIdx = 0; PresetIdx < NumPresets; ++PresetIdx)
+	{
+		FNamedFilmbackPreset const& P = Presets[PresetIdx];
+		if (P.Name == InPresetName)
+		{
+			FilmbackSettings = P.FilmbackSettings;
+		}
+	}
+}
+
+FString UCineCameraComponent::GetLensPresetName() const
+{
+	TArray<FNamedLensPreset> const& Presets = UCineCameraComponent::GetLensPresets();
+	int32 const NumPresets = Presets.Num();
+	for (int32 PresetIdx = 0; PresetIdx < NumPresets; ++PresetIdx)
+	{
+		FNamedLensPreset const& P = Presets[PresetIdx];
+		if (P.LensSettings == LensSettings)
+		{
+			return P.Name;
+		}
+	}
+
+	return FString();
+}
+
+void UCineCameraComponent::SetLensPresetByName(const FString& InPresetName)
+{
+	TArray<FNamedLensPreset> const& Presets = UCineCameraComponent::GetLensPresets();
+	int32 const NumPresets = Presets.Num();
+	for (int32 PresetIdx = 0; PresetIdx < NumPresets; ++PresetIdx)
+	{
+		FNamedLensPreset const& P = Presets[PresetIdx];
+		if (P.Name == InPresetName)
+		{
+			LensSettings = P.LensSettings;
+		}
+	}
 }
 
 float UCineCameraComponent::GetWorldToMetersScale() const

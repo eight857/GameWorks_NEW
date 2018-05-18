@@ -1,6 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/Widget.h"
+#include "ConfigCacheIni.h"
+#include "CoreGlobals.h"
 #include "Widgets/SNullWidget.h"
 #include "Types/NavigationMetaData.h"
 #include "Widgets/IToolTip.h"
@@ -22,6 +24,7 @@
 #include "UMGStyle.h"
 #include "Types/ReflectionMetadata.h"
 #include "PropertyLocalizationDataGathering.h"
+#include "HAL/LowLevelMemTracker.h"
 
 #define LOCTEXT_NAMESPACE "UMG"
 
@@ -151,7 +154,8 @@ UWidget::UWidget(const FObjectInitializer& ObjectInitializer)
 #if WITH_EDITOR
 	DesignerFlags = EWidgetDesignFlags::None;
 #endif
-	Visiblity_DEPRECATED = Visibility = ESlateVisibility::Visible;	
+	Visibility = ESlateVisibility::Visible;
+	RenderOpacity = 1.0f;
 	RenderTransformPivot = FVector2D(0.5f, 0.5f);
 	Cursor = EMouseCursor::Default;
 
@@ -288,6 +292,28 @@ void UWidget::SetVisibility(ESlateVisibility InVisibility)
 	{
 		EVisibility SlateVisibility = UWidget::ConvertSerializedVisibilityToRuntime(InVisibility);
 		SafeWidget->SetVisibility(SlateVisibility);
+	}
+}
+
+float UWidget::GetRenderOpacity() const
+{
+	TSharedPtr<SWidget> SafeWidget = GetCachedWidget();
+	if (SafeWidget.IsValid())
+	{
+		return SafeWidget->GetRenderOpacity();
+	}
+
+	return RenderOpacity;
+}
+
+void UWidget::SetRenderOpacity(float InRenderOpacity)
+{
+	RenderOpacity = InRenderOpacity;
+
+	TSharedPtr<SWidget> SafeWidget = GetCachedWidget();
+	if (SafeWidget.IsValid())
+	{
+		SafeWidget->SetRenderOpacity(InRenderOpacity);
 	}
 }
 
@@ -529,7 +555,7 @@ void UWidget::ForceLayoutPrepass()
 	TSharedPtr<SWidget> SafeWidget = GetCachedWidget();
 	if (SafeWidget.IsValid())
 	{
-		SafeWidget->SlatePrepass();
+		SafeWidget->SlatePrepass(SafeWidget->GetCachedGeometry().Scale);
 	}
 }
 
@@ -659,6 +685,8 @@ void UWidget::OnWidgetRebuilt()
 
 TSharedRef<SWidget> UWidget::TakeWidget()
 {
+	LLM_SCOPE(ELLMTag::UI);
+
 	return TakeWidget_Private( []( UUserWidget* Widget, TSharedRef<SWidget> Content ) -> TSharedPtr<SObjectWidget> {
 		       return SNew( SObjectWidget, Widget )[ Content ];
 		   } );
@@ -1000,7 +1028,7 @@ void UWidget::SynchronizeProperties()
 			SafeWidget->SetCursor(Cursor);// PROPERTY_BINDING(EMouseCursor::Type, Cursor));
 		}
 
-		SafeWidget->SetEnabled(PROPERTY_BINDING( bool, bIsEnabled ));
+		SafeWidget->SetEnabled(BITFIELD_PROPERTY_BINDING( bIsEnabled ));
 		SafeWidget->SetVisibility(OPTIONAL_BINDING_CONVERT(ESlateVisibility, Visibility, EVisibility, ConvertVisibility));
 	}
 
@@ -1015,6 +1043,8 @@ void UWidget::SynchronizeProperties()
 #endif
 
 	SafeWidget->ForceVolatile(bIsVolatile);
+
+	SafeWidget->SetRenderOpacity(RenderOpacity);
 
 	UpdateRenderTransform();
 	SafeWidget->SetRenderTransformPivot(RenderTransformPivot);
@@ -1084,16 +1114,6 @@ UWorld* UWidget::GetWorld() const
 	}
 
 	return nullptr;
-}
-
-void UWidget::PostLoad()
-{
-	Super::PostLoad();
-
-	if ( GetLinkerUE4Version() < VER_UE4_RENAME_WIDGET_VISIBILITY )
-	{
-		Visibility = Visiblity_DEPRECATED;
-	}
 }
 
 EVisibility UWidget::ConvertSerializedVisibilityToRuntime(ESlateVisibility Input)
@@ -1181,6 +1201,15 @@ UWidget* UWidget::FindChildContainingDescendant(UWidget* Root, UWidget* Descenda
 	}
 
 	return nullptr;
+}
+
+// TODO: Clean this up to, move it to a user interface setting, don't use a config. 
+FString UWidget::GetDefaultFontName()
+{
+	FString DefaultFontName = TEXT("/Engine/EngineFonts/Roboto");
+	GConfig->GetString(TEXT("SlateStyle"), TEXT("DefaultFontName"), DefaultFontName, GEngineIni);
+
+	return DefaultFontName;
 }
 
 //bool UWidget::BindProperty(const FName& DestinationProperty, UObject* SourceObject, const FName& SourceProperty)

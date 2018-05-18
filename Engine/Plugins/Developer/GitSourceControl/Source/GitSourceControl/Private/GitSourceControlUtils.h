@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -71,7 +71,7 @@ bool CheckGitAvailability(const FString& InPathToGitBinary, FGitVersion* OutVers
 /**
  * Find the root of the Git repository, looking from the provided path and upward in its parent directories
  * @param InPath				The path to the Game Directory (or any path or file in any git repository)
- * @param OutRepositoryRoot		The path to the root directory of the Git repository if found, else the path to the GameDir
+ * @param OutRepositoryRoot		The path to the root directory of the Git repository if found, else the path to the ProjectDir
  * @returns true if the command succeeded and returned no errors
  */
 bool FindRootDirectory(const FString& InPath, FString& OutRepositoryRoot);

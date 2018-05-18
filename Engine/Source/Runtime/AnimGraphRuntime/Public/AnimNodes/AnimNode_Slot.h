@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -23,6 +23,10 @@ struct ANIMGRAPHRUNTIME_API FAnimNode_Slot : public FAnimNode_Base
 	// The name of this slot, exposed to gameplay code, etc...
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Settings, meta=(CustomizeProperty))
 	FName SlotName;
+
+	//Whether we should continue to update the source pose regardless of whether it would be used.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Settings)
+	bool bAlwaysUpdateSourcePose;
 
 protected:
 	FSlotNodeWeightInfo WeightData;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Animation/AnimNode_ApplyMeshSpaceAdditive.h"
 #include "AnimationRuntime.h"
@@ -43,7 +43,8 @@ void FAnimNode_ApplyMeshSpaceAdditive::Evaluate_AnyThread(FPoseContext& Output)
 	//@TODO: Could evaluate Base into Output and save a copy
 	if (FAnimWeight::IsRelevant(ActualAlpha))
 	{
-		FPoseContext AdditiveEvalContext(Output);
+		const bool bExpectsAdditivePose=true;
+		FPoseContext AdditiveEvalContext(Output, bExpectsAdditivePose);
 
 		Base.Evaluate(Output);
 		Additive.Evaluate(AdditiveEvalContext);

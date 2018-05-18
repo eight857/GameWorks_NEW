@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SlateViewerApp.h"
 #include "RequiredProgramMainCPPInclude.h"
@@ -211,7 +211,7 @@ namespace
 
 			FSlateApplication::Get().AddWindowAsNativeChild(BrowserWindowWidget, ParentWindow.ToSharedRef());
 			BrowserWindowWidget->BringToFront();
-			FSlateApplication::Get().SetKeyboardFocus( BrowserWidget, EKeyboardFocusCause::SetDirectly );
+			FSlateApplication::Get().SetKeyboardFocus( BrowserWidget, EFocusCause::SetDirectly );
 
 			BrowserWindowWidgets.Add(NewBrowserWindow, BrowserWindowWidget);
 			return true;

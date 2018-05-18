@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
  
 #pragma once
 
@@ -18,7 +18,7 @@
 
 class FPaintArgs;
 class FSlateWindowElementList;
-class FTextBlockLayout;
+class FSlateTextBlockLayout;
 class IBreakIterator;
 enum class ETextShapingMethod : uint8;
 
@@ -176,9 +176,6 @@ public:
 	 */
 	void SetFont(const TAttribute< FSlateFontInfo >& InFont);
 
-	DEPRECATED(4.3, "SetForegroundColor is deprecated use SetColorAndOpacity instead.")
-	void SetForegroundColor(const TAttribute<FSlateColor>& InColorAndOpacity) { SetColorAndOpacity(InColorAndOpacity); }
-
 	/** See ColorAndOpacity attribute */
 	void SetColorAndOpacity(const TAttribute<FSlateColor>& InColorAndOpacity);
 
@@ -256,7 +253,7 @@ private:
 	TAttribute< FText > BoundText;
 
 	/** The wrapped layout for this text block */
-	TUniquePtr< FTextBlockLayout > TextLayoutCache;
+	TUniquePtr< FSlateTextBlockLayout > TextLayoutCache;
 
 	/** Default style used by the TextLayout */
 	FTextBlockStyle TextStyle;

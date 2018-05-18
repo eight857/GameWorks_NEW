@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 D3D12Resources.cpp: D3D RHI utility implementation.
@@ -6,6 +6,7 @@ D3D12Resources.cpp: D3D RHI utility implementation.
 
 #include "D3D12RHIPrivate.h"
 #include "EngineModule.h"
+#include "HAL/LowLevelMemTracker.h"
 
 /////////////////////////////////////////////////////////////////////
 //	FD3D12 Deferred Deletion Queue
@@ -271,16 +272,65 @@ HRESULT FD3D12Adapter::CreateCommittedResource(const D3D12_RESOURCE_DESC& InDesc
 		return E_POINTER;
 	}
 
-	LLM_SCOPED_SINGLE_PLATFORM_STAT_TAG(D3D12CommittedResources);
+	LLM_PLATFORM_SCOPE(ELLMTag::GraphicsPlatform);
 
 	TRefCountPtr<ID3D12Resource> pResource;
 	const HRESULT hr = RootDevice->CreateCommittedResource(&HeapProps, D3D12_HEAP_FLAG_NONE, &InDesc, InitialUsage, ClearValue, IID_PPV_ARGS(pResource.GetInitReference()));
+	checkf(SUCCEEDED(hr), TEXT("HR=0x%x"), hr);
 	check(SUCCEEDED(hr));
 
 	if (SUCCEEDED(hr))
 	{
 		// Set the output pointer
 		*ppOutResource = new FD3D12Resource(GetDevice(HeapProps.CreationNodeMask), HeapProps.VisibleNodeMask, pResource, InitialUsage, InDesc, nullptr, HeapProps.Type);
+		(*ppOutResource)->AddRef();
+
+		// Only track resources that cannot be accessed on the CPU.
+		if (IsCPUInaccessible(HeapProps.Type))
+		{
+			(*ppOutResource)->StartTrackingForResidency();
+		}
+	}
+
+	return hr;
+}
+
+HRESULT FD3D12Adapter::CreatePlacedResourceWithHeap(const D3D12_RESOURCE_DESC& InDesc, const D3D12_HEAP_PROPERTIES& HeapProps, const D3D12_RESOURCE_STATES& InitialUsage, const D3D12_CLEAR_VALUE* ClearValue, FD3D12Resource** ppOutResource)
+{
+	if (!ppOutResource)
+	{
+		return E_POINTER;
+	}
+
+	TRefCountPtr<ID3D12Resource> pResource;
+	FD3D12Heap* Heap = nullptr;
+	HRESULT hr;
+	TRefCountPtr<ID3D12Heap> D3DHeap;
+	D3D12_RESOURCE_ALLOCATION_INFO ResInfo = RootDevice->GetResourceAllocationInfo(HeapProps.VisibleNodeMask, 1, &InDesc);
+	D3D12_HEAP_DESC HeapDesc = {};
+	HeapDesc.Properties = HeapProps;
+	HeapDesc.SizeInBytes = ResInfo.SizeInBytes;
+	HeapDesc.Alignment = 0;
+	HeapDesc.Flags = D3D12_HEAP_FLAG_NONE;
+
+	if (InDesc.Flags & D3D12RHI_RESOURCE_FLAG_ALLOW_INDIRECT_BUFFER) //-V616
+	{
+		HeapDesc.Flags |= D3D12RHI_HEAP_FLAG_ALLOW_INDIRECT_BUFFERS; //-V616
+	}
+	hr = RootDevice->CreateHeap(&HeapDesc, IID_PPV_ARGS(D3DHeap.GetInitReference()));
+	check(SUCCEEDED(hr));
+	if (SUCCEEDED(hr))
+	{
+		hr = RootDevice->CreatePlacedResource(D3DHeap, 0, &InDesc, InitialUsage, ClearValue, IID_PPV_ARGS(pResource.GetInitReference()));
+		Heap = new FD3D12Heap(GetDevice(), HeapProps.VisibleNodeMask);
+		Heap->SetHeap(D3DHeap);
+		check(SUCCEEDED(hr));
+	}
+
+	if (SUCCEEDED(hr))
+	{
+		// Set the output pointer
+		*ppOutResource = new FD3D12Resource(GetDevice(HeapProps.CreationNodeMask), HeapProps.VisibleNodeMask, pResource, InitialUsage, InDesc, Heap, HeapProps.Type);
 		(*ppOutResource)->AddRef();
 
 		// Only track resources that cannot be accessed on the CPU.
@@ -404,6 +454,10 @@ void FD3D12ResourceLocation::InternalClear()
 
 void FD3D12ResourceLocation::TransferOwnership(FD3D12ResourceLocation& Destination, FD3D12ResourceLocation& Source)
 {
+	// Skip if source and dest are the same
+	if (&Source == &Destination)
+		return;
+
 	// Clear out the destination
 	Destination.Clear();
 
@@ -435,8 +489,6 @@ void FD3D12ResourceLocation::ReleaseResource()
 	{
 		check(UnderlyingResource->GetRefCount() == 1);
 		
-		LLM(FLowLevelMemTracker::Get().OnLowLevelFree(ELLMTracker::RHI, reinterpret_cast<void*>(GPUVirtualAddress), Size));
-
 		if (UnderlyingResource->ShouldDeferDelete())
 		{
 			GetParentDevice()->GetParentAdapter()->GetDeferredDeletionQueue().EnqueueResource(UnderlyingResource);
@@ -456,6 +508,19 @@ void FD3D12ResourceLocation::ReleaseResource()
 	case ResourceLocationType::eAliased:
 	{
 		if (UnderlyingResource->ShouldDeferDelete() && UnderlyingResource->GetRefCount() == 1)
+		{
+			GetParentDevice()->GetParentAdapter()->GetDeferredDeletionQueue().EnqueueResource(UnderlyingResource);
+		}
+		else
+		{
+			UnderlyingResource->Release();
+		}
+		break;
+	}
+	case ResourceLocationType::eHeapAliased:
+	{
+		check(UnderlyingResource->GetRefCount() == 1);
+		if (UnderlyingResource->ShouldDeferDelete())
 		{
 			GetParentDevice()->GetParentAdapter()->GetDeferredDeletionQueue().EnqueueResource(UnderlyingResource);
 		}

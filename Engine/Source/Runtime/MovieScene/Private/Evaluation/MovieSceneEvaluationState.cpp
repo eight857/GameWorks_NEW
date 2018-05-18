@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Evaluation/MovieSceneEvaluationState.h"
 #include "MovieSceneSequence.h"
@@ -158,7 +158,7 @@ void FMovieSceneObjectCache::UpdateBindings(const FGuid& InGuid, IMovieScenePlay
 
 	// Find the sequence for the current
 	UMovieSceneSequence* Sequence = WeakSequence.Get();
-	if (!ensure(Sequence))
+	if (!Sequence)
 	{
 		return;
 	}

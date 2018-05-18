@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Colors/SEyeDropperButton.h"
 #include "Widgets/SOverlay.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Text/STextBlock.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #define LOCTEXT_NAMESPACE "EyeDroppperButton"
 
@@ -63,7 +64,7 @@ void SEyeDropperButton::OnPreTick(float InDeltaTime)
 				// In dropper mode and outside the button - sample the pixel color and push it to the client
 				// Convert the display gamma into a ratio of gamma from the default gamma.
 				float Gamma = DisplayGamma.Get(2.2f) / 2.2f;
-				FLinearColor ScreenColor = FPlatformMisc::GetScreenPixelColor(CurrentCursorPosition, Gamma);
+				FLinearColor ScreenColor = FPlatformApplicationMisc::GetScreenPixelColor(CurrentCursorPosition, Gamma);
 				OnValueChanged.ExecuteIfBound(ScreenColor);
 			}
 

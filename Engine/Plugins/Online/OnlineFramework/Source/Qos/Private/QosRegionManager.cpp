@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "QosRegionManager.h"
 #include "Misc/CommandLine.h"
@@ -41,7 +41,7 @@ UQosRegionManager::UQosRegionManager(const FObjectInitializer& ObjectInitializer
 	GConfig->GetString(TEXT("Qos"), TEXT("ForceRegionId"), ForceRegionId, GGameIni);
 
 	// get a forced region id from the command line as an override
-	FParse::Value(FCommandLine::Get(), TEXT("McpRegion="), ForceRegionId);
+	bRegionForcedViaCommandline = FParse::Value(FCommandLine::Get(), TEXT("McpRegion="), ForceRegionId);
 }
 
 void UQosRegionManager::PostReloadConfig(UProperty* PropertyThatWasLoaded)
@@ -246,7 +246,7 @@ FString UQosRegionManager::GetRegionId() const
 	if (SelectedRegionId.IsEmpty())
 	{
 		// Always set some kind of region, empty implies "wildcard" to the matchmaking code
-		UE_LOG(LogQos, Verbose, TEXT("No region found, returning REGION_NONE"));
+		UE_LOG(LogQos, Verbose, TEXT("No region found, returning NO_REGION"));
 		return NO_REGION;
 	}
 
@@ -260,24 +260,31 @@ const TArray<FQosRegionInfo>& UQosRegionManager::GetRegionOptions() const
 
 void UQosRegionManager::ForceSelectRegion(const FString& InRegionId)
 {
-	QosEvalResult = EQosCompletionResult::Success;
-	ForceRegionId.Empty(); // remove any override (not typically used)
-
-	// make sure we can select this region
-	FString RegionId = InRegionId.ToUpper();
-	if (!SetSelectedRegion(RegionId))
+	if (!bRegionForcedViaCommandline)
 	{
-		// if not, add a fake entry and try again
-		FQosRegionInfo RegionInfo;
-		RegionInfo.Region.DisplayName = NSLOCTEXT("MMRegion", "Dev", "Development");
-		RegionInfo.Region.RegionId = RegionId;
-		RegionInfo.Region.bEnabled = true;
-		RegionInfo.Region.bVisible = true;
-		RegionInfo.Region.bBeta = false;
-		RegionInfo.Result = EQosRegionResult::Success;
-		RegionInfo.AvgPingMs = 0;
-		RegionOptions.Add(RegionInfo);
-		verify(SetSelectedRegion(RegionId));
+		QosEvalResult = EQosCompletionResult::Success;
+		ForceRegionId.Empty(); // remove any override (not typically used)
+
+		// make sure we can select this region
+		FString RegionId = InRegionId.ToUpper();
+		if (!SetSelectedRegion(RegionId, true))
+		{
+			// if not, add a fake entry and try again
+			FQosRegionInfo RegionInfo;
+			RegionInfo.Region.DisplayName = NSLOCTEXT("MMRegion", "Dev", "Development");
+			RegionInfo.Region.RegionId = RegionId;
+			RegionInfo.Region.bEnabled = true;
+			RegionInfo.Region.bVisible = true;
+			RegionInfo.Region.bBeta = false;
+			RegionInfo.Result = EQosRegionResult::Success;
+			RegionInfo.AvgPingMs = 0;
+			RegionOptions.Add(RegionInfo);
+			verify(SetSelectedRegion(RegionId));
+		}
+	}
+	else
+	{
+		UE_LOG(LogQos, Log, TEXT("Forcing region %s skipped because commandline override used %s"), *InRegionId, *ForceRegionId);
 	}
 }
 
@@ -311,29 +318,39 @@ void UQosRegionManager::TrySetDefaultRegion()
 	}
 }
 
-bool UQosRegionManager::SetSelectedRegion(const FString& InRegionId)
+bool UQosRegionManager::IsUsableRegion(const FString& InRegionId) const
 {
-	// make sure we've enumerated
-	if (QosEvalResult != EQosCompletionResult::Success)
-	{
-		// can't select region until we've enumerated them
-		return false;
-	}
-	
-	// make sure it's in the option list
-	FString RegionId = InRegionId.ToUpper();
 	for (const FQosRegionInfo& RegionInfo : RegionOptions)
 	{
-		if (RegionInfo.Region.RegionId == RegionId)
+		if (RegionInfo.Region.RegionId == InRegionId)
 		{
-			if (RegionInfo.IsUsable())
+			return RegionInfo.IsUsable();
+		}
+	}
+
+	return false;
+}
+
+bool UQosRegionManager::SetSelectedRegion(const FString& InRegionId, bool bForce)
+{
+	// make sure we've enumerated
+	if (bForce || QosEvalResult == EQosCompletionResult::Success)
+	{
+		// make sure it's in the option list
+		FString RegionId = InRegionId.ToUpper();
+		for (const FQosRegionInfo& RegionInfo : RegionOptions)
+		{
+			if (RegionInfo.Region.RegionId == RegionId)
 			{
-				SelectedRegionId = RegionId;
-				return true;
-			}
-			else
-			{
-				return false;
+				if (RegionInfo.IsUsable())
+				{
+					SelectedRegionId = RegionId;
+					return true;
+				}
+				else
+				{
+					return false;
+				}
 			}
 		}
 	}

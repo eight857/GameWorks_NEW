@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -130,6 +130,9 @@ public:
 
 	/** Called when a new Graph is clicked on by user */
 	void OnGraphChanged(struct FListItemGraphToDiff* Diff);
+
+	/** Called when blueprint is modified */
+	void OnBlueprintChanged(UBlueprint* InBlueprint);
 
 	/** Helper function for generating an empty widget */
 	static TSharedRef<SWidget> DefaultEmptyPanel();

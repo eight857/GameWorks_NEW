@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SAnimationBlendSpaceBase.h"
 #include "Widgets/Notifications/SNotificationList.h"
@@ -80,7 +80,7 @@ void SBlendSpaceEditorBase::Construct(const FArguments& InArgs, const TSharedRef
 	OnPropertyChangedHandleDelegateHandle = FCoreUObjectDelegates::OnObjectPropertyChanged.Add(OnPropertyChangedHandle);
 }
 
-void SBlendSpaceEditorBase::OnSampleMoved(const int32 SampleIndex, const FVector& NewValue)
+void SBlendSpaceEditorBase::OnSampleMoved(const int32 SampleIndex, const FVector& NewValue, bool bIsInteractive)
 {
 	bool bMoveSuccesful = true;
 	if (BlendSpace->IsValidBlendSampleIndex(SampleIndex) && BlendSpace->GetBlendSample(SampleIndex).SampleValue != NewValue && !BlendSpace->IsTooCloseToExistingSamplePoint(NewValue, SampleIndex))

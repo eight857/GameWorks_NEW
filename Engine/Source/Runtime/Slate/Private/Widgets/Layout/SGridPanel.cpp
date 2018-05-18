@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Layout/SGridPanel.h"
 #include "Types/PaintArgs.h"
@@ -268,7 +268,7 @@ void SGridPanel::SetColumnFill( int32 ColumnId, const TAttribute<float>& Coeffic
 
 void SGridPanel::SetRowFill( int32 RowId, const TAttribute<float>& Coefficient )
 {
-	if (RowFillCoefficients.Num() <= RowId)
+	while (RowFillCoefficients.Num() <= RowId)
 	{
 		RowFillCoefficients.Emplace(0);
 	}

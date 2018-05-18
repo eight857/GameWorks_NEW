@@ -1,18 +1,20 @@
-﻿INTSourceChangelist:3449210
+﻿INTSourceChangelist:3683933
 Availability: Public
 Title: 머티리얼 파라미터 컬렉션 애니메이션
 Crumbs: %ROOT%, Engine, Engine/Sequencer, Engine/Sequencer/HowTo
 Description:시퀀서 내 머티리얼 파라미터 컬렉션 업데이트 방법 안내입니다.
-Version: 4.16
+Type: how-to
 SkillLevel: Intermediate
-parent:Engine/Sequencer/HowTo
+Version: 4.16
+Parent: Engine/Sequencer/HowTo
 order:1
+tags:Sequencer
+tags:Materials
+tags:Material Parameter
 topic-image: EndResult.png
-checkpoint: editorqs
 Related: Engine/Rendering/Materials/ParameterCollections
 Related: Engine/Rendering/Materials
 Related: Engine/Sequencer/Overview
-tags:Sequencer
 type:how-to
 
 시퀀서에는 [](Engine/Rendering/Materials/ParameterCollections) 작업 및 애니메이션을 위한 특수 **Material Parameter Collection** (머티리얼 파라미터 컬렉션) 트랙이 제공됩니다.
@@ -131,6 +133,9 @@ type:how-to
 	simple
 	[/PARAMLITERAL]
 [/OBJECT]
+
+
+
 
 
 

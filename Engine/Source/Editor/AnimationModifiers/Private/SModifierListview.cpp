@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SModifierListview.h"
 #include "SModifierItemRow.h"
@@ -47,7 +47,7 @@ void SModifierListView::OnSelectionChanged(ModifierListviewItem SelectedItem, ES
 	// Find object to select if an item was selected (otherwise we are de-selecting to nullptr)
 	if (SelectedItem.IsValid())
 	{
-		SelectedObject = CastChecked<UObject>(SelectedItem->Instance.Get());
+		SelectedObject = SelectedItem->Instance.Get();
 	}
 
 	// Set the details view to the currently selected modifier blueprint instance

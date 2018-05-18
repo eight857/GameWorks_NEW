@@ -1,5 +1,5 @@
 ﻿/**
- * Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+ * Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
  */
 
 using System;
@@ -71,6 +71,8 @@ namespace iPhonePackager
 		Error_DeviceOSNewerThanSDK = 151,
 		Error_TestFailure = 152,
 		Error_SymbolizedSONotFound = 153,
+		Error_LicenseNotAccepted = 154,
+		Error_AndroidOBBError = 155,
 	};
 
 	public partial class Program
@@ -247,6 +249,9 @@ namespace iPhonePackager
 							case "-tvos":
 								Config.OSString = "TVOS";
 								break;
+							case "-autosigning":
+								Config.bAutomaticSigning = true;
+								break;
 						}
 
 						// get the stage dir path
@@ -256,6 +261,31 @@ namespace iPhonePackager
 							if (Arguments.Length > ArgIndex + 1)
 							{
 								Config.RepackageStagingDirectory = Arguments [++ArgIndex];
+							}
+							else
+							{
+								return false;
+							}
+						}
+                        // get the provisioning uuid
+                        else if (Arg == "-provisioninguuid")
+                        {
+                            // make sure there's at least one more arg
+                            if (Arguments.Length > ArgIndex + 1)
+                            {
+                                Config.ProvisionUUID = Arguments[++ArgIndex];
+                            }
+                            else
+                            {
+                                return false;
+                            }
+                        }
+						else if (Arg == "-teamID")
+						{
+							// make sure there's at least one more arg
+							if (Arguments.Length > ArgIndex + 1)
+							{
+								Config.TeamID = Arguments[++ArgIndex];
 							}
 							else
 							{
@@ -475,13 +505,6 @@ namespace iPhonePackager
 				return false;
 			}
 
-			if (Config.bCreateStubSet && Config.bForDistribution)
-			{
-				Error("-createstub and -distribution are mutually exclusive");
-				Program.ReturnCode = (int)ErrorCodes.Error_Arguments;
-				return false;
-			}
-
 			return true;
 		}
 
@@ -691,6 +714,7 @@ namespace iPhonePackager
 					Log("Configuration switches:");
 					Log("	 -stagedir <path>		  sets the directory to copy staged files from (defaults to none)");
 					Log("	 -project <path>		  path to the project being packaged");
+                    Log("	 -provisioning <uuid>	  uuid of the provisioning selected");
 					Log("	 -compress=fast|best|none  packaging compression level (defaults to none)");
 					Log("	 -strip					strip symbols during packaging");
 					Log("	 -config				   game configuration (e.g., Shipping, Development, etc...)");
@@ -742,9 +766,19 @@ namespace iPhonePackager
 						string dllPath = "";
 						if (Environment.OSVersion.Platform == PlatformID.MacOSX || Environment.OSVersion.Platform == PlatformID.Unix)
 						{
-							dllPath = "/Applications/Xcode.app/Contents/MacOS/Xcode";
-						}
-						else
+                            ProcessStartInfo StartInfo = new ProcessStartInfo("/usr/bin/xcode-select", "--print-path");
+                            StartInfo.UseShellExecute = false;
+                            StartInfo.RedirectStandardOutput = true;
+                            StartInfo.CreateNoWindow = true;
+
+                            using (Process LocalProcess = Process.Start(StartInfo))
+                            {
+                                StreamReader OutputReader = LocalProcess.StandardOutput;
+                                // trim off any extraneous new lines, helpful for those one-line outputs
+                                dllPath = OutputReader.ReadToEnd().Trim();
+                            }
+                        }
+                        else
 						{
 							dllPath = Microsoft.Win32.Registry.GetValue("HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Apple Inc.\\Apple Mobile Device Support\\Shared", "iTunesMobileDeviceDLL", null) as string;
 							if (String.IsNullOrEmpty(dllPath) || !File.Exists(dllPath))
@@ -752,9 +786,9 @@ namespace iPhonePackager
 								dllPath = Microsoft.Win32.Registry.GetValue("HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Apple Inc.\\Apple Mobile Device Support\\Shared", "MobileDeviceDLL", null) as string;
 							}
 						}
-						if (String.IsNullOrEmpty(dllPath) || !File.Exists(dllPath))
-						{
-							Error("iTunes Not Found!!", (int)ErrorCodes.Error_SDKNotFound);
+                        if (String.IsNullOrEmpty(dllPath) || (!File.Exists(dllPath) && !Directory.Exists(dllPath)))
+                        {
+                            Error("iTunes Not Found!!", (int)ErrorCodes.Error_SDKNotFound);
 						}
 						else
 						{
@@ -768,17 +802,27 @@ namespace iPhonePackager
 							{
 								Error("Could not find a valid plist file!!", (int)ErrorCodes.Error_InfoPListNotFound);
 							}
-							else if (Provision == null && Cert == null)
+							else if (!Config.bAutomaticSigning)
 							{
-								Error("No Provision or cert found!!", (int)ErrorCodes.Error_ProvisionAndCertificateNotFound);
+								if (Provision == null && Cert == null)
+								{
+									Error("No Provision or cert found!!", (int)ErrorCodes.Error_ProvisionAndCertificateNotFound);
+								}
+								else if (Provision == null)
+								{
+									Error("No Provision found!!", (int)ErrorCodes.Error_ProvisionNotFound);
+								}
+								else if (Cert == null)
+								{
+									Error("No Signing Certificate found!!", (int)ErrorCodes.Error_CertificateNotFound);
+								}
 							}
-							else if (Provision == null)
+							else
 							{
-								Error("No Provision found!!", (int)ErrorCodes.Error_ProvisionNotFound);
-							}
-							else if (Cert == null)
-							{
-								Error("No Signing Certificate found!!", (int)ErrorCodes.Error_CertificateNotFound);
+								if (Config.TeamID == null)
+								{
+									Error("No TeamID for automatic signing!!", (int)ErrorCodes.Error_ProvisionNotFound);
+								}
 							}
 						}
 						break;

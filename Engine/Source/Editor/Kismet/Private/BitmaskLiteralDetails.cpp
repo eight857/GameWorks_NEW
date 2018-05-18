@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BitmaskLiteralDetails.h"
 #include "UObject/Class.h"
@@ -18,7 +18,7 @@
 
 void FBitmaskLiteralDetails::CustomizeDetails(IDetailLayoutBuilder& DetailLayout)
 {
-	const TArray<TWeakObjectPtr<UObject>> Objects = DetailLayout.GetDetailsView().GetSelectedObjects();
+	const TArray<TWeakObjectPtr<UObject>>& Objects = DetailLayout.GetSelectedObjects();
 	check(Objects.Num() > 0);
 
 	if (Objects.Num() == 1)

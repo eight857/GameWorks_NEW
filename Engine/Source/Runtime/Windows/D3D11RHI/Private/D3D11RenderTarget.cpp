@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D11RenderTarget.cpp: D3D render target implementation.
@@ -86,6 +86,7 @@ void FD3D11DynamicRHI::ResolveTextureUsingShader(
 	//we may change rendertargets and depth state behind the RHI's back here.
 	//save off this original state to restore it.
 	FExclusiveDepthStencil OriginalDSVAccessType = CurrentDSVAccessType;
+	TRefCountPtr<FD3D11TextureBase> OriginalDepthTexture = CurrentDepthTexture;
 
 	if(ResolveTargetDesc.BindFlags & D3D11_BIND_DEPTH_STENCIL)
 	{
@@ -145,6 +146,7 @@ void FD3D11DynamicRHI::ResolveTextureUsingShader(
 	GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*ResolvePixelShader);
 	GraphicsPSOInit.PrimitiveType = PT_TriangleStrip;
 
+	CurrentDepthTexture = DestTexture;
 	SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
 	RHICmdList.SetBlendFactor(FLinearColor::White);
 
@@ -198,6 +200,7 @@ void FD3D11DynamicRHI::ResolveTextureUsingShader(
 
 	//reset DSVAccess.
 	CurrentDSVAccessType = OriginalDSVAccessType;
+	CurrentDepthTexture = OriginalDepthTexture;
 }
 
 /**
@@ -235,7 +238,7 @@ void FD3D11DynamicRHI::RHICopyToResolveTarget(FTextureRHIParamRef SourceTextureR
 		{
 			GPUProfilingData.RegisterGPUWork();
 		
-			if(FeatureLevel == D3D_FEATURE_LEVEL_11_0 
+			if((FeatureLevel == D3D_FEATURE_LEVEL_11_0 || FeatureLevel == D3D_FEATURE_LEVEL_11_1)
 				&& DestTexture2D->GetDepthStencilView(FExclusiveDepthStencil::DepthWrite_StencilWrite)
 				&& SourceTextureRHI->IsMultisampled()
 				&& !DestTextureRHI->IsMultisampled())
@@ -497,6 +500,9 @@ static uint32 ComputeBytesPerPixel(DXGI_FORMAT Format)
 			break;
 		case DXGI_FORMAT_R32G32B32A32_FLOAT:
 			BytesPerPixel = 16;
+			break;
+		case DXGI_FORMAT_R32G32_FLOAT:
+			BytesPerPixel = 8;
 			break;
 		case DXGI_FORMAT_R8_TYPELESS:
 		case DXGI_FORMAT_R8_UNORM:

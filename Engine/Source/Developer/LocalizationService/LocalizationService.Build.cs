@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -28,7 +28,7 @@ public class LocalizationService : ModuleRules
             );
         }
 
-        if (UEBuildConfiguration.bBuildEditor)
+        if (Target.bBuildEditor)
         {
 			PrivateDependencyModuleNames.AddRange(
                 new string[] {
@@ -38,7 +38,7 @@ public class LocalizationService : ModuleRules
             );
         }
 
-		if (UEBuildConfiguration.bBuildDeveloperTools)
+		if (Target.bBuildDeveloperTools)
 		{
 			PrivateDependencyModuleNames.AddRange(
 				new string[] {

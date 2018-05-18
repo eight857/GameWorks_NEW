@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/ConfigManifest.h"
 #include "Misc/EngineVersionBase.h"
@@ -236,7 +236,7 @@ EConfigManifestVersion FConfigManifest::UpgradeFromVersion(EConfigManifestVersio
 
 	if (FromVersion < EConfigManifestVersion::MigrateProjectSpecificInisToAgnostic)
 	{
-		if (!FApp::HasGameName())
+		if (!FApp::HasProjectName())
 		{
 			// We can't upgrade game settings if there is no game.
 			return FromVersion;

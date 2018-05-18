@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SceneCore.h: Core scene definitions.
@@ -226,6 +226,7 @@ public:
 	FLinearColor VolumetricFogEmissive;
 	float VolumetricFogExtinctionScale;
 	float VolumetricFogDistance;
+	float VolumetricFogStaticLightingScatteringIntensity;
 	bool bOverrideLightColorsWithFogInscatteringColors;
 
 	/** Initialization constructor. */

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SColorGradientEditor.h"
 #include "Fonts/SlateFontInfo.h"
@@ -16,6 +16,7 @@
 #include "Widgets/Layout/SBox.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Widgets/Input/SEditableTextBox.h"
+#include "Styling/CoreStyle.h"
 #include "EditorStyleSet.h"
 #include "Editor.h"
 #include "Widgets/Input/SSpinBox.h"
@@ -261,7 +262,7 @@ int32 SColorGradientEditor::OnPaint( const FPaintArgs& Args, const FGeometry& Al
 				
 			// Draw the text centered in the color region
 			{
-				FVector2D StringSize = FontMeasureService->Measure( GradientColorMessage, FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 8 ) );
+				FVector2D StringSize = FontMeasureService->Measure(GradientColorMessage, FCoreStyle::GetDefaultFontStyle("Regular", 8));
 				FPaintGeometry PaintGeom = ColorMarkAreaGeometry.ToPaintGeometry(FSlateLayoutTransform(FVector2D((ColorMarkAreaGeometry.GetLocalSize().X - StringSize.X) * 0.5f, 1.0f)));
 
 				FSlateDrawElement::MakeText
@@ -270,7 +271,7 @@ int32 SColorGradientEditor::OnPaint( const FPaintArgs& Args, const FGeometry& Al
 					LayerId,
 					PaintGeom,
 					GradientColorMessage,
-					FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 8 ),
+					FCoreStyle::GetDefaultFontStyle("Regular", 8),
 					DrawEffects,
 					FLinearColor( .5f, .5f, .5f, .85f )
 				);	
@@ -278,7 +279,7 @@ int32 SColorGradientEditor::OnPaint( const FPaintArgs& Args, const FGeometry& Al
 
 			// Draw the text centered in the alpha region
 			{
-				FVector2D StringSize = FontMeasureService->Measure( GradientAlphaMessage, FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 8 ) );
+				FVector2D StringSize = FontMeasureService->Measure(GradientAlphaMessage, FCoreStyle::GetDefaultFontStyle("Regular", 8));
 				FPaintGeometry PaintGeom = AlphaMarkAreaGeometry.ToPaintGeometry(FSlateLayoutTransform(FVector2D((AlphaMarkAreaGeometry.GetLocalSize().X - StringSize.X) * 0.5f, 1.0f)));
 
 				FSlateDrawElement::MakeText
@@ -287,7 +288,7 @@ int32 SColorGradientEditor::OnPaint( const FPaintArgs& Args, const FGeometry& Al
 					LayerId,
 					PaintGeom,
 					GradientAlphaMessage,
-					FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 8 ),
+					FCoreStyle::GetDefaultFontStyle("Regular", 8),
 					DrawEffects,
 					FLinearColor( .5f, .5f, .5f, .85f )
 				);	
@@ -603,8 +604,10 @@ void SColorGradientEditor::OpenGradientStopColorPicker()
 void SColorGradientEditor::OnSelectedStopColorChanged( FLinearColor InNewColor )
 {
 	FScopedTransaction ColorChange( LOCTEXT("ChangeGradientStopColor", "Change Gradient Stop Color") );
-	SelectedStop.SetColor( InNewColor, *CurveOwner );
 	CurveOwner->ModifyOwner();
+	SelectedStop.SetColor( InNewColor, *CurveOwner );
+	TArray<FRichCurveEditInfo> ChangedCurves{ CurveOwner->GetCurves()[0], CurveOwner->GetCurves()[1], CurveOwner->GetCurves()[2] };
+	CurveOwner->OnCurveChanged(ChangedCurves);
 
 	// Set the the last edited color.  The next time a new stop is added we'll use this value
 	LastModifiedColor.R = InNewColor.R;
@@ -614,8 +617,10 @@ void SColorGradientEditor::OnSelectedStopColorChanged( FLinearColor InNewColor )
 
 void SColorGradientEditor::OnCancelSelectedStopColorChange( FLinearColor PreviousColor )
 {
-	SelectedStop.SetColor( PreviousColor, *CurveOwner );
 	CurveOwner->ModifyOwner();
+	SelectedStop.SetColor( PreviousColor, *CurveOwner );
+	TArray<FRichCurveEditInfo> ChangedCurves{ CurveOwner->GetCurves()[0], CurveOwner->GetCurves()[1], CurveOwner->GetCurves()[2] };
+	CurveOwner->OnCurveChanged(ChangedCurves);
 }
 
 void SColorGradientEditor::OnBeginChangeAlphaValue()
@@ -643,6 +648,8 @@ void SColorGradientEditor::OnAlphaValueChanged( float NewValue )
 	{
 		// RGB is ignored in this case
 		SelectedStop.SetColor( FLinearColor( 0,0,0, NewValue ), *CurveOwner );
+		TArray<FRichCurveEditInfo> ChangedCurves{ CurveOwner->GetCurves()[3] };
+		CurveOwner->OnCurveChanged(ChangedCurves);
 	}
 }
 
@@ -653,12 +660,15 @@ void SColorGradientEditor::OnAlphaValueCommitted( float NewValue, ETextCommit::T
 		// Value was typed in, no transaction is active
 		FScopedTransaction ChangeAlphaTransaction( LOCTEXT("ChangeGradientStopAlpha", "Change Gradient Stop Alpha") );
 		CurveOwner->ModifyOwner();
-
 		SelectedStop.SetColor( FLinearColor( 0,0,0, NewValue ), *CurveOwner );
+		TArray<FRichCurveEditInfo> ChangedCurves{ CurveOwner->GetCurves()[3] };
+		CurveOwner->OnCurveChanged(ChangedCurves);
 	}
 	else
 	{
 		SelectedStop.SetColor( FLinearColor( 0,0,0, NewValue ), *CurveOwner );
+		TArray<FRichCurveEditInfo> ChangedCurves{ CurveOwner->GetCurves()[3] };
+		CurveOwner->OnCurveChanged(ChangedCurves);
 	}
 
 	// Set the alpha of the last edited color.  The next time a new alpha stop is added we'll use this value
@@ -678,8 +688,8 @@ void SColorGradientEditor::OnSetGradientStopTimeFromPopup( const FText& NewText,
 
 		FScopedTransaction Transaction( LOCTEXT("ChangeGradientStopTime", "Change Gradient Stop Time" ) );
 		CurveOwner->ModifyOwner();
-
 		SelectedStop.SetTime( NewTime, *CurveOwner );
+		CurveOwner->OnCurveChanged(CurveOwner->GetCurves());
 	}
 }
 
@@ -849,6 +859,8 @@ void SColorGradientEditor::DeleteStop( const FGradientStopMark& InMark )
 		GreenCurve->DeleteKey( InMark.GreenKeyHandle );
 		BlueCurve->DeleteKey( InMark.BlueKeyHandle );
 	}
+
+	CurveOwner->OnCurveChanged(CurveOwner->GetCurves());
 }
 
 FGradientStopMark SColorGradientEditor::AddStop( const FVector2D& Position, const FGeometry& MyGeometry, bool bColorStop )
@@ -884,13 +896,16 @@ FGradientStopMark SColorGradientEditor::AddStop( const FVector2D& Position, cons
 		NewStop.AlphaKeyHandle = AlphaCurve->AddKey( NewStopTime, LastModifiedColor.A );
 	}
 
+	CurveOwner->OnCurveChanged(CurveOwner->GetCurves());
+
 	return NewStop;
 }
 
 void SColorGradientEditor::MoveStop( FGradientStopMark& Mark, float NewTime )
 {
-	Mark.SetTime( NewTime, *CurveOwner );
 	CurveOwner->ModifyOwner();
+	Mark.SetTime( NewTime, *CurveOwner );
+	CurveOwner->OnCurveChanged(CurveOwner->GetCurves());
 }
 
 

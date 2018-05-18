@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Chatroom.h"
 #include "GameFramework/OnlineReplStructs.h"
@@ -11,7 +11,7 @@ inline FString GetLocalUserNickName(UWorld* World, const FUniqueNetId& LocalUser
 	check(World);
 	UGameInstance* GameInstance = World->GetGameInstance();
 	check(GameInstance);
-	ULocalPlayer* LP = Cast<ULocalPlayer>(GameInstance->FindLocalPlayerFromUniqueNetId(LocalUserId));
+	ULocalPlayer* LP = GameInstance->FindLocalPlayerFromUniqueNetId(LocalUserId);
 	if (LP)
 	{
 		return LP->GetNickname();

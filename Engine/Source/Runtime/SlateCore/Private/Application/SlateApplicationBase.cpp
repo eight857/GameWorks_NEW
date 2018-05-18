@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Application/SlateApplicationBase.h"
 #include "Widgets/SWindow.h"
 #include "Layout/WidgetPath.h"
 #include "Application/ActiveTimerHandle.h"
+#include "ScopeLock.h"
 
 
 /* Static initialization
@@ -29,6 +30,11 @@ FSlateApplicationBase::FSlateApplicationBase()
 
 }
 
+void FSlateApplicationBase::GetDisplayMetrics(FDisplayMetrics& OutDisplayMetrics) const 
+{ 
+	FDisplayMetrics::GetDisplayMetrics(OutDisplayMetrics); 
+}
+
 const FHitTesting& FSlateApplicationBase::GetHitTesting() const
 {
 	return HitTesting;
@@ -36,16 +42,20 @@ const FHitTesting& FSlateApplicationBase::GetHitTesting() const
 
 void FSlateApplicationBase::RegisterActiveTimer( const TSharedRef<FActiveTimerHandle>& ActiveTimerHandle )
 {
+	FScopeLock ActiveTimerLock(&ActiveTimerCS);
 	ActiveTimerHandles.Add(ActiveTimerHandle);
 }
 
 void FSlateApplicationBase::UnRegisterActiveTimer( const TSharedRef<FActiveTimerHandle>& ActiveTimerHandle )
 {
+	FScopeLock ActiveTimerLock(&ActiveTimerCS);
 	ActiveTimerHandles.Remove(ActiveTimerHandle);
 }
 
 bool FSlateApplicationBase::AnyActiveTimersArePending()
 {
+	FScopeLock ActiveTimerLock(&ActiveTimerCS);
+
 	// first remove any tick handles that may have become invalid.
 	// If we didn't remove invalid handles here, they would never get removed because
 	// we don't force widgets to UnRegister before they are destroyed.

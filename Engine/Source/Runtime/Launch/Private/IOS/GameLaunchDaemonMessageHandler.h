@@ -1,10 +1,16 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "IMessageContext.h"
-#include "Helpers/MessageEndpoint.h"
-#include "IOSMessageProtocol.h"
+#include "Containers/UnrealString.h"
+#include "Templates/SharedPointer.h"
+
+class FMessageEndpoint;
+class IMessageContext;
+
+struct FIOSLaunchDaemonLaunchApp;
+struct FIOSLaunchDaemonPing;
+
 
 class FGameLaunchDaemonMessageHandler
 {
@@ -14,10 +20,12 @@ public:
 	void Shutdown();
 
 private:
-	void HandlePingMessage(const FIOSLaunchDaemonPing& Message, const IMessageContextRef& Context);
-	void HandleLaunchRequest(const FIOSLaunchDaemonLaunchApp& Message, const IMessageContextRef& Context);
 
+	void HandlePingMessage(const FIOSLaunchDaemonPing& Message, const TSharedRef<IMessageContext, ESPMode::ThreadSafe>& Context);
+	void HandleLaunchRequest(const FIOSLaunchDaemonLaunchApp& Message, const TSharedRef<IMessageContext, ESPMode::ThreadSafe>& Context);
 
-	FMessageEndpointPtr MessageEndpoint;
+private:
+
+	TSharedPtr<FMessageEndpoint, ESPMode::ThreadSafe> MessageEndpoint;
 	FString AppId;
 };

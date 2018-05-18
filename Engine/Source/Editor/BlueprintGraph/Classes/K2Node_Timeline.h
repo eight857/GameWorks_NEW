@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -61,6 +61,7 @@ class UK2Node_Timeline : public UK2Node
 	virtual FString GetDocumentationExcerptName() const override;
 	virtual FSlateIcon GetIconAndTint(FLinearColor& OutColor) const override;
 	virtual bool ShouldShowNodeProperties() const override { return true; }
+	virtual UObject* GetJumpTargetForDoubleClick() const override;
 	//~ End UEdGraphNode Interface.
 
 	//~ Begin UK2Node Interface.

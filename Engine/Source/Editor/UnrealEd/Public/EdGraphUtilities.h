@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -77,13 +77,13 @@ public:
 	  * @param OutClonedNodes			Will populate with a full list of cloned nodes if provided
 	  * @param bInIsCompiling			TRUE if the function is being called during compilation, this will eliminate some nodes that will not be compiled
 	  */
-	static void CloneAndMergeGraphIn(UEdGraph* MergeTarget, UEdGraph* SourceGraph, FCompilerResultsLog& MessageLog, bool bRequireSchemaMatch, bool bInIsCompiling = false, bool bCreateBoundaryNodes = false, TArray<UEdGraphNode*>* OutClonedNodes = NULL);
+	static void CloneAndMergeGraphIn(UEdGraph* MergeTarget, UEdGraph* SourceGraph, FCompilerResultsLog& MessageLog, bool bRequireSchemaMatch, bool bInIsCompiling = false, TArray<UEdGraphNode*>* OutClonedNodes = NULL);
 
 	/**
 	 * Moves the contents of all of the children graphs of ParentGraph (recursively) into the MergeTarget graph.
 	 * This does not clone, it's destructive to the ParentGraph
 	 */
-	static void MergeChildrenGraphsIn(UEdGraph* MergeTarget, UEdGraph* ParentGraph, bool bRequireSchemaMatch, bool bInIsCompiling = false, FCompilerResultsLog* MessageLog = nullptr, bool bWantBoundaryNodes = false);
+	static void MergeChildrenGraphsIn(UEdGraph* MergeTarget, UEdGraph* ParentGraph, bool bRequireSchemaMatch, bool bInIsCompiling = false, FCompilerResultsLog* MessageLog = nullptr);
 
 	/** Tries to rename the graph to have a name similar to BaseName */
 	static void RenameGraphCloseToName(UEdGraph* Graph, const FString& BaseName, int32 StartIndex = 1);
@@ -132,13 +132,13 @@ public:
 	};
 
 	/** returns true if the ParameterName is marked as a SetParam in the relevant Function */
-	static bool IsSetParam(const UFunction* Function, const FString& ParameterName);
+	static bool IsSetParam(const UFunction* Function, const FName ParameterName);
 
 	/** returns true if the ParameterName is marked as a MapParam, MapKeyParam, or MapValueParam in the relevant Function */
-	static bool IsMapParam(const UFunction* Function, const FString& ParameterName);
+	static bool IsMapParam(const UFunction* Function, const FName ParameterName);
 
 	/** returns true if the ParameterName is marked as ArrayTypeDependentParams */
-	static bool IsArrayDependentParam(const UFunction* Function, const FString& ParameterName );
+	static bool IsArrayDependentParam(const UFunction* Function, const FName ParameterName );
 
 	/** returns the first pin marked as an ArrayParam, usually returning nullptr */
 	static UEdGraphPin* FindArrayParamPin(const UFunction* Function, const UEdGraphNode* Node);
@@ -207,7 +207,7 @@ struct FWeakGraphPinPtr
 	/** Compare weak pointers for equality */ 
 	FORCEINLINE bool operator==(const FWeakGraphPinPtr &OtherPinPtr) const
 	{
-		return PinName.Equals(OtherPinPtr.PinName)
+		return PinName == OtherPinPtr.PinName
 			&& PinReference == OtherPinPtr.PinReference
 			&& NodeObjectPtr == OtherPinPtr.NodeObjectPtr;
 	}
@@ -215,7 +215,7 @@ struct FWeakGraphPinPtr
 	/** Compare weak pointers for inequality */ 
 	FORCEINLINE bool operator!=(const FWeakGraphPinPtr &OtherPinPtr) const
 	{
-		return !PinName.Equals(OtherPinPtr.PinName)
+		return PinName != OtherPinPtr.PinName
 			|| PinReference.Get() != OtherPinPtr.PinReference.Get()
 			|| NodeObjectPtr != OtherPinPtr.NodeObjectPtr;
 	}
@@ -243,7 +243,7 @@ struct FWeakGraphPinPtr
 
 private:
 	/** Pin name string */
-	FString PinName;
+	FName PinName;
 
 	/** Weak reference to the UEdGraphPin object */
 	FEdGraphPinReference PinReference;

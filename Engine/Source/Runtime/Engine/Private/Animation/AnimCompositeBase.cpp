@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AnimCompositeBase.cpp: Anim Composite base class that contains AnimTrack data structure/interface
@@ -67,6 +67,21 @@ float FAnimSegment::ConvertTrackPosToAnimPos(const float& TrackPosition) const
 }
 
 void FAnimSegment::GetAnimNotifiesFromTrackPositions(const float& PreviousTrackPosition, const float& CurrentTrackPosition, TArray<const FAnimNotifyEvent *> & OutActiveNotifies) const
+{
+	TArray<FAnimNotifyEventReference> NotifyRefs;
+	GetAnimNotifiesFromTrackPositions(PreviousTrackPosition, CurrentTrackPosition, NotifyRefs);
+
+	OutActiveNotifies.Reset(NotifyRefs.Num());
+	for (FAnimNotifyEventReference& NotifyRef : NotifyRefs)
+	{
+		if (const FAnimNotifyEvent* Notify = NotifyRef.GetNotify())
+		{
+			OutActiveNotifies.Add(Notify);
+		}
+	}
+}
+
+void FAnimSegment::GetAnimNotifiesFromTrackPositions(const float& PreviousTrackPosition, const float& CurrentTrackPosition, TArray<FAnimNotifyEventReference> & OutActiveNotifies) const
 {
 	if( PreviousTrackPosition == CurrentTrackPosition )
 	{
@@ -163,11 +178,14 @@ void FAnimSegment::GetRootMotionExtractionStepsForTrackRange(TArray<FRootMotionE
 		const float ValidPlayRate = GetValidPlayRate();
 		const float AbsValidPlayRate = FMath::Abs(ValidPlayRate);
 
+		const float StartTrackPositionForSegment = bTrackPlayingBackwards ? FMath::Min(StartTrackPosition, SegmentEndPos) : FMath::Max(StartTrackPosition, SegmentStartPos);
+		const float EndTrackPositionForSegment = bTrackPlayingBackwards ? FMath::Max(EndTrackPosition, SegmentStartPos) : FMath::Min(EndTrackPosition, SegmentEndPos);
+
 		// Get starting position, closest overlap.
-		float AnimStartPosition = ConvertTrackPosToAnimPos(bTrackPlayingBackwards ? FMath::Min(StartTrackPosition, SegmentEndPos) : FMath::Max(StartTrackPosition, SegmentStartPos));
+		float AnimStartPosition = ConvertTrackPosToAnimPos(StartTrackPositionForSegment);
 		AnimStartPosition = FMath::Clamp(AnimStartPosition, AnimStartTime, AnimEndTime);
 		//check( (AnimStartPosition >= AnimStartTime) && (AnimStartPosition <= AnimEndTime) );
-		float TrackTimeToGo = FMath::Abs(EndTrackPosition - StartTrackPosition);
+		float TrackTimeToGo = FMath::Abs(EndTrackPositionForSegment - StartTrackPositionForSegment);
 
 		// The track can be playing backwards and the animation can be playing backwards, so we
 		// need to combine to work out what direction we are traveling through the animation
@@ -616,6 +634,21 @@ bool FAnimTrack::ContainRecursive(const TArray<UAnimCompositeBase*>& CurrentAccu
 }
 
 void FAnimTrack::GetAnimNotifiesFromTrackPositions(const float& PreviousTrackPosition, const float& CurrentTrackPosition, TArray<const FAnimNotifyEvent *> & OutActiveNotifies) const
+{
+	TArray<FAnimNotifyEventReference> NotifyRefs;
+	GetAnimNotifiesFromTrackPositions(PreviousTrackPosition, CurrentTrackPosition, NotifyRefs);
+
+	OutActiveNotifies.Reset(NotifyRefs.Num());
+	for (FAnimNotifyEventReference& NotifyRef : NotifyRefs)
+	{
+		if (const FAnimNotifyEvent* Notify = NotifyRef.GetNotify())
+		{
+			OutActiveNotifies.Add(Notify);
+		}
+	}
+}
+
+void FAnimTrack::GetAnimNotifiesFromTrackPositions(const float& PreviousTrackPosition, const float& CurrentTrackPosition, TArray<FAnimNotifyEventReference> & OutActiveNotifies) const
 {
 	for (int32 SegmentIndex = 0; SegmentIndex<AnimSegments.Num(); ++SegmentIndex)
 	{

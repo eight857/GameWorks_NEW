@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "IMeshMergeUtilities.h"
+#include "SceneTypes.h"
 
 /**
  * Mesh Merge Utilities
@@ -18,6 +19,7 @@ public:
 	virtual void BakeMaterialsForMesh(UStaticMesh* Mesh) const override;
 	virtual void MergeComponentsToStaticMesh(const TArray<UPrimitiveComponent*>& ComponentsToMerge, UWorld* World, const FMeshMergingSettings& InSettings, UPackage* InOuter, const FString& InBasePackageName, TArray<UObject*>& OutAssetsToSync, FVector& OutMergedActorLocation, const float ScreenSize, bool bSilent /*= false*/) const;
 	virtual void CreateProxyMesh(const TArray<AActor*>& InActors, const struct FMeshProxySettings& InMeshProxySettings, UPackage* InOuter, const FString& InProxyBasePackageName, const FGuid InGuid, const FCreateProxyDelegate& InProxyCreatedDelegate, const bool bAllowAsync = false, const float ScreenSize = 1.0f) const override;
+	virtual void CreateProxyMesh(const TArray<UStaticMeshComponent*>& InStaticMeshCompo, const struct FMeshProxySettings& InMeshProxySettings, UPackage* InOuter, const FString& InProxyBasePackageName, const FGuid InGuid, const FCreateProxyDelegate& InProxyCreatedDelegate,  const bool bAllowAsync = false, const float ScreenSize = 1.0f) const override;
 protected:
 	/** Retrieves physics geometry and body setup from set of static mesh components */
 	void ExtractPhysicsDataFromComponents(const TArray<UPrimitiveComponent*>& ComponentsToMerge, TArray<FKAggregateGeom>& InOutPhysicsGeometry, UBodySetup*& OutBodySetupSource) const;
@@ -37,6 +39,8 @@ protected:
 	float FlattenEmissivescale(TArray<struct FFlattenMaterial>& InMaterialList) const;
 	/** Populates material options object from legacy material proxy settings  */
 	UMaterialOptions* PopulateMaterialOptions(const FMaterialProxySettings& MaterialSettings) const;
+	/** Populates a single property entry with correct material baking settings */
+	void PopulatePropertyEntry(const FMaterialProxySettings& MaterialSettings, EMaterialProperty MaterialProperty, struct FPropertyEntry& InOutPropertyEntry) const;
 	/** Copies part (box) from a texture to another texture */
 	void CopyTextureRect(const FColor* Src, const FIntPoint& SrcSize, FColor* Dst, const FIntPoint& DstSize, const FIntPoint& DstPos) const;
 	/** Sets a part (box) on a texture to ColorValue */

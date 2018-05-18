@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PhysicsPublic.h
@@ -16,6 +16,7 @@
 #include "PhysicsEngine/BodyInstance.h"
 #include "LocalVertexFactory.h"
 #include "DynamicMeshBuilder.h"
+#include "StaticMeshResources.h"
 
 class AActor;
 class ULineBatchComponent;
@@ -24,7 +25,6 @@ class UPhysicsAsset;
 class UPrimitiveComponent;
 class USkeletalMeshComponent;
 struct FConstraintInstance;
-struct FPendingApexDamageManager;
 
 /**
  * Physics stats
@@ -75,6 +75,7 @@ namespace nvidia
 struct FConstraintInstance;
 class UPhysicsAsset;
 
+
 struct FConstraintBrokenDelegateData
 {
 	FConstraintBrokenDelegateData(FConstraintInstance* ConstraintInstance);
@@ -112,8 +113,6 @@ namespace NvParameterized
 
 /** Pointer to APEX SDK object */
 extern ENGINE_API apex::ApexSDK*			GApexSDK;
-/** Pointer to APEX Destructible module object */
-extern ENGINE_API apex::ModuleDestructible*	GApexModuleDestructible;
 /** Pointer to APEX legacy module object */
 extern ENGINE_API apex::Module* 			GApexModuleLegacy;
 #if WITH_APEX_CLOTHING
@@ -124,12 +123,6 @@ extern ENGINE_API apex::ModuleClothing*		GApexModuleClothing;
 #endif // #if WITH_APEX
 
 #endif // WITH_PHYSX
-
-#if WITH_FLEX
-class UFlexContainer;
-struct FFlexContainerInstance;
-extern ENGINE_API bool GFlexIsInitialized;
-#endif
 
 /** Information about a specific object involved in a rigid body collision */
 struct ENGINE_API FRigidBodyCollisionInfo
@@ -196,7 +189,6 @@ namespace PhysCommand
 	};
 }
 
-
 /** Container used for physics tasks that need to be deferred from GameThread. This is not safe for general purpose multi-therading*/
 class FPhysCommandHandler
 {
@@ -218,7 +210,7 @@ public:
 	void ENGINE_API DeferredDeleteSimEventCallback(physx::PxSimulationEventCallback * SimEventCallback);
 	void ENGINE_API DeferredDeleteCPUDispathcer(physx::PxCpuDispatcher * CPUDispatcher);
 #endif
-
+	
 private:
 
 	/** Command to execute when physics simulation is done */
@@ -303,9 +295,11 @@ public:
 	/** Stores the number of valid scenes we are working with. This will be PST_MAX or PST_Async, 
 		depending on whether the async scene is enabled or not*/
 	uint32							NumPhysScenes;
-	
+
+#if WITH_PHYSX
 	/** Gets the array of collision notifications, pending execution at the end of the physics engine run. */
-	TArray<FCollisionNotifyInfo>& GetPendingCollisionNotifies(int32 SceneType){ return PendingCollisionData[SceneType].PendingCollisionNotifies; }
+	TArray<FCollisionNotifyInfo>& GetPendingCollisionNotifies(int32 SceneType) { return PendingCollisionData[SceneType].PendingCollisionNotifies; }
+#endif	// WITH_PHYSX
 
 
 	DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnPhysScenePreTick, FPhysScene*, uint32 /*SceneType*/, float /*DeltaSeconds*/);
@@ -451,7 +445,6 @@ private:
 	class PxCpuDispatcher*			CPUDispatcher[PST_MAX];
 	/** Simulation event callback object */
 	physx::PxSimulationEventCallback*			SimEventCallback[PST_MAX];
-#endif	//
 
 	struct FPendingCollisionData
 	{
@@ -468,12 +461,8 @@ private:
 	};
 
 	FPendingConstraintData PendingConstraintData[PST_MAX];
-	
-#if WITH_FLEX
-    /** Map from Flex container template to instances belonging to this physscene */
-    TMap<UFlexContainer*, FFlexContainerInstance*>    FlexContainerMap;
-	FGraphEventRef FlexSimulateTaskRef;
-#endif
+
+#endif	// WITH_PHYSX
 
 public:
 #if WITH_PHYSX
@@ -485,37 +474,17 @@ public:
 	/** Utility for looking up the PxScene of the given EPhysicsSceneType associated with this FPhysScene.  SceneType must be in the range [0,PST_MAX). */
 	ENGINE_API physx::PxScene*					GetPhysXScene(uint32 SceneType) const;
 
-#endif
+#endif	// WITH_PHYSX
 
 #if WITH_APEX
 	/** Utility for looking up the ApexScene of the given EPhysicsSceneType associated with this FPhysScene.  SceneType must be in the range [0,PST_MAX). */
 	ENGINE_API nvidia::apex::Scene*				GetApexScene(uint32 SceneType) const;
 #endif
-
-#if WITH_FLEX
-	/** Retrive the container instance for a template, will create the instance if it doesn't already exist */
-	FFlexContainerInstance*	GetFlexContainer(UFlexContainer* Template);
-	void StartFlexRecord();
-	void StopFlexRecord();
-
-	/** Adds a radial force to all flex container instances */
-	void AddRadialForceToFlex(FVector Origin, float Radius, float Strength, ERadialImpulseFalloff Falloff);
-
-	/** Adds a radial force to all flex container instances */
-	void AddRadialImpulseToFlex(FVector Origin, float Radius, float Strength, ERadialImpulseFalloff Falloff, bool bVelChange);
-#endif
-
 	ENGINE_API FPhysScene();
 	ENGINE_API ~FPhysScene();
 
 	/** Start simulation on the physics scene of the given type */
 	ENGINE_API void TickPhysScene(uint32 SceneType, FGraphEventRef& InOutCompletionEvent);
-
-#if WITH_FLEX
-	ENGINE_API void WaitFlexScenes();
-	ENGINE_API void TickFlexScenes(ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent, float dt);
-	ENGINE_API void TickFlexScenesTask(float dt);
-#endif
 
 	/** Set the gravity and timing of all physics scenes */
 	ENGINE_API void SetUpForFrame(const FVector* NewGrav, float InDeltaSeconds = 0.0f, float InMaxPhysicsDeltaTime = 0.0f);
@@ -569,81 +538,25 @@ public:
 	ENGINE_API bool HasAsyncScene() const { return bAsyncSceneEnabled; }
 
 	/** Lets the scene update anything related to this BodyInstance as it's now being terminated */
-	DEPRECATED(4.8, "Please call AddCustomPhysics_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-	void TermBody(FBodyInstance* BodyInstance)
-	{
-		TermBody_AssumesLocked(BodyInstance);
-	}
-
-	/** Lets the scene update anything related to this BodyInstance as it's now being terminated */
 	void TermBody_AssumesLocked(FBodyInstance* BodyInstance);
-
-	/** Add a custom callback for next step that will be called on every substep */
-	DEPRECATED(4.8, "Please call AddCustomPhysics_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-	void AddCustomPhysics(FBodyInstance* BodyInstance, FCalculateCustomPhysics& CalculateCustomPhysics)
-	{
-		AddCustomPhysics_AssumesLocked(BodyInstance, CalculateCustomPhysics);
-	}
 
 	/** Add a custom callback for next step that will be called on every substep */
 	void AddCustomPhysics_AssumesLocked(FBodyInstance* BodyInstance, FCalculateCustomPhysics& CalculateCustomPhysics);
 
 	/** Adds a force to a body - We need to go through scene to support substepping */
-	DEPRECATED(4.8, "Please call AddForce_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-	void AddForce(FBodyInstance* BodyInstance, const FVector& Force, bool bAllowSubstepping, bool bAccelChange)
-	{
-		AddForce_AssumesLocked(BodyInstance, Force, bAllowSubstepping, bAccelChange);
-	}
-
 	void AddForce_AssumesLocked(FBodyInstance* BodyInstance, const FVector& Force, bool bAllowSubstepping, bool bAccelChange);
-
-	/** Adds a force to a body at a specific position - We need to go through scene to support substepping */
-	DEPRECATED(4.8, "Please call AddForceAtPosition_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-	void AddForceAtPosition(FBodyInstance* BodyInstance, const FVector& Force, const FVector& Position, bool bAllowSubstepping)
-	{
-		AddForceAtPosition_AssumesLocked(BodyInstance, Force, Position, bAllowSubstepping);
-	}
 
 	/** Adds a force to a body at a specific position - We need to go through scene to support substepping */
 	void AddForceAtPosition_AssumesLocked(FBodyInstance* BodyInstance, const FVector& Force, const FVector& Position, bool bAllowSubstepping, bool bIsLocalForce=false);
 
 	/** Adds a radial force to a body - We need to go through scene to support substepping */
-	DEPRECATED(4.8, "Please call AddRadialForceToBody_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-	void AddRadialForceToBody(FBodyInstance* BodyInstance, const FVector& Origin, const float Radius, const float Strength, const uint8 Falloff, bool bAccelChange, bool bAllowSubstepping)
-	{
-		AddRadialForceToBody_AssumesLocked(BodyInstance, Origin, Radius, Strength, Falloff, bAccelChange, bAllowSubstepping);
-	}
-
-	/** Adds a radial force to a body - We need to go through scene to support substepping */
 	void AddRadialForceToBody_AssumesLocked(FBodyInstance* BodyInstance, const FVector& Origin, const float Radius, const float Strength, const uint8 Falloff, bool bAccelChange, bool bAllowSubstepping);
-
-	/** Adds torque to a body - We need to go through scene to support substepping */
-	DEPRECATED(4.8, "Please call AddTorque_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-	void AddTorque(FBodyInstance* BodyInstance, const FVector& Torque, bool bAllowSubstepping, bool bAccelChange)
-	{
-		AddTorque_AssumesLocked(BodyInstance, Torque, bAllowSubstepping, bAccelChange);
-	}
 
 	/** Adds torque to a body - We need to go through scene to support substepping */
 	void AddTorque_AssumesLocked(FBodyInstance* BodyInstance, const FVector& Torque, bool bAllowSubstepping, bool bAccelChange);
 
 	/** Sets a Kinematic actor's target position - We need to do this here to support substepping*/
-	DEPRECATED(4.8, "Please call SetKinematicTarget_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-	void SetKinematicTarget(FBodyInstance* BodyInstance, const FTransform& TargetTM, bool bAllowSubstepping)
-	{
-		SetKinematicTarget_AssumesLocked(BodyInstance, TargetTM, bAllowSubstepping);
-	}
-	
-	/** Sets a Kinematic actor's target position - We need to do this here to support substepping*/
 	void SetKinematicTarget_AssumesLocked(FBodyInstance* BodyInstance, const FTransform& TargetTM, bool bAllowSubstepping);
-
-	/** Gets a Kinematic actor's target position - We need to do this here to support substepping
-	  * Returns true if kinematic target has been set. If false the OutTM is invalid */
-	DEPRECATED(4.8, "Please call GetKinematicTarget_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-	bool GetKinematicTarget(const FBodyInstance* BodyInstance, FTransform& OutTM) const
-	{
-		return GetKinematicTarget_AssumesLocked(BodyInstance, OutTM);
-	}
 
 	/** Gets a Kinematic actor's target position - We need to do this here to support substepping
 	  * Returns true if kinematic target has been set. If false the OutTM is invalid */
@@ -660,11 +573,6 @@ public:
 
 	/** Adds to queue of skelmesh we want to remove from collision disable table */
 	ENGINE_API void DeferredRemoveCollisionDisableTable(uint32 SkelMeshCompID);
-
-#if WITH_APEX
-	/** Adds a damage event to be fired when fetchResults is done */
-	void AddPendingDamageEvent(class UDestructibleComponent* DestructibleComponent, const apex::DamageEventReportData& DamageEvent);
-#endif
 
 	/** Add this SkeletalMeshComponent to the list needing kinematic bodies updated before simulating physics */
 	void MarkForPreSimKinematicUpdate(USkeletalMeshComponent* InSkelComp, ETeleportType InTeleport, bool bNeedsSkinning);
@@ -704,21 +612,10 @@ private:
 	/** User data wrapper passed to physx */
 	struct FPhysxUserData PhysxUserData;
 
-	/** Cache of active transforms sorted into types */ //TODO: this solution is not great
-	TArray<struct FBodyInstance*> ActiveBodyInstances[PST_MAX];	//body instances that have moved
-	TArray<const physx::PxRigidActor*> ActiveDestructibleActors[PST_MAX];	//destructible actors that have moved
-
-	/** Fetch results from simulation and get the active transforms. Make sure to lock before calling this function as the fetch and data you use must be treated as an atomic operation */
-	void UpdateActiveTransforms(uint32 SceneType);
 	void RemoveActiveBody_AssumesLocked(FBodyInstance* BodyInstance, uint32 SceneType);
-
 #endif
 
 	class FPhysSubstepTask * PhysSubSteppers[PST_MAX];
-	
-#if WITH_APEX
-	TUniquePtr<struct FPendingApexDamageManager> PendingApexDamageManager;
-#endif
 
 	struct FPendingCollisionDisableTable
 	{
@@ -779,7 +676,7 @@ struct FPhysSceneShaderInfo
 #endif
 
 /** Enum to indicate types of simple shapes */
-enum EKCollisionPrimitiveType
+enum DEPRECATED(4.17, "Please use EAggCollisionShape::Type") EKCollisionPrimitiveType
 {
 	KPT_Sphere = 0,
 	KPT_Box,
@@ -826,80 +723,56 @@ struct FKCachedPerTriData
 	}
 };
 
-
-
-class FConvexCollisionVertexBuffer : public FVertexBuffer 
-{
-public:
-	TArray<FDynamicMeshVertex> Vertices;
-
-	virtual void InitRHI() override;
-};
-
-class FConvexCollisionIndexBuffer : public FIndexBuffer 
-{
-public:
-	TArray<int32> Indices;
-
-	virtual void InitRHI() override;
-};
-
-class FConvexCollisionVertexFactory : public FLocalVertexFactory
-{
-public:
-
-	FConvexCollisionVertexFactory()
-	{}
-
-	/** Initialization constructor. */
-	FConvexCollisionVertexFactory(const FConvexCollisionVertexBuffer* VertexBuffer)
-	{
-		InitConvexVertexFactory(VertexBuffer);
-	}
-
-
-	void InitConvexVertexFactory(const FConvexCollisionVertexBuffer* VertexBuffer);
-};
-
 class FKConvexGeomRenderInfo
 {
 public:
-	FConvexCollisionVertexBuffer* VertexBuffer;
-	FConvexCollisionIndexBuffer* IndexBuffer;
-	FConvexCollisionVertexFactory* CollisionVertexFactory;
+	FStaticMeshVertexBuffers* VertexBuffers;
+	FDynamicMeshIndexBuffer32* IndexBuffer;
+	FLocalVertexFactory* CollisionVertexFactory;
 
 	FKConvexGeomRenderInfo()
-	: VertexBuffer(NULL)
-	, IndexBuffer(NULL)
-	, CollisionVertexFactory(NULL)
+	: VertexBuffers(nullptr)
+	, IndexBuffer(nullptr)
+	, CollisionVertexFactory(nullptr)
 	{}
 
 	/** Util to see if this render info has some valid geometry to render. */
 	bool HasValidGeometry()
 	{
 		return 
-			(VertexBuffer != NULL) && 
-			(VertexBuffer->Vertices.Num() > 0) && 
+			(VertexBuffers != NULL) && 
+			(VertexBuffers->PositionVertexBuffer.GetNumVertices() > 0) && 
 			(IndexBuffer != NULL) &&
 			(IndexBuffer->Indices.Num() > 0);
 	}
 };
 
+namespace PhysDLLHelper
+{
 /**
  *	Load the required modules for PhysX
  */
 ENGINE_API void LoadPhysXModules(bool bLoadCooking);
+
+
+#if WITH_APEX
+	ENGINE_API void* LoadAPEXModule(const FString& Path);
+	ENGINE_API void UnloadAPEXModule(void* Handle);
+#endif
+
 /** 
  *	Unload the required modules for PhysX
  */
 void UnloadPhysXModules();
+}
 
 ENGINE_API void	InitGamePhys();
-ENGINE_API void	InitGamePhysPostRHI();
 ENGINE_API void	TermGamePhys();
 
-
 bool	ExecPhysCommands(const TCHAR* Cmd, FOutputDevice* Ar, UWorld* InWorld);
+
+/** Perform any deferred cleanup of resources (GPhysXPendingKillConvex etc) */
+ENGINE_API void DeferredPhysResourceCleanup();
 
 /** Util to list to log all currently awake rigid bodies */
 void	ListAwakeRigidBodies(bool bIncludeKinematic, UWorld* world);
@@ -924,6 +797,10 @@ public:
 	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPhysSceneTerm, FPhysScene*, EPhysicsSceneType);
 	static FOnPhysSceneTerm OnPhysSceneTerm;
 
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnPhysDispatchNotifications, FPhysScene*);
+	static FOnPhysDispatchNotifications OnPhysDispatchNotifications;
 };
 
+#if WITH_PHYSX
 extern ENGINE_API class IPhysXCookingModule* GetPhysXCookingModule(bool bForceLoad = true);
+#endif //WITH_PHYSX

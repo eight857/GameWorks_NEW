@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AudioDecompress.h: Unreal audio vorbis decompression interface object.
@@ -11,6 +11,7 @@
 #include "Async/AsyncWork.h"
 #include "Sound/SoundWave.h"
 #include "Misc/ScopeLock.h"
+#include "HAL/LowLevelMemTracker.h"
 
 // 186ms of 44.1KHz data
 // 372ms of 22KHz data
@@ -358,6 +359,8 @@ public:
 
 	void DoWork()
 	{
+		LLM_SCOPE(ELLMTag::Audio);
+
 		switch(TaskType)
 		{
 		case ERealtimeAudioTaskType::CompressedInfo:
@@ -418,6 +421,8 @@ public:
 	}
 };
 
+ENGINE_API bool ShouldUseBackgroundPoolFor_FAsyncRealtimeAudioTask();
+
 template<class T>
 class FAsyncRealtimeAudioTaskProxy
 {
@@ -457,7 +462,7 @@ public:
 	void StartBackgroundTask()
 	{
 		FScopeLock Lock(&CritSect);
-		Task->StartBackgroundTask();
+		Task->StartBackgroundTask(ShouldUseBackgroundPoolFor_FAsyncRealtimeAudioTask() ? GBackgroundPriorityThreadPool : GThreadPool);
 	}
 
 	FAsyncRealtimeAudioTaskWorker<T>& GetTask()

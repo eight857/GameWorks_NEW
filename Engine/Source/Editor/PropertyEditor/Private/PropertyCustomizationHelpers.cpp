@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PropertyCustomizationHelpers.h"
 #include "IDetailChildrenBuilder.h"
@@ -30,6 +30,7 @@
 #include "Widgets/Layout/SWidgetSwitcher.h"
 #include "IDocumentation.h"
 #include "SResetToDefaultPropertyEditor.h"
+#include "EditorFontGlyphs.h"
 
 #define LOCTEXT_NAMESPACE "PropertyCustomizationHelpers"
 
@@ -82,6 +83,20 @@ namespace PropertyCustomizationHelpers
 	private:
 		FSimpleDelegate OnClickAction;
 	};
+
+	TSharedRef<SWidget> MakeResetButton(FSimpleDelegate OnResetClicked, TAttribute<FText> OptionalToolTipText /*= FText()*/, TAttribute<bool> IsEnabled /*= true*/)
+	{
+		return
+			SNew(SPropertyEditorButton)
+			.Text(LOCTEXT("ResetButtonLabel", "ResetToDefault"))
+			.ToolTipText(OptionalToolTipText.Get().IsEmpty() ? LOCTEXT("ResetButtonToolTipText", "Resets Element to Default Value") : OptionalToolTipText)
+			.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+			.OnClickAction(OnResetClicked)
+			.IsEnabled(IsEnabled)
+			.Visibility(IsEnabled.Get() ? EVisibility::Visible : EVisibility::Collapsed)
+			.IsFocusable(false);
+	}
+
 
 	TSharedRef<SWidget> MakeAddButton( FSimpleDelegate OnAddClicked, TAttribute<FText> OptionalToolTipText, TAttribute<bool> IsEnabled )
 	{
@@ -153,6 +168,32 @@ namespace PropertyCustomizationHelpers
 			.OnClickAction( OnClearClicked )
 			.IsEnabled(IsEnabled)
 			.IsFocusable( false );
+	}
+
+	FText GetVisibilityDisplay(TAttribute<bool> bEnabled)
+	{
+		return bEnabled.Get() ? FEditorFontGlyphs::Eye : FEditorFontGlyphs::Eye_Slash;
+	}
+
+	TSharedRef<SWidget> MakeVisibilityButton(FOnClicked OnVisibilityClicked, TAttribute<FText> OptionalToolTipText, TAttribute<bool> VisibilityDelegate)
+	{
+		TAttribute<FText>::FGetter DynamicVisibilityGetter;
+		DynamicVisibilityGetter.BindStatic(&GetVisibilityDisplay, VisibilityDelegate);
+		TAttribute<FText> DynamicVisibilityAttribute = TAttribute<FText>::Create(DynamicVisibilityGetter);
+		return
+			SNew( SButton )
+			.OnClicked( OnVisibilityClicked )
+			.IsEnabled(true)
+			.IsFocusable( false )
+			.ButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
+			.ToolTipText(LOCTEXT("ToggleVisibility", "Toggle Visibility"))
+			.ContentPadding(2.0f)
+			.ForegroundColor(FSlateColor::UseForeground())
+			[
+				SNew(STextBlock)
+				.Font(FEditorStyle::Get().GetFontStyle("FontAwesome.10"))
+				.Text(DynamicVisibilityAttribute)
+			];
 	}
 
 	TSharedRef<SWidget> MakeBrowseButton( FSimpleDelegate OnFindClicked, TAttribute<FText> OptionalToolTipText, TAttribute<bool> IsEnabled )
@@ -372,20 +413,25 @@ void SObjectPropertyEntryBox::Construct( const FArguments& InArgs )
 
 	bool bDisplayThumbnail = InArgs._DisplayThumbnail;
 	FIntPoint ThumbnailSize(64, 64);
+	if (InArgs._ThumbnailSizeOverride.IsSet())
+	{
+		ThumbnailSize = InArgs._ThumbnailSizeOverride.Get();
+	}
+
 
 	if( InArgs._PropertyHandle.IsValid() && InArgs._PropertyHandle->IsValidHandle() )
 	{
 		PropertyHandle = InArgs._PropertyHandle;
 
 		// check if the property metadata wants us to display a thumbnail
-		FString DisplayThumbnailString = PropertyHandle->GetProperty()->GetMetaData(TEXT("DisplayThumbnail"));
+		const FString& DisplayThumbnailString = PropertyHandle->GetProperty()->GetMetaData(TEXT("DisplayThumbnail"));
 		if(DisplayThumbnailString.Len() > 0)
 		{
 			bDisplayThumbnail = DisplayThumbnailString == TEXT("true");
 		}
 
 		// check if the property metadata has an override to the thumbnail size
-		FString ThumbnailSizeString = PropertyHandle->GetProperty()->GetMetaData(TEXT("ThumbnailSize"));
+		const FString& ThumbnailSizeString = PropertyHandle->GetProperty()->GetMetaData(TEXT("ThumbnailSize"));
 		if ( ThumbnailSizeString.Len() > 0 )
 		{
 			FVector2D ParsedVector;
@@ -884,12 +930,10 @@ private:
 			Material->GetUsedTextures(Textures, EMaterialQualityLevel::Num, false, ERHIFeatureLevel::Num, true);
 
 			// Add a menu item for each texture.  Clicking on the texture will display it in the content browser
-			for( int32 TextureIndex = 0; TextureIndex < Textures.Num(); ++TextureIndex )
+			// UObject for delegate compatibility
+			for( UObject* Texture : Textures )
 			{
-				// UObject for delegate compatibility
-				UObject* Texture = Textures[TextureIndex];
-
-				FUIAction Action( FExecuteAction::CreateSP( this, &FMaterialItemView::GoToAssetInContentBrowser, TWeakObjectPtr<UObject>(Texture) ) );
+				FUIAction Action( FExecuteAction::CreateSP( this, &FMaterialItemView::GoToAssetInContentBrowser, MakeWeakObjectPtr(Texture) ) );
 
 				MenuBuilder.AddMenuEntry( FText::FromString( Texture->GetName() ), LOCTEXT( "BrowseTexture_ToolTip", "Find this texture in the content browser" ), FSlateIcon(), Action );
 			}
@@ -1232,194 +1276,6 @@ void FMaterialList::AddMaterialItem( FDetailWidgetRow& Row, int32 CurrentSlot, c
 	[
 		RightSideContent.ToSharedRef()
 	];
-}
-
-
-TSharedRef<SWidget> PropertyCustomizationHelpers::MakeTextLocalizationButton(const TSharedRef<IPropertyHandle>& InPropertyHandle)
-{
-	class STextPropertyLocalizationMenuContent : public SCompoundWidget
-	{
-		SLATE_BEGIN_ARGS(STextPropertyLocalizationMenuContent) {}
-		SLATE_END_ARGS()
-
-	public:
-		STextPropertyLocalizationMenuContent()
-			: HasNamespaceAndKey(false)
-		{
-		}
-
-		void Construct(const FArguments& InArgs, const TSharedRef<IPropertyHandle>& InPropHandle)
-		{
-			PropertyHandle = InPropHandle;
-
-			FText DisplayText;
-			if (PropertyHandle->GetValueAsDisplayText(DisplayText) == FPropertyAccess::Success)
-			{
-				const FTextDisplayStringRef DisplayString = FTextInspector::GetSharedDisplayString(DisplayText);
-				CacheNamespaceAndKey(DisplayString);
-			}
-
-			FMenuBuilder MenuContentBuilder(true, NULL);
-			{
-				MenuContentBuilder.BeginSection(TEXT("Localization"), LOCTEXT("LocalizationSectionHeading", "Localization"));
-				{
-					TSharedPtr<SGridPanel> GridPanel;
-					TSharedRef<SWidgetSwitcher> WidgetSwitcher = SNew(SWidgetSwitcher)
-						.WidgetIndex_Lambda( [this](){return HasNamespaceAndKey ? 0 : 1;} )
-						+SWidgetSwitcher::Slot()
-						[
-							SAssignNew(GridPanel, SGridPanel)
-						]
-						+SWidgetSwitcher::Slot()
-						[
-							SNew(STextBlock)
-							.Text(LOCTEXT("NoLocWarning", "No localization information available."))
-						];
-
-					GridPanel->AddSlot(0, 0)
-						.VAlign(VAlign_Center)
-						.Padding(1.0f)
-						[
-							SNew(STextBlock)
-							.Text(LOCTEXT("KeyLabel", "Key"))
-							.ToolTipText(LOCTEXT("KeyTooltip", "The localization key of the text property."))
-						];
-
-					const auto& GetKeyAsText = [this](){ return KeyAsText; };
-
-					GridPanel->AddSlot(1, 0)
-						.VAlign(VAlign_Center)
-						.Padding(1.0f)
-						[
-							SNew(SHorizontalBox)
-							+SHorizontalBox::Slot()
-							.FillWidth(1.0f)
-							[
-								SNew(SEditableTextBox)
-								.Text_Lambda(GetKeyAsText)
-								.OnTextCommitted(FOnTextCommitted::CreateSP(this, &STextPropertyLocalizationMenuContent::HandleKeyTextCommitted))
-							]
-							+ SHorizontalBox::Slot()
-							.AutoWidth()
-							.HAlign(HAlign_Center)
-							.Padding(2.0f, 0.0f, 0.0f, 0.0f)
-							[
-								SNew(SButton)
-								.ToolTipText(LOCTEXT("RefreshKeyTooltip", "Generate a new random key."))
-								.ButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
-								.OnClicked(FOnClicked::CreateSP(this, &STextPropertyLocalizationMenuContent::HandleGenerateKeyClicked))
-								.Content()
-								[
-									SNew(SImage)
-									.Image(FEditorStyle::GetBrush("PropertyWindow.Button_Refresh"))
-								]
-							]
-						];
-
-					GridPanel->AddSlot(0, 1)
-						.VAlign(VAlign_Center)
-						.Padding(1.0f, 1.0f, 5.0f, 1.0f)
-						[
-							SNew(STextBlock)
-							.Text(LOCTEXT("NamespaceLabel", "Namespace"))
-							.ToolTipText(LOCTEXT("NamespaceTooltip", "The localization namespace of the text property."))
-						];
-
-					const auto& GetNamespaceAsText = [this](){ return NamespaceAsText; };
-
-					GridPanel->AddSlot(1, 1)
-						.VAlign(VAlign_Center)
-						.Padding(1.0f)
-						[
-							SNew(SEditableTextBox)
-							.Text_Lambda(GetNamespaceAsText)
-							.OnTextCommitted(FOnTextCommitted::CreateSP(this, &STextPropertyLocalizationMenuContent::HandleNamespaceTextCommitted))
-						];
-
-					MenuContentBuilder.AddWidget(WidgetSwitcher, FText::GetEmpty());
-				}
-				MenuContentBuilder.EndSection();
-			}
-
-			ChildSlot
-				[
-					MenuContentBuilder.MakeWidget()
-				];
-		}
-
-	private:
-		FReply HandleGenerateKeyClicked() 
-		{
-			FText DisplayText;
-			if (PropertyHandle->GetValueAsDisplayText(DisplayText) == FPropertyAccess::Success)
-			{
-				const FTextDisplayStringRef DisplayString = FTextInspector::GetSharedDisplayString(DisplayText);
-				CacheNamespaceAndKey(DisplayString);
-				PropertyHandle->NotifyPreChange();
-				FTextLocalizationManager::Get().UpdateDisplayString(DisplayString, *DisplayString, CachedNamespace, FGuid::NewGuid().ToString());
-				PropertyHandle->NotifyPostChange();
-				CacheNamespaceAndKey(DisplayString);
-			}
-
-			return FReply::Handled();
-		}
-
-		void HandleKeyTextCommitted(const FText& NewKeyAsText, ETextCommit::Type InCommitType)
-		{
-			FText DisplayText;
-			if (PropertyHandle->GetValueAsDisplayText(DisplayText) == FPropertyAccess::Success)
-			{
-				const FTextDisplayStringRef DisplayString = FTextInspector::GetSharedDisplayString(DisplayText);
-				CacheNamespaceAndKey(DisplayString);
-				PropertyHandle->NotifyPreChange();
-				FTextLocalizationManager::Get().UpdateDisplayString(DisplayString, *DisplayString, CachedNamespace, NewKeyAsText.ToString());
-				PropertyHandle->NotifyPostChange();
-				CacheNamespaceAndKey(DisplayString);
-			}
-		}
-
-		void HandleNamespaceTextCommitted(const FText& NewNamespaceAsText, ETextCommit::Type InCommitType)
-		{
-			FText DisplayText;
-			if (PropertyHandle->GetValueAsDisplayText(DisplayText) == FPropertyAccess::Success)
-			{
-				const FTextDisplayStringRef DisplayString = FTextInspector::GetSharedDisplayString(DisplayText);
-				CacheNamespaceAndKey(DisplayString);
-				PropertyHandle->NotifyPreChange();
-				FTextLocalizationManager::Get().UpdateDisplayString(DisplayString, *DisplayString, NewNamespaceAsText.ToString(), CachedKey);
-				PropertyHandle->NotifyPostChange();
-				CacheNamespaceAndKey(DisplayString);
-			}
-		}
-
-		void CacheNamespaceAndKey(const FTextDisplayStringRef& DisplayString)
-		{
-			HasNamespaceAndKey = FTextLocalizationManager::Get().FindNamespaceAndKeyFromDisplayString(DisplayString, CachedNamespace, CachedKey);
-			NamespaceAsText = FText::FromString(CachedNamespace);
-			KeyAsText = FText::FromString(CachedKey);
-		}
-
-	private:
-		TSharedPtr<IPropertyHandle> PropertyHandle;
-		bool HasNamespaceAndKey;
-		FText NamespaceAsText;
-		FText KeyAsText;
-		FString CachedNamespace;
-		FString CachedKey;
-	};
-
-	const auto& GetLocalizationMenuContent = [=]() -> TSharedRef<SWidget>
-	{
-		return SNew(STextPropertyLocalizationMenuContent, InPropertyHandle);
-	};
-
-	return SNew(SComboButton)
-		.ToolTipText(LOCTEXT("LocalizationUtilitiesTooltip", "Localization Utilities"))
-		.ButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
-		.ContentPadding(2)
-		.ForegroundColor(FSlateColor::UseForeground())
-		.HasDownArrow(true)
-		.OnGetMenuContent(FOnGetContent::CreateLambda(GetLocalizationMenuContent));
 }
 
 TSharedRef<SWidget> PropertyCustomizationHelpers::MakePropertyComboBox(const TSharedPtr<IPropertyHandle>& InPropertyHandle, FOnGetPropertyComboBoxStrings OnGetStrings, FOnGetPropertyComboBoxValue OnGetValue, FOnPropertyComboBoxValueSelected OnValueSelected)
@@ -1826,13 +1682,6 @@ void FSectionList::GenerateHeaderRowContent(FDetailWidgetRow& NodeRow)
 		.Text(LOCTEXT("SectionHeaderTitle", "Sections"))
 		.Font(IDetailLayoutBuilder::GetDetailFont())
 	];
-	if (SectionListDelegates.OnGenerateLodComboBox.IsBound())
-	{
-		NodeRow.ValueContent()
-		[
-			SectionListDelegates.OnGenerateLodComboBox.Execute(SectionsLodIndex)
-		];
-	}
 }
 
 void FSectionList::GenerateChildContent(IDetailChildrenBuilder& ChildrenBuilder)
@@ -1931,6 +1780,11 @@ void FSectionList::OnPasteSectionItem(int32 LODIndex, int32 SectionIndex)
 	}
 }
 
+void FSectionList::OnEnableSectionItem(int32 LodIndex, int32 SectionIndex, bool bEnable)
+{
+	SectionListDelegates.OnEnableSectionItem.ExecuteIfBound(LodIndex, SectionIndex, bEnable);
+}
+
 void FSectionList::AddSectionItem(FDetailWidgetRow& Row, int32 LodIndex, const struct FSectionListItem& Item, bool bDisplayLink)
 {
 	uint32 NumSections = SectionListBuilder->GetNumSections(LodIndex);
@@ -1963,6 +1817,12 @@ void FSectionList::AddSectionItem(FDetailWidgetRow& Row, int32 LodIndex, const s
 
 	Row.CopyAction(FUIAction(FExecuteAction::CreateSP(this, &FSectionList::OnCopySectionItem, LodIndex, Item.SectionIndex), FCanExecuteAction::CreateSP(this, &FSectionList::OnCanCopySectionItem, LodIndex, Item.SectionIndex)));
 	Row.PasteAction(FUIAction(FExecuteAction::CreateSP(this, &FSectionList::OnPasteSectionItem, LodIndex, Item.SectionIndex)));
+
+	if(SectionListDelegates.OnEnableSectionItem.IsBound())
+	{
+		Row.AddCustomContextMenuAction(FUIAction(FExecuteAction::CreateSP(this, &FSectionList::OnEnableSectionItem, LodIndex, Item.SectionIndex, true)), LOCTEXT("SectionItemContexMenu_Enable", "Enable"));
+		Row.AddCustomContextMenuAction(FUIAction(FExecuteAction::CreateSP(this, &FSectionList::OnEnableSectionItem, LodIndex, Item.SectionIndex, false)), LOCTEXT("SectionItemContexMenu_Disable", "Disable"));
+	}
 
 	Row.NameContent()
 		[

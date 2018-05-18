@@ -98,6 +98,7 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -112,6 +113,9 @@
     <Compile Include="ArchiveManifest.cs" />
     <Compile Include="BuildStep.cs" />
     <Compile Include="ChildProcess.cs" />
+    <Compile Include="Controls\ErrorPanel.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="Controls\SyncFilterControl.cs">
       <SubType>UserControl</SubType>
     </Compile>
@@ -124,9 +128,7 @@
     <Compile Include="Controls\WorkspaceControl.Designer.cs">
       <DependentUpon>WorkspaceControl.cs</DependentUpon>
     </Compile>
-    <Compile Include="Controls\StatusPanel.cs">
-      <SubType>Component</SubType>
-    </Compile>
+    <Compile Include="Controls\StatusPanel.cs" />
     <Compile Include="Controls\BuildListControl.cs">
       <SubType>Component</SubType>
     </Compile>
@@ -374,6 +376,7 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
+    <None Include="Resources\DefaultErrorLogo.png" />
     <Content Include="Resources\DefaultProjectLogo.png" />
     <Content Include="Resources\DefaultNotificationLogo.png" />
     <Content Include="Resources\StatusIcons.png" />

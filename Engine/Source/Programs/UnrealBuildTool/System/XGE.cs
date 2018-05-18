@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections;
@@ -11,6 +11,7 @@ using System.Linq;
 using System.Reflection;
 using Microsoft.Win32;
 using System.Text;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -32,7 +33,7 @@ namespace UnrealBuildTool
 		/// When enabled, XGE will stop compiling targets after a compile error occurs.  Recommended, as it saves computing resources for others.
 		/// </summary>
 		[XmlConfigFile(Category = "BuildConfiguration")]
-		bool bStopXGECompilationAfterErrors = true;
+		bool bStopXGECompilationAfterErrors = false;
 
 		private const string ProgressMarkupPrefix = "@action";
 
@@ -362,7 +363,7 @@ namespace UnrealBuildTool
 					CommandPath = "cmd.exe";
 					CommandArguments = string.Format
 					(
-						"/c \"{0} {1}\"",
+						"/c \"\"{0}\" {1}\"",
 						(Action.CommandPath),
 						(Action.CommandArguments)
 					);

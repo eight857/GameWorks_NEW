@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "XmppJingle/XmppConnectionJingle.h"
 #include "HAL/Runnable.h"
@@ -656,7 +656,7 @@ void FXmppConnectionJingle::SetServer(const FXmppServer& InServer)
 	// add random number to the client resource identifier
 	ServerConfig = InServer;
 
-	ServerConfig.ClientResource = FXmppUserJid::CreateResource(ServerConfig.AppId, ServerConfig.Platform);
+	ServerConfig.ClientResource = FXmppUserJid::CreateResource(ServerConfig.AppId, ServerConfig.Platform, ServerConfig.PlatformUserId);
 }
 
 const FXmppServer& FXmppConnectionJingle::GetServer() const
@@ -766,7 +766,7 @@ void FXmppConnectionJingle::Logout()
 
 	if (!ErrorStr.IsEmpty())
 	{
-		UE_LOG(LogXmpp, Warning, TEXT("Logout failed. %s"), *ErrorStr);
+		UE_LOG(LogXmpp, Log, TEXT("Logout failed. %s"), *ErrorStr);
 		OnLogoutComplete().Broadcast(GetUserJid(), false, ErrorStr);
 	}
 }

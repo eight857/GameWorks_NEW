@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -71,7 +71,7 @@ namespace Audio
 
 		//~ Begin IAudioMixerDeviceChangedLister
 		virtual void RegisterDeviceChangedListener() override;
-		virtual void UnRegisterDeviceChangedListener() override;
+		virtual void UnregisterDeviceChangedListener() override;
 		virtual void OnDefaultCaptureDeviceChanged(const EAudioDeviceRole InAudioDeviceRole, const FString& DeviceId) override;
 		virtual void OnDefaultRenderDeviceChanged(const EAudioDeviceRole InAudioDeviceRole, const FString& DeviceId) override;
 		virtual void OnDeviceAdded(const FString& DeviceId) override;
@@ -95,6 +95,7 @@ namespace Audio
 		IXAudio2MasteringVoice* OutputAudioStreamMasteringVoice;
 		IXAudio2SourceVoice* OutputAudioStreamSourceVoice;
 		FXAudio2VoiceCallback OutputVoiceCallback;
+		FCriticalSection AudioDeviceSwapCriticalSection;
 		FString OriginalAudioDeviceId;
 		FString NewAudioDeviceId;
 		FThreadSafeBool bMoveAudioStreamToNewAudioDevice;

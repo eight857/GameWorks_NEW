@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,7 +10,7 @@ class FMetalCommandList;
  * Enumeration of features which are present only on some OS/device combinations.
  * These have to be checked at runtime as well as compile time to ensure backward compatibility.
  */
-enum EMetalFeatures
+typedef NS_OPTIONS(uint64, EMetalFeatures)
 {
 	/** Support for separate front & back stencil ref. values */
 	EMetalFeaturesSeparateStencil = 1 << 0,
@@ -56,6 +56,34 @@ enum EMetalFeatures
 	EMetalFeaturesFences = 1 << 20,
 	/** Supports deferred store action speficication */
 	EMetalFeaturesDeferredStoreActions = 1 << 21,
+	/** Supports MSAA Depth Resolves */
+	EMetalFeaturesMSAADepthResolve = 1 << 22,
+	/** Supports Store & Resolve in a single store action */
+	EMetalFeaturesMSAAStoreAndResolve = 1 << 23,
+	/** Supports framework GPU frame capture */
+	EMetalFeaturesGPUTrace = 1 << 24,
+	/** Supports combined depth-stencil formats */
+	EMetalFeaturesCombinedDepthStencil = 1 << 25,
+	/** Supports the use of cubemap arrays */
+	EMetalFeaturesCubemapArrays = 1 << 26,
+	/** Supports the creation of texture-views using buffers as the backing store */
+	EMetalFeaturesLinearTextures = 1 << 27,
+	/** Supports the creation of texture-views for UAVs using buffers as the backing store */
+	EMetalFeaturesLinearTextureUAVs = 1 << 28,
+	/** Supports the specification of multiple viewports and scissor rects */
+	EMetalFeaturesMultipleViewports = 1 << 29,
+	/** Supports accurate GPU times for commandbuffer start/end */
+    EMetalFeaturesGPUCommandBufferTimes = 1 << 30,
+    /** Supports minimum on-glass duration for drawables */
+    EMetalFeaturesPresentMinDuration = 1llu << 31llu,
+    /** Supports programmatic frame capture API */
+    EMetalFeaturesGPUCaptureManager = 1llu << 32llu,
+	/** Supports toggling V-Sync on & off */
+	EMetalFeaturesSupportsVSyncToggle = 1llu << 33llu,
+	/** Supports function-constants for runtime shader specialisation */
+	EMetalFeaturesFunctionConstants = 1llu << 34llu,
+	/** Supports efficient buffer-blits */
+	EMetalFeaturesEfficientBufferBlits = 1llu << 35llu,
 };
 
 /**
@@ -116,6 +144,13 @@ public:
 	 */
 	static inline bool SupportsFeature(EMetalFeatures InFeature) { return ((Features & InFeature) != 0); }
 
+	/**
+	* @param InFeature A specific Metal feature to check for.
+	* @returns True if RHISupportsSeparateMSAAAndResolveTextures will be true.  
+	* Currently Mac only.
+	*/
+	static inline bool SupportsSeparateMSAAAndResolveTarget() { return PLATFORM_MAC != 0; }
+
 #pragma mark - Public Debug Support -
 
 	/** Inserts a boundary that marks the end of a frame for the debug capture tool. */
@@ -143,5 +178,5 @@ private:
 	TArray<NSArray<id<MTLCommandBuffer>>*> CommandBuffers;
 	int32 RuntimeDebuggingLevel;
 	NSUInteger PermittedOptions;
-	static uint32 Features;
+	static uint64 Features;
 };

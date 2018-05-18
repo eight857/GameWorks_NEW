@@ -1,12 +1,12 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ProfilerClientManager.h"
 #include "HAL/FileManager.h"
+#include "MessageEndpointBuilder.h"
 #include "Misc/Paths.h"
-#include "Serialization/MemoryReader.h"
-#include "Helpers/MessageEndpointBuilder.h"
-#include "ProfilerServiceMessages.h"
 #include "Misc/SecureHash.h"
+#include "Serialization/MemoryReader.h"
+#include "ProfilerServiceMessages.h"
 
 
 DEFINE_LOG_CATEGORY_STATIC(LogProfilerClient, Log, All);

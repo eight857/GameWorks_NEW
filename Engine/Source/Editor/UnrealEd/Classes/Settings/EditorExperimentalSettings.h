@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -59,10 +59,6 @@ public:
 	UPROPERTY(EditAnywhere, config, Category=Blueprints, meta=(DisplayName="Blueprint Break on Exceptions"))
 	bool bBreakOnExceptions;
 
-	/** Enable experimental blueprint performance analysis tools. */
-	UPROPERTY(EditAnywhere, config, Category=Blueprints, meta=(DisplayName="Blueprint Performance Analysis Tools"))
-	bool bBlueprintPerformanceAnalysisTools;
-
 	/** Enables "Find and Replace All" tool in the MyBlueprint window for variables */
 	UPROPERTY(EditAnywhere, config, Category = Blueprints, meta = (DisplayName = "Find and Replace All References Tool"))
 	bool bEnableFindAndReplaceReferences;
@@ -117,10 +113,6 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = Tools, meta = (ConfigRestartRequired = true))
 	bool bFacialAnimationImporter;
 
-	/** Enable experimental clothing tools (parameter painting and simulation configuration) found in the skeletal mesh editor */
-	UPROPERTY(EditAnywhere, config, Category = Tools, meta = (ConfigRestartRequired = true))
-	bool bClothingTools;
-
 	/** Allow animation blueprints to be recompiled while a PIE session is running */
 	UPROPERTY(EditAnywhere, config, Category = Tools)
 	bool bEnableLiveRecompilationOfAnimationBlueprints;
@@ -129,9 +121,13 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = PIE, meta = (DisplayName = "Enable mobile PIE with preview device launch options."))
 	bool bMobilePIEPreviewDeviceLaunch;
 
-	/** Enables the ability to bake materials inside of the Static Mesh and Skeletal Mesh Editor, and for static mesh instances. */
-	UPROPERTY(EditAnywhere, config, Category = Tools, meta = (ConfigRestartRequired = true))
-	bool bAssetMaterialBaking;
+	/** Enables in-editor support for text asset formats */
+	//UPROPERTY(EditAnywhere, config, Category = Core)
+	bool bTextAssetFormatSupport;
+
+	/** When creating new Material Layers and Material Layer Blends, set up example graphs. */
+	UPROPERTY(EditAnywhere, config, Category = Materials)
+	bool bExampleLayersAndBlends;
 	
 	/**
 	 * Returns an event delegate that is executed when a setting has changed.

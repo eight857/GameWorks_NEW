@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CoreMinimal.h"
@@ -39,7 +39,11 @@
 #include "Components/BoxComponent.h"
 #include "GameFramework/MovementComponent.h"
 
+#include "Misc/TimeGuard.h"
+
 #define LOCTEXT_NAMESPACE "LevelActor"
+
+DECLARE_CYCLE_STAT(TEXT("Destroy Actor"), STAT_DestroyActor, STATGROUP_Game);
 
 // CVars
 static TAutoConsoleVariable<float> CVarEncroachEpsilon(
@@ -153,7 +157,7 @@ void LineCheckTracker::DumpLineChecks(int32 Threshold)
 {
 	if( LineCheckStackTracker )
 	{
-		const FString Filename = FString::Printf(TEXT("%sLineCheckLog-%s.csv"), *FPaths::GameLogDir(), *FDateTime::Now().ToString());
+		const FString Filename = FString::Printf(TEXT("%sLineCheckLog-%s.csv"), *FPaths::ProjectLogDir(), *FDateTime::Now().ToString());
 		FOutputDeviceFile OutputFile(*Filename);
 		LineCheckStackTracker->DumpStackTraces( Threshold, OutputFile );
 		OutputFile.TearDown();
@@ -161,7 +165,7 @@ void LineCheckTracker::DumpLineChecks(int32 Threshold)
 
 	if( LineCheckScriptStackTracker )
 	{
-		const FString Filename = FString::Printf(TEXT("%sScriptLineCheckLog-%s.csv"), *FPaths::GameLogDir(), *FDateTime::Now().ToString());
+		const FString Filename = FString::Printf(TEXT("%sScriptLineCheckLog-%s.csv"), *FPaths::ProjectLogDir(), *FDateTime::Now().ToString());
 		FOutputDeviceFile OutputFile(*Filename);
 		LineCheckScriptStackTracker->DumpStackTraces( Threshold, OutputFile );
 		OutputFile.TearDown();
@@ -295,6 +299,9 @@ AActor* UWorld::SpawnActor( UClass* Class, FVector const* Location, FRotator con
 AActor* UWorld::SpawnActor( UClass* Class, FTransform const* UserTransformPtr, const FActorSpawnParameters& SpawnParameters )
 {
 	SCOPE_CYCLE_COUNTER(STAT_SpawnActorTime);
+	SCOPE_TIME_GUARD_NAMED_MS(TEXT("SpawnActor Of Type"), Class->GetFName(), 2);
+	
+
 	check( CurrentLevel ); 	
 	check(GIsEditor || (CurrentLevel == PersistentLevel));
 
@@ -454,6 +461,10 @@ AActor* UWorld::SpawnActor( UClass* Class, FTransform const* UserTransformPtr, c
 	// tell the actor what method to use, in case it was overridden
 	Actor->SpawnCollisionHandlingMethod = CollisionHandlingMethod;
 
+#if WITH_EDITOR
+	Actor->bIsEditorPreviewActor = SpawnParameters.bTemporaryEditorActor;
+#endif //WITH_EDITOR
+
 	Actor->PostSpawnInitialize(UserTransform, SpawnParameters.Owner, SpawnParameters.Instigator, SpawnParameters.IsRemoteOwned(), SpawnParameters.bNoFail, SpawnParameters.bDeferConstruction);
 
 	if (Actor->IsPendingKill() && !SpawnParameters.bNoFail)
@@ -514,9 +525,13 @@ bool UWorld::EditorDestroyActor( AActor* ThisActor, bool bShouldModifyLevel )
  */
 bool UWorld::DestroyActor( AActor* ThisActor, bool bNetForce, bool bShouldModifyLevel )
 {
+	SCOPE_CYCLE_COUNTER(STAT_DestroyActor);
+
 	check(ThisActor);
 	check(ThisActor->IsValidLowLevel());
 	//UE_LOG(LogSpawn, Log,  "Destroy %s", *ThisActor->GetClass()->GetName() );
+
+	SCOPE_CYCLE_UOBJECT(ThisActor, ThisActor);
 
 	if (ThisActor->GetWorld() == NULL)
 	{
@@ -699,30 +714,33 @@ APlayerController* UWorld::SpawnPlayActor(UPlayer* NewPlayer, ENetRole RemoteRol
 		Options += InURL.Op[i];
 	}
 
-	AGameModeBase* GameMode = GetAuthGameMode();
-
-	// Give the GameMode a chance to accept the login
-	APlayerController* const NewPlayerController = GameMode->Login(NewPlayer, RemoteRole, *InURL.Portal, Options, UniqueId, Error);
-	if (NewPlayerController == NULL)
+	if (AGameModeBase* const GameMode = GetAuthGameMode())
 	{
-		UE_LOG(LogSpawn, Warning, TEXT("Login failed: %s"), *Error);
-		return NULL;
+		// Give the GameMode a chance to accept the login
+		APlayerController* const NewPlayerController = GameMode->Login(NewPlayer, RemoteRole, *InURL.Portal, Options, UniqueId, Error);
+		if (NewPlayerController == NULL)
+		{
+			UE_LOG(LogSpawn, Warning, TEXT("Login failed: %s"), *Error);
+			return NULL;
+		}
+
+		UE_LOG(LogSpawn, Log, TEXT("%s got player %s [%s]"), *NewPlayerController->GetName(), *NewPlayer->GetName(), UniqueId.IsValid() ? *UniqueId->ToString() : TEXT("Invalid"));
+
+		// Possess the newly-spawned player.
+		NewPlayerController->NetPlayerIndex = InNetPlayerIndex;
+		NewPlayerController->Role = ROLE_Authority;
+		NewPlayerController->SetReplicates(RemoteRole != ROLE_None);
+		if (RemoteRole == ROLE_AutonomousProxy)
+		{
+			NewPlayerController->SetAutonomousProxy(true);
+		}
+		NewPlayerController->SetPlayer(NewPlayer);
+		GameMode->PostLogin(NewPlayerController);
+		return NewPlayerController;
 	}
 
-	UE_LOG(LogSpawn, Log, TEXT("%s got player %s [%s]"), *NewPlayerController->GetName(), *NewPlayer->GetName(), UniqueId.IsValid() ? *UniqueId->ToString() : TEXT("Invalid"));
-
-	// Possess the newly-spawned player.
-	NewPlayerController->NetPlayerIndex = InNetPlayerIndex;
-	NewPlayerController->Role = ROLE_Authority;
-	NewPlayerController->SetReplicates(RemoteRole != ROLE_None);
-	if (RemoteRole == ROLE_AutonomousProxy)
-	{
-		NewPlayerController->SetAutonomousProxy(true);
-	}
-	NewPlayerController->SetPlayer(NewPlayer);
-	GameMode->PostLogin(NewPlayerController);
-
-	return NewPlayerController;
+	UE_LOG(LogSpawn, Warning, TEXT("Login failed: No game mode set."));
+	return nullptr;
 }
 
 /*-----------------------------------------------------------------------------
@@ -1357,7 +1375,7 @@ FAudioDevice* UWorld::GetAudioDevice()
  *
  * @param	bInMapNeedsLightingFullyRebuild			The new value.
  */
-void UWorld::SetMapNeedsLightingFullyRebuilt(int32 InNumLightingUnbuiltObjects)
+void UWorld::SetMapNeedsLightingFullyRebuilt(int32 InNumLightingUnbuiltObjects, int32 InNumUnbuiltReflectionCaptures)
 {
 	static const TConsoleVariableData<int32>* AllowStaticLightingVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.AllowStaticLighting"));
 	const bool bAllowStaticLighting = (!AllowStaticLightingVar || AllowStaticLightingVar->GetValueOnGameThread() != 0);
@@ -1366,13 +1384,15 @@ void UWorld::SetMapNeedsLightingFullyRebuilt(int32 InNumLightingUnbuiltObjects)
 	if (bAllowStaticLighting && WorldSettings && !WorldSettings->bForceNoPrecomputedLighting)
 	{
 		check(IsInGameThread());
-		if (NumLightingUnbuiltObjects != InNumLightingUnbuiltObjects && (NumLightingUnbuiltObjects == 0 || InNumLightingUnbuiltObjects == 0))
+		if ((NumLightingUnbuiltObjects != InNumLightingUnbuiltObjects && (NumLightingUnbuiltObjects == 0 || InNumLightingUnbuiltObjects == 0))
+			|| (NumUnbuiltReflectionCaptures != InNumUnbuiltReflectionCaptures && (NumUnbuiltReflectionCaptures == 0 || InNumUnbuiltReflectionCaptures == 0)))
 		{
 			// Save the lighting invalidation for transactions.
 			Modify(false);
 		}
 
 		NumLightingUnbuiltObjects = InNumLightingUnbuiltObjects;
+		NumUnbuiltReflectionCaptures = InNumUnbuiltReflectionCaptures;
 
 		// Update last time unbuilt lighting was encountered.
 		if (NumLightingUnbuiltObjects > 0)

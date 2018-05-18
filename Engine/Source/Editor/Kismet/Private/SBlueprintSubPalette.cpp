@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SBlueprintSubPalette.h"
 #include "Widgets/SOverlay.h"
@@ -8,6 +8,7 @@
 #include "Widgets/Images/SImage.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Widgets/SToolTip.h"
+#include "Styling/CoreStyle.h"
 #include "EditorStyleSet.h"
 #include "EdGraphSchema_K2.h"
 #include "K2Node.h"
@@ -331,21 +332,17 @@ FReply SBlueprintSubPalette::OnActionDragged( const TArray< TSharedPtr<FEdGraphS
 		else if(InAction->GetTypeId() == FEdGraphSchemaAction_K2Var::StaticGetTypeId())
 		{
 			FEdGraphSchemaAction_K2Var* VarAction = (FEdGraphSchemaAction_K2Var*)InAction.Get();
-
-			UClass* VarClass = VarAction->GetVariableClass();
-			if(VarClass != NULL)
+			if (UClass* VarClass = VarAction->GetVariableClass())
 			{
-				return FReply::Handled().BeginDragDrop(FKismetVariableDragDropAction::New(VarAction->GetVariableName(), VarClass, AnalyticsDelegate));
+				return FReply::Handled().BeginDragDrop(FKismetVariableDragDropAction::New(InAction, VarAction->GetVariableName(), VarClass, AnalyticsDelegate));
 			}
 		}
 		else if(InAction->GetTypeId() == FEdGraphSchemaAction_K2Delegate::StaticGetTypeId())
 		{
 			FEdGraphSchemaAction_K2Delegate* DelegateAction = (FEdGraphSchemaAction_K2Delegate*)InAction.Get();
-			UClass* VarClass = DelegateAction->GetDelegateClass();
-			check(VarClass);
-			if(VarClass != NULL)
+			if (UClass* VarClass = DelegateAction->GetDelegateClass())
 			{
-				return FReply::Handled().BeginDragDrop(FKismetDelegateDragDropAction::New(DelegateAction->GetDelegateName(), VarClass, AnalyticsDelegate));
+				return FReply::Handled().BeginDragDrop(FKismetDelegateDragDropAction::New(InAction, DelegateAction->GetDelegateName(), VarClass, AnalyticsDelegate));
 			}
 		}
 		else if (InAction->GetTypeId() == FBlueprintDragDropMenuItem::StaticGetTypeId())
@@ -450,7 +447,7 @@ TSharedRef<SVerticalBox> SBlueprintSubPalette::ConstructHeadingWidget(FSlateBrus
 	SAssignNew(ToolTipWidget, SToolTip).Text(ToolTipText);
 
 	static FTextBlockStyle TitleStyle = FTextBlockStyle()
-		.SetFont(FSlateFontInfo(FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 10))
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 10))
 		.SetColorAndOpacity(FLinearColor(0.4f, 0.4f, 0.4f));
 
 	return SNew(SVerticalBox)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -8,6 +8,12 @@ public class MetalShaderFormat : ModuleRules
 	{
 		PrivateIncludePathModuleNames.Add("TargetPlatform");
 		PublicIncludePaths.Add("Runtime/Apple/MetalRHI/Public");
+
+		PrivateIncludePaths.AddRange(
+			new string[] {
+				"Developer/DerivedDataCache/Public",
+			}
+		);
 
 		PrivateDependencyModuleNames.AddRange(
 			new string[] {
@@ -20,6 +26,13 @@ public class MetalShaderFormat : ModuleRules
 
 		AddEngineThirdPartyPrivateStaticDependencies(Target, 
 			"HLSLCC"
+			);
+			
+		DynamicallyLoadedModuleNames.AddRange(
+			new string[]
+			{ 
+				"DerivedDataCache",
+			}
 			);
 	}
 }

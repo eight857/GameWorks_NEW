@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,6 +6,7 @@
 #include "Styling/SlateColor.h"
 #include "Widgets/SWidget.h"
 #include "IDetailCustomization.h"
+#include "TargetPlatformAudioCustomization.h"
 
 class IDetailLayoutBuilder;
 class IPropertyHandle;
@@ -100,4 +101,7 @@ protected:
 private:
 	/** Reference to the target shader formats property view */
 	TSharedPtr<FLinuxTargetShaderFormatsPropertyDetails> TargetShaderFormatsDetails;
+
+	/** Manager for Audio Plugin widget. */
+	FAudioPluginWidgetManager AudioPluginWidgetManager;
 };

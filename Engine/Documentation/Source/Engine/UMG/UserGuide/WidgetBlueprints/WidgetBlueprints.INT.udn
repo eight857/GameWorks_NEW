@@ -1,9 +1,19 @@
-Availability:Public
+Availability: Public
+Crumbs: %ROOT%
 Title: Widget Blueprints
-Crumbs:%ROOT%, Engine, Engine/UMG, Engine/UMG/UserGuide
-Description:How to create a Widget Blueprint and Overview of the Widget Blueprint Interface.
-Version: 4.9
-tags:UMG UI Designer
+Description: How to create a Widget Blueprint and Overview of the Widget Blueprint Interface
+Type: Overview
+SkillLevel:Beginner
+Version:4.17
+Parent:Engine/UMG/UserGuide
+Order:1
+Tags:UMG UI Designer
+Tags:Getting Started
+Topic-image:Engine/UMG/UserGuide/WidgetBlueprintTopic.png
+
+
+
+
 
 In order to start working with Unreal Motion Graphics, you will first need to create a **Widget Blueprint** as seen below. 
 
@@ -34,7 +44,7 @@ In order to start working with Unreal Motion Graphics, you will first need to cr
 By default, the **Widget Blueprint Editor** opens up on the **Designer** tab when a **Widget Blueprint** is opened. The Designer tab is the visual representation of the layout and will give you an idea of how the screen will appear in-game.  
 
 [REGION:lightbox]
-	[![](WidgetBlueprintNumbers.png)(w:840 h:480)](WidgetBlueprintNumbers.png)
+	[![](WidgetBlueprintNumbers.png)(w:840)](WidgetBlueprintNumbers.png)
 [/REGION]
 
 _Click for full view._

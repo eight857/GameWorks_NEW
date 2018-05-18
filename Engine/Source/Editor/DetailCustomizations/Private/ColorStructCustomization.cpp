@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ColorStructCustomization.h"
 #include "UObject/UnrealType.h"
@@ -52,14 +52,16 @@ void FColorStructCustomization::MakeHeaderRow(TSharedRef<class IPropertyHandle>&
 	TSharedPtr<SWidget> ColorWidget;
 	float ContentWidth = 250.0f;
 
+	TWeakPtr<IPropertyHandle> StructWeakHandlePtr = StructPropertyHandle;
+
 	if (InStructPropertyHandle->HasMetaData("InlineColorPicker"))
 	{
-		ColorWidget = CreateInlineColorPicker();
+		ColorWidget = CreateInlineColorPicker(StructWeakHandlePtr);
 		ContentWidth = 384.0f;
 	}
 	else
 	{
-		ColorWidget = CreateColorWidget();
+		ColorWidget = CreateColorWidget(StructWeakHandlePtr);
 	}
 
 	Row.NameContent()
@@ -74,7 +76,7 @@ void FColorStructCustomization::MakeHeaderRow(TSharedRef<class IPropertyHandle>&
 }
 
 
-TSharedRef<SWidget> FColorStructCustomization::CreateColorWidget()
+TSharedRef<SWidget> FColorStructCustomization::CreateColorWidget(TWeakPtr<IPropertyHandle> StructWeakHandlePtr)
 {
 	FSlateFontInfo NormalText = IDetailLayoutBuilder::GetDetailFont();
 
@@ -93,6 +95,7 @@ TSharedRef<SWidget> FColorStructCustomization::CreateColorWidget()
 				.IgnoreAlpha(bIgnoreAlpha)
 				.OnMouseButtonDown(this, &FColorStructCustomization::OnMouseButtonDownColorBlock)
 				.Size(FVector2D(35.0f, 12.0f))
+				.IsEnabled(this, &FColorStructCustomization::IsValueEnabled, StructWeakHandlePtr)
 			]
 			+SOverlay::Slot()
 			.HAlign(HAlign_Center)
@@ -182,13 +185,13 @@ void FColorStructCustomization::CreateColorPicker(bool bUseAlpha)
 		{
 			FLinearColor Color;
 			Color.InitFromString(PerObjectValues[ObjectIndex]);
-			SavedPreColorPickerColors.Add(Color);	
+			SavedPreColorPickerColors.Add(FLinearOrSrgbColor(Color));
 		}
 		else
 		{
 			FColor Color;
 			Color.InitFromString(PerObjectValues[ObjectIndex]);
-			SavedPreColorPickerColors.Add(Color.ReinterpretAsLinear());
+			SavedPreColorPickerColors.Add(FLinearOrSrgbColor(Color));
 		}
 	}
 
@@ -210,7 +213,7 @@ void FColorStructCustomization::CreateColorPicker(bool bUseAlpha)
 		PickerArgs.OnInteractivePickEnd = FSimpleDelegate::CreateSP(this, &FColorStructCustomization::OnColorPickerInteractiveEnd);
 		PickerArgs.InitialColorOverride = InitialColor;
 		PickerArgs.ParentWidget = ColorPickerParentWidget;
-
+		PickerArgs.OptionalOwningDetailsView = ColorPickerParentWidget;
 		FWidgetPath ParentWidgetPath;
 		if (FSlateApplication::Get().FindPathToWidget(ColorPickerParentWidget.ToSharedRef(), ParentWidgetPath))
 		{
@@ -222,7 +225,7 @@ void FColorStructCustomization::CreateColorPicker(bool bUseAlpha)
 }
 
 
-TSharedRef<SColorPicker> FColorStructCustomization::CreateInlineColorPicker()
+TSharedRef<SColorPicker> FColorStructCustomization::CreateInlineColorPicker(TWeakPtr<IPropertyHandle> StructWeakHandlePtr)
 {
 	int32 NumObjects = StructPropertyHandle->GetNumOuterObjects();
 
@@ -236,13 +239,13 @@ TSharedRef<SColorPicker> FColorStructCustomization::CreateInlineColorPicker()
 		{
 			FLinearColor Color;
 			Color.InitFromString(PerObjectValues[ObjectIndex]);
-			SavedPreColorPickerColors.Add(Color);	
+			SavedPreColorPickerColors.Add(FLinearOrSrgbColor(Color));	
 		}
 		else
 		{
 			FColor Color;
 			Color.InitFromString(PerObjectValues[ObjectIndex]);
-			SavedPreColorPickerColors.Add(Color.ReinterpretAsLinear());
+			SavedPreColorPickerColors.Add(FLinearOrSrgbColor(Color));
 		}
 	}
 
@@ -261,7 +264,8 @@ TSharedRef<SColorPicker> FColorStructCustomization::CreateInlineColorPicker()
 		.OnInteractivePickBegin(FSimpleDelegate::CreateSP(this, &FColorStructCustomization::OnColorPickerInteractiveBegin))
 		.OnInteractivePickEnd(FSimpleDelegate::CreateSP(this, &FColorStructCustomization::OnColorPickerInteractiveEnd))
 		.sRGBOverride(sRGBOverride)
-		.TargetColorAttribute(InitialColor);
+		.TargetColorAttribute(InitialColor)
+		.IsEnabled(this, &FColorStructCustomization::IsValueEnabled, StructWeakHandlePtr);
 }
 
 
@@ -274,8 +278,7 @@ void FColorStructCustomization::OnSetColorFromColorPicker(FLinearColor NewColor)
 	}
 	else
 	{
-		// Handled by the color picker
-		const bool bSRGB = false;
+		const bool bSRGB = true;
 		FColor NewFColor = NewColor.ToFColor(bSRGB);
 		ColorString = NewFColor.ToString();
 	}
@@ -293,12 +296,11 @@ void FColorStructCustomization::OnColorPickerCancelled(FLinearColor OriginalColo
 	{
 		if (bIsLinearColor)
 		{
-			PerObjectColors.Add(SavedPreColorPickerColors[ColorIndex].ToString());
+			PerObjectColors.Add(SavedPreColorPickerColors[ColorIndex].GetLinear().ToString());
 		}
 		else
 		{
-			const bool bSRGB = false;
-			FColor Color = SavedPreColorPickerColors[ColorIndex].ToFColor(bSRGB);
+			FColor Color = SavedPreColorPickerColors[ColorIndex].GetSrgb();
 			PerObjectColors.Add(Color.ToString());
 		}
 	}
@@ -347,46 +349,28 @@ FPropertyAccess::Result FColorStructCustomization::GetColorAsLinear(FLinearColor
 	// Default to full alpha in case the alpha component is disabled.
 	OutColor.A = 1.0f;
 
-	// Get each color component 
-	for (int32 ChildIndex = 0; ChildIndex < SortedChildHandles.Num(); ++ChildIndex)
-	{
-		FPropertyAccess::Result ValueResult = FPropertyAccess::Fail;
+	FString StringValue;
+	FPropertyAccess::Result Result = StructPropertyHandle->GetValueAsFormattedString(StringValue);
 
+	if(Result == FPropertyAccess::Success)
+	{
 		if (bIsLinearColor)
 		{
-			float ComponentValue = 0;
-			ValueResult = SortedChildHandles[ChildIndex]->GetValue(ComponentValue);
-
-			OutColor.Component(ChildIndex) = ComponentValue;
+			OutColor.InitFromString(StringValue);
 		}
 		else
 		{
-			uint8 ComponentValue = 0;
-			ValueResult = SortedChildHandles[ChildIndex]->GetValue(ComponentValue);
-
-			// Convert the FColor to a linear equivalent
-			OutColor.Component(ChildIndex) = ComponentValue/255.0f;
-		}
-
-		switch(ValueResult)
-		{
-		case FPropertyAccess::MultipleValues:
-			{
-				// Default the color to white if we've got multiple values selected
-				OutColor = FLinearColor::White;
-				return FPropertyAccess::MultipleValues;
-			}
-
-		case FPropertyAccess::Fail:
-			return FPropertyAccess::Fail;
-
-		default:
-			break;
+			FColor SrgbColor;
+			SrgbColor.InitFromString(StringValue);
+			OutColor = FLinearColor(SrgbColor);
 		}
 	}
+	else if(Result == FPropertyAccess::MultipleValues)
+	{
+		OutColor = FLinearColor::White;
+	}
 
-	// If we've got this far, we have to have successfully read a color with a single value
-	return FPropertyAccess::Success;
+	return Result;
 }
 
 

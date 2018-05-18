@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MoviePlayerSettingsDetails.h"
 #include "Misc/Paths.h"
@@ -80,7 +80,7 @@ void FMoviePlayerSettingsDetails::HandleFilePathPickerPathPicked( const FString&
 	FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_OPEN, FPaths::GetPath(PickedPath));
 
 	// sanitize the location of the chosen movies to the content/movies directory
-	const FString MoviesBaseDir = FPaths::ConvertRelativePathToFull(FPaths::GameContentDir() + TEXT("Movies/"));
+	const FString MoviesBaseDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() + TEXT("Movies/"));
 	const FString FullPath = FPaths::ConvertRelativePathToFull(PickedPath);
 
 	if (FullPath.StartsWith(MoviesBaseDir))

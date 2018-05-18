@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -22,14 +22,6 @@ struct CORE_API FGenericPlatformOutputDevices
 	{
 		return nullptr; // normally only used for dedicated servers
 	}
-
-	static FOutputDeviceConsole*		GetLogConsole()
-	{
-		return nullptr; // normally only used for PC
-	}
-
-	static FOutputDeviceError*			GetError();
-	static FFeedbackContext*			GetWarn();
 
 protected:
 	static TCHAR CachedAbsoluteFilename[1024];

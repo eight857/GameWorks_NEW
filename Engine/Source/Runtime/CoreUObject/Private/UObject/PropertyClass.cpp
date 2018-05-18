@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
@@ -146,6 +146,16 @@ FString UClassProperty::GetCPPMacroType( FString& ExtendedTypeText ) const
 bool UClassProperty::SameType(const UProperty* Other) const
 {
 	return Super::SameType(Other) && (MetaClass == ((UClassProperty*)Other)->MetaClass);
+}
+
+bool UClassProperty::Identical( const void* A, const void* B, uint32 PortFlags ) const
+{
+	UObject* ObjectA = A ? GetObjectPropertyValue(A) : nullptr;
+	UObject* ObjectB = B ? GetObjectPropertyValue(B) : nullptr;
+
+	check(ObjectA == nullptr || ObjectA->IsA<UClass>());
+	check(ObjectB == nullptr || ObjectB->IsA<UClass>());
+	return (ObjectA == ObjectB);
 }
 
 IMPLEMENT_CORE_INTRINSIC_CLASS(UClassProperty, UObjectProperty,

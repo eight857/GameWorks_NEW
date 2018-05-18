@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "Generation/ManifestBuilder.h"
 
 
@@ -55,12 +55,13 @@ namespace BuildPatchServices
 		Manifest->BuildVersion = InDetails.BuildVersion;
 		Manifest->LaunchExe = InDetails.LaunchExe;
 		Manifest->LaunchCommand = InDetails.LaunchCommand;
+		Manifest->PrereqIds = InDetails.PrereqIds;
 		Manifest->PrereqName = InDetails.PrereqName;
 		Manifest->PrereqPath = InDetails.PrereqPath;
 		Manifest->PrereqArgs = InDetails.PrereqArgs;
 		for (const auto& CustomField : InDetails.CustomFields)
 		{
-			int32 VarType = CustomField.Value.GetType();
+			EVariantTypes VarType = CustomField.Value.GetType();
 			if (VarType == EVariantTypes::Float || VarType == EVariantTypes::Double)
 			{
 				Manifest->SetCustomField(CustomField.Key, (double)CustomField.Value);
@@ -138,6 +139,15 @@ namespace BuildPatchServices
 		if (bHasAllInfo == false)
 		{
 			return false;
+		}
+
+		// Insert the legacy SHA-based prereq id if we have a prereq path specified but no prereq id.
+		if (Manifest->PrereqIds.Num() == 0 && !Manifest->PrereqPath.IsEmpty())
+		{
+			UE_LOG(LogManifestBuilder, Log, TEXT("Setting PrereqIds to be the SHA hash of the PrereqPath."));
+			FSHAHashData PrereqHash;
+			Manifest->GetFileHash(Manifest->PrereqPath, PrereqHash);
+			Manifest->PrereqIds.Add(PrereqHash.ToString());
 		}
 
 		// Some sanity checks for build integrity.

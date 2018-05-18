@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -23,10 +23,12 @@ class ENGINE_API UDecalComponent : public USceneComponent
 {
 	GENERATED_UCLASS_BODY()
 
+protected:
 	/** Decal material. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Decal)
 	class UMaterialInterface* DecalMaterial;
 
+public:
 	/** 
 	 * Controls the order in which decal elements are rendered.  Higher values draw later (on top). 
 	 * Setting many different sort orders on many different decals prevents sorting by state and can reduce performance.
@@ -44,7 +46,7 @@ class ENGINE_API UDecalComponent : public USceneComponent
 	float FadeStartDelay;
 
 	/**
-	* Time in seconds for the decal to fade out. Set fade duration and start delay to 0 to make persistent.
+	* Time in seconds for the decal to fade out. Set fade duration and start delay to 0 to make persistent. Only fades in active simulation or game.
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Decal)
 	float FadeDuration;
@@ -112,7 +114,7 @@ protected:
 	FTimerHandle TimerHandle_DestroyDecalComponent;
 
 	/** Called when the life span of the decal has been exceeded */
-	void LifeSpanCallback();
+	virtual void LifeSpanCallback();
 
 public:
 	

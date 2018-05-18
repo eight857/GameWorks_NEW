@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MainFrameModule.h"
 #include "Widgets/Text/STextBlock.h"
@@ -22,11 +22,13 @@
 #include "Developer/HotReload/Public/IHotReload.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#include "Widgets/Input/SEditableTextBox.h"
 #include "Framework/Commands/GenericCommands.h"
 #include "AnalyticsEventAttribute.h"
 #include "Interfaces/IAnalyticsProvider.h"
 #include "EngineAnalytics.h"
 #include "Editor/EditorPerformanceSettings.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 DEFINE_LOG_CATEGORY(LogMainFrame);
 #define LOCTEXT_NAMESPACE "FMainFrameModule"
@@ -36,10 +38,10 @@ const FText StaticGetApplicationTitle( const bool bIncludeGameName )
 {
 	static const FText ApplicationTitle = NSLOCTEXT("UnrealEditor", "ApplicationTitle", "Unreal Editor");
 
-	if (bIncludeGameName && FApp::HasGameName())
+	if (bIncludeGameName && FApp::HasProjectName())
 	{
 		FFormatNamedArguments Args;
-		Args.Add(TEXT("GameName"), FText::FromString( FString( FApp::GetGameName())));
+		Args.Add(TEXT("GameName"), FText::FromString( FString( FApp::GetProjectName())));
 		Args.Add(TEXT("AppTitle"), ApplicationTitle);
 
 		const EBuildConfigurations::Type BuildConfig = FApp::GetBuildConfiguration();
@@ -71,6 +73,7 @@ void FMainFrameModule::CreateDefaultMainFrame( const bool bStartImmersive, const
 		bool bIsUserSizable = true;
 		bool bSupportsMaximize = true;
 		bool bSupportsMinimize = true;
+		EAutoCenter CenterRules = EAutoCenter::None;
 		FText WindowTitle;
 		if ( ShouldShowProjectDialogAtStartup() )
 		{
@@ -82,17 +85,12 @@ void FMainFrameModule::CreateDefaultMainFrame( const bool bStartImmersive, const
 			// Do not maximize the window initially. Keep a small dialog feel.
 			DefaultWindowLocation.InitiallyMaximized = false;
 
-
-			FDisplayMetrics DisplayMetrics;
-			FSlateApplication::Get().GetDisplayMetrics(DisplayMetrics);
-			const float DPIScaleFactor = FPlatformMisc::GetDPIScaleFactorAtPoint(DisplayMetrics.PrimaryDisplayWorkAreaRect.Left, DisplayMetrics.PrimaryDisplayWorkAreaRect.Top);
-			DefaultWindowLocation.WindowSize = GetProjectBrowserWindowSize() * DPIScaleFactor;
-			DefaultWindowLocation.ScreenPosition = DefaultWindowLocation.GetCenteredScreenPosition();
+			DefaultWindowLocation.WindowSize = GetProjectBrowserWindowSize();
 
 			bIsUserSizable = true;
 			bSupportsMaximize = true;
 			bSupportsMinimize = true;
-
+			CenterRules = EAutoCenter::PreferredWorkArea;;
 			// When opening the project dialog, show "Project Browser" in the window title
 			WindowTitle = LOCTEXT("ProjectBrowserDialogTitle", "Unreal Project Browser");
 		}
@@ -109,7 +107,7 @@ void FMainFrameModule::CreateDefaultMainFrame( const bool bStartImmersive, const
 		}
 
 		TSharedRef<SWindow> RootWindow = SNew(SWindow)
-			.AutoCenter( EAutoCenter::None )
+			.AutoCenter(CenterRules)
 			.Title( WindowTitle )
 			.IsInitiallyMaximized( DefaultWindowLocation.InitiallyMaximized )
 			.ScreenPosition( DefaultWindowLocation.ScreenPosition )
@@ -137,12 +135,14 @@ void FMainFrameModule::CreateDefaultMainFrame( const bool bStartImmersive, const
 			FDisplayMetrics DisplayMetrics;
 			FSlateApplication::Get().GetDisplayMetrics( DisplayMetrics );
 
+			const float DPIScale = FPlatformApplicationMisc::GetDPIScaleFactorAtPoint(DisplayMetrics.PrimaryDisplayWorkAreaRect.Left, DisplayMetrics.PrimaryDisplayWorkAreaRect.Top);
+
 			// Setup a position and size for the main frame window that's centered in the desktop work area
 			const float CenterScale = 0.65f;
 			const FVector2D DisplaySize(
 				DisplayMetrics.PrimaryDisplayWorkAreaRect.Right - DisplayMetrics.PrimaryDisplayWorkAreaRect.Left,
 				DisplayMetrics.PrimaryDisplayWorkAreaRect.Bottom - DisplayMetrics.PrimaryDisplayWorkAreaRect.Top );
-			const FVector2D WindowSize = CenterScale * DisplaySize;
+			const FVector2D WindowSize = (CenterScale * DisplaySize) / DPIScale;
 
 			TSharedRef<FTabManager::FLayout> LoadedLayout = FLayoutSaveRestore::LoadFromConfig(GEditorLayoutIni,
 				// We persist the positioning of the level editor and the content browser.
@@ -217,7 +217,7 @@ void FMainFrameModule::CreateDefaultMainFrame( const bool bStartImmersive, const
 
 			// make sure we only allow the message log to be shown when we have a level editor main tab
 			FMessageLogModule& MessageLogModule = FModuleManager::LoadModuleChecked<FMessageLogModule>(TEXT("MessageLog"));
-			MessageLogModule.EnableMessageLogDisplay(true);
+			MessageLogModule.EnableMessageLogDisplay(!FApp::IsUnattended());
 		}
 
 		// Initialize the main frame window
@@ -584,7 +584,7 @@ void FMainFrameModule::ShutdownModule( )
 
 bool FMainFrameModule::ShouldShowProjectDialogAtStartup( ) const
 {
-	return !FApp::HasGameName();
+	return !FApp::HasProjectName();
 }
 
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -24,9 +24,6 @@ class ENGINE_API UNavRelevantComponent : public UActorComponent, public INavRele
 	virtual void UpdateNavigationBounds() override;
 	virtual UObject* GetNavigationParent() const override;
 	//~ End INavRelevantInterface Interface
-
-	DEPRECATED(4.8, "This function is deprecated. Use CalcAndCacheBounds instead")
-	virtual void CalcBounds();
 	
 	virtual void CalcAndCacheBounds() const;
 

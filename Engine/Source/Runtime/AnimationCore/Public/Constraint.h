@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Constraint.h: Constraint data structures
@@ -256,8 +256,8 @@ enum class EConstraintType : uint8
 	/** Aim Constraint*/
 	Aim,
 
-	/** Max - invalid */
-	Max, 
+	/** MAX - invalid */
+	MAX,
 };
 
 /** A description of how to apply a simple transform constraint */
@@ -425,7 +425,7 @@ struct FConstraintDescriptor
 	FConstraintDescriptionEx* ConstraintDescription;
 
 	FConstraintDescriptor()
-		: Type(EConstraintType::Max)
+		: Type(EConstraintType::MAX)
 		, ConstraintDescription(nullptr)
 	{
 	}

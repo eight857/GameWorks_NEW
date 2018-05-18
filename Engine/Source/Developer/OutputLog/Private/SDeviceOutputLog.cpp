@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SDeviceOutputLog.h"
 #include "Framework/Text/TextLayout.h"
@@ -60,7 +60,7 @@ void SDeviceOutputLog::Construct( const FArguments& InArgs )
 				.AutoWidth()
 				[
 					SAssignNew(TargetDeviceComboButton, SComboButton)
-					.ComboButtonStyle(FEditorStyle::Get(), "OutputLog.Filters.Style")
+					.ComboButtonStyle(FEditorStyle::Get(), "GenericFilters.ComboButtonStyle")
 					.ForegroundColor(FLinearColor::White)
 					.OnGetMenuContent(this, &SDeviceOutputLog::MakeDeviceComboButtonMenu)
 					.ContentPadding(FMargin(4.0f, 0.0f))
@@ -82,7 +82,7 @@ void SDeviceOutputLog::Construct( const FArguments& InArgs )
 						.VAlign(VAlign_Center)
 						[
 							SNew(STextBlock)
-							.TextStyle(FEditorStyle::Get(), "OutputLog.Filters.Text")
+							.TextStyle(FEditorStyle::Get(), "GenericFilters.TextStyle")
 							.Text(this, &SDeviceOutputLog::GetSelectedTargetDeviceText)
 						]
 					]

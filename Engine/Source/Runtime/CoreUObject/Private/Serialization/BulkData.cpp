@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "Serialization/BulkData.h"
@@ -15,6 +15,7 @@
 #include "UObject/LinkerSave.h"
 #include "Interfaces/ITargetPlatform.h"
 #include "UObject/DebugSerializationFlags.h"
+#include "Serialization/AsyncLoadingPrivate.h"
 
 /*-----------------------------------------------------------------------------
 	Constructors and operators
@@ -362,7 +363,7 @@ bool FUntypedBulkData::IsBulkDataLoaded() const
 
 bool FUntypedBulkData::IsAsyncLoadingComplete()
 {
-	return SerializeFuture.IsValid() == false || SerializeFuture.WaitFor(FTimespan(0));
+	return SerializeFuture.IsValid() == false || SerializeFuture.WaitFor(FTimespan::Zero());
 }
 
 /**
@@ -1334,7 +1335,7 @@ void FUntypedBulkData::WaitForAsyncLoading()
 {
 	check(SerializeFuture.IsValid());
 	DECLARE_SCOPE_CYCLE_COUNTER(TEXT("FUntypedBulkData::WaitForAsyncLoading"), STAT_UBD_WaitForAsyncLoading, STATGROUP_Memory);
-	while (!SerializeFuture.WaitFor(FTimespan(0, 0, 0, 0, 1000)))
+	while (!SerializeFuture.WaitFor(FTimespan::FromMilliseconds(1000.0)))
 	{
 		UE_LOG(LogSerialization, Warning, TEXT("Waiting for %s bulk data (%d) to be loaded longer than 1000ms"), *Filename, GetBulkDataSize());
 	}
@@ -1372,20 +1373,40 @@ void FUntypedBulkData::LoadDataIntoMemory( void* Dest )
 #if WITH_EDITOR
 	checkf( AttachedAr, TEXT( "Attempted to load bulk data without an attached archive. Most likely the bulk data was loaded twice on console, which is not supported" ) );
 
+	FArchive* BulkDataArchive = nullptr;
+	if (Linker && Linker->GetFArchiveAsync2Loader() && Linker->GetFArchiveAsync2Loader()->IsCookedForEDLInEditor() &&
+		(BulkDataFlags & BULKDATA_PayloadInSeperateFile))
+	{
+		// The attached archive is a package cooked for EDL loaded in the editor so the actual bulk data sits in a separate ubulk file.
+		const FString BulkDataFilename = FPaths::ChangeExtension(Filename, TEXT(".ubulk"));
+		BulkDataArchive = IFileManager::Get().CreateFileReader(*BulkDataFilename, FILEREAD_Silent);
+	}
+
+	if (!BulkDataArchive)
+	{
+		BulkDataArchive = AttachedAr;
+	}
+
 	// Keep track of current position in file so we can restore it later.
-	int64 PushedPos = AttachedAr->Tell();
+	int64 PushedPos = BulkDataArchive->Tell();
 	// Seek to the beginning of the bulk data in the file.
-	AttachedAr->Seek( BulkDataOffsetInFile );
+	BulkDataArchive->Seek( BulkDataOffsetInFile );
 		
-	SerializeBulkData( *AttachedAr, Dest );
+	SerializeBulkData( *BulkDataArchive, Dest );
 
 	// Restore file pointer.
-	AttachedAr->Seek( PushedPos );
-	AttachedAr->FlushCache();
+	BulkDataArchive->Seek( PushedPos );
+	BulkDataArchive->FlushCache();
+
+	if (BulkDataArchive != AttachedAr)
+	{
+		delete BulkDataArchive;
+		BulkDataArchive = nullptr;
+	}
 
 #else
 	bool bWasLoadedSuccessfully = false;
-	if ((IsInGameThread() || IsInAsyncLoadingThread()) && Package.IsValid() && Package->LinkerLoad && Package->LinkerLoad->GetOwnerThreadId() == FPlatformTLS::GetCurrentThreadId() && ((BulkDataFlags & BULKDATA_PayloadInSeperateFile) == 0))
+	if (IsInAsyncLoadingThread() && Package.IsValid() && Package->LinkerLoad && Package->LinkerLoad->GetOwnerThreadId() == FPlatformTLS::GetCurrentThreadId() && ((BulkDataFlags & BULKDATA_PayloadInSeperateFile) == 0))
 	{
 		FLinkerLoad* LinkerLoad = Package->LinkerLoad;
 		if (LinkerLoad && LinkerLoad->Loader)
@@ -1412,8 +1433,17 @@ void FUntypedBulkData::LoadDataIntoMemory( void* Dest )
 	{
 		// load from the specied filename when the linker has been cleared
 		checkf( Filename != TEXT(""), TEXT( "Attempted to load bulk data without a proper filename." ) );
-	
-		UE_CLOG(GEventDrivenLoaderEnabled && !(IsInGameThread() || IsInAsyncLoadingThread()), LogSerialization, Error, TEXT("Attempt to sync load bulk data with EDL enabled (LoadDataIntoMemory). This is not desireable. File %s"), *Filename);
+
+#if PLATFORM_SUPPORTS_TEXTURE_STREAMING
+		static auto CVarTextureStreamingEnabled = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TextureStreaming"));
+		check(CVarTextureStreamingEnabled);
+		// Because "r.TextureStreaming" is driven by the project setting as well as the command line option "-NoTextureStreaming", 
+		// is it possible for streaming mips to be loaded in non streaming ways.
+		if (CVarTextureStreamingEnabled->GetValueOnAnyThread() != 0)
+		{
+			UE_CLOG(GEventDrivenLoaderEnabled && (IsInGameThread() || IsInAsyncLoadingThread()), LogSerialization, Error, TEXT("Attempt to sync load bulk data with EDL enabled (LoadDataIntoMemory). This is not desireable. File %s"), *Filename);
+		}
+#endif
 
 		if (GEventDrivenLoaderEnabled && (Filename.EndsWith(TEXT(".uasset")) || Filename.EndsWith(TEXT(".umap"))))
 		{
@@ -1563,23 +1593,25 @@ void FFormatContainer::Serialize(FArchive& Ar, UObject* Owner, const TArray<FNam
 		check(Ar.IsCooking() && FormatsToSave); // this thing is for cooking only, and you need to provide a list of formats
 
 		int32 NumFormats = 0;
-		for (TMap<FName, FByteBulkData*>:: TIterator It(Formats); It; ++It)
+		for (const TPair<FName, FByteBulkData*>& Format : Formats)
 		{
-			if (FormatsToSave->Contains(It.Key()) && It.Value()->GetBulkDataSize() > 0)
+			const FName Name = Format.Key;
+			FByteBulkData* Bulk = Format.Value;
+			check(Bulk);
+			if (FormatsToSave->Contains(Name) && Bulk->GetBulkDataSize() > 0)
 			{
 				NumFormats++;
 			}
 		}
 		Ar << NumFormats;
-		for (TMap<FName, FByteBulkData*>:: TIterator It(Formats); It; ++It)
+		for (const TPair<FName, FByteBulkData*>& Format : Formats)
 		{
-			if (FormatsToSave->Contains(It.Key()) && It.Value()->GetBulkDataSize() > 0)
+			FName Name = Format.Key;
+			FByteBulkData* Bulk = Format.Value;
+			if (FormatsToSave->Contains(Name) && Bulk->GetBulkDataSize() > 0)
 			{
 				NumFormats--;
-				FName Name = It.Key();
 				Ar << Name;
-				FByteBulkData* Bulk = It.Value();
-				check(Bulk);
 				// Force this kind of bulk data (physics, etc) to be stored inline for streaming
 				const uint32 OldBulkDataFlags = Bulk->GetBulkDataFlags();
 				Bulk->SetBulkDataFlags(bSingleUse ? (BULKDATA_ForceInlinePayload | BULKDATA_SingleUse) : BULKDATA_ForceInlinePayload);				

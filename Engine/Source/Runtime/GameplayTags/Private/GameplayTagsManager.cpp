@@ -1,6 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
+
 
 #include "GameplayTagsManager.h"
+#include "Engine/Engine.h"
 #include "HAL/PlatformFilemanager.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
@@ -48,7 +50,7 @@ void UGameplayTagsManager::LoadGameplayTagTables()
 
 	UGameplayTagsSettings* MutableDefault = GetMutableDefault<UGameplayTagsSettings>();
 
-	for (FStringAssetReference DataTablePath : MutableDefault->GameplayTagTableList)
+	for (FSoftObjectPath DataTablePath : MutableDefault->GameplayTagTableList)
 	{
 		UDataTable* TagTable = LoadObject<UDataTable>(nullptr, *DataTablePath.ToString(), nullptr, LOAD_None, nullptr);
 
@@ -151,7 +153,7 @@ void UGameplayTagsManager::ConstructGameplayTagTree()
 		
 			// Read all tags from the ini
 			TArray<FString> FilesInDirectory;
-			IFileManager::Get().FindFilesRecursive(FilesInDirectory, *(FPaths::GameConfigDir() / TEXT("Tags")), TEXT("*.ini"), true, false);
+			IFileManager::Get().FindFilesRecursive(FilesInDirectory, *(FPaths::ProjectConfigDir() / TEXT("Tags")), TEXT("*.ini"), true, false);
 			FilesInDirectory.Sort();
 			for (FString& FileName : FilesInDirectory)
 			{
@@ -188,6 +190,14 @@ void UGameplayTagsManager::ConstructGameplayTagTree()
 				}
 			}
 		}
+
+#if WITH_EDITOR
+		// Add any transient editor-only tags
+		for (FName TransientTag : TransientEditorTags)
+		{
+			AddTagTableRow(FGameplayTagTableRow(TransientTag), FGameplayTagSource::GetTransientEditorName());
+		}
+#endif
 
 		// Grab the commonly replicated tags
 		CommonlyReplicatedTags.Empty();
@@ -517,6 +527,25 @@ void UGameplayTagsManager::RedirectSingleGameplayTag(FGameplayTag& Tag, UPropert
 #endif
 }
 
+bool UGameplayTagsManager::ImportSingleGameplayTag(FGameplayTag& Tag, FName ImportedTagName) const
+{
+	if (const FGameplayTag* RedirectedTag = TagRedirects.Find(ImportedTagName))
+	{
+		Tag = *RedirectedTag;
+		return true;
+	}
+	else if (ValidateTagCreation(ImportedTagName))
+	{
+		// The tag name is valid
+		Tag.TagName = ImportedTagName;
+		return true;
+	}
+
+	// No valid tag established in this attempt
+	Tag.TagName = NAME_None;
+	return false;
+}
+
 void UGameplayTagsManager::InitializeManager()
 {
 	check(!SingletonManager);
@@ -602,6 +631,11 @@ void UGameplayTagsManager::DestroyGameplayTagTree()
 		GameplayRootTag.Reset();
 		GameplayTagNodeMap.Reset();
 	}
+}
+
+bool UGameplayTagsManager::IsNativelyAddedTag(FGameplayTag Tag) const
+{
+	return NativeTagsToAdd.Contains(Tag.GetTagName());
 }
 
 int32 UGameplayTagsManager::InsertTagIntoNodeArray(FName Tag, TSharedPtr<FGameplayTagNode> ParentNode, TArray< TSharedPtr<FGameplayTagNode> >& NodeArray, FName SourceName, const FString& DevComment)
@@ -1157,7 +1191,7 @@ FGameplayTag UGameplayTagsManager::FindGameplayTagFromPartialString_Slow(FString
 	return FoundTag;
 }
 
-FGameplayTag UGameplayTagsManager::AddNativeGameplayTag(FName TagName)
+FGameplayTag UGameplayTagsManager::AddNativeGameplayTag(FName TagName, const FString& TagDevComment)
 {
 	if (TagName.IsNone())
 	{
@@ -1174,12 +1208,33 @@ FGameplayTag UGameplayTagsManager::AddNativeGameplayTag(FName TagName)
 			NativeTagsToAdd.Add(TagName);
 		}
 
-		AddTagTableRow(FGameplayTagTableRow(TagName), FGameplayTagSource::GetNativeName());
+		AddTagTableRow(FGameplayTagTableRow(TagName, TagDevComment), FGameplayTagSource::GetNativeName());
 
 		return NewTag;
 	}
 
 	return FGameplayTag();
+}
+void UGameplayTagsManager::CallOrRegister_OnDoneAddingNativeTagsDelegate(FSimpleMulticastDelegate::FDelegate Delegate)
+{
+	if (bDoneAddingNativeTags)
+	{
+		Delegate.Execute();
+	}
+	else
+	{
+		bool bAlreadyBound = Delegate.GetUObject() != nullptr ? OnDoneAddingNativeTagsDelegate().IsBoundToObject(Delegate.GetUObject()) : false;
+		if (!bAlreadyBound)
+		{
+			OnDoneAddingNativeTagsDelegate().Add(Delegate);
+		}
+	}
+}
+
+FSimpleMulticastDelegate& UGameplayTagsManager::OnDoneAddingNativeTagsDelegate()
+{
+	static FSimpleMulticastDelegate Delegate;
+	return Delegate;
 }
 
 FSimpleMulticastDelegate& UGameplayTagsManager::OnLastChanceToAddNativeTags()
@@ -1190,17 +1245,19 @@ FSimpleMulticastDelegate& UGameplayTagsManager::OnLastChanceToAddNativeTags()
 
 void UGameplayTagsManager::DoneAddingNativeTags()
 {
-	// Safe to call multiple times, only works the first time
-	if (!bDoneAddingNativeTags)
+	// Safe to call multiple times, only works the first time, must be called after the engine
+	// is initialized (DoneAddingNativeTags is bound to PostEngineInit to cover anything that's skipped).
+	if (GEngine && !bDoneAddingNativeTags)
 	{
 		UE_LOG(LogGameplayTags, Display, TEXT("UGameplayTagsManager::DoneAddingNativeTags. DelegateIsBound: %d"), (int32)OnLastChanceToAddNativeTags().IsBound());
 		OnLastChanceToAddNativeTags().Broadcast();
 		bDoneAddingNativeTags = true;
 
-		if (ShouldUseFastReplication())
-		{
-			ConstructNetIndex();
-		}
+		// We may add native tags that are needed for redirectors, so reconstruct the GameplayTag tree
+		DestroyGameplayTagTree();
+		ConstructGameplayTagTree();
+
+		OnDoneAddingNativeTagsDelegate().Broadcast();
 	}
 }
 

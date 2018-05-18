@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayEffectExecutionCalculation.h"
 #include "AbilitySystemComponent.h"
@@ -195,6 +195,53 @@ bool FGameplayEffectCustomExecutionParameters::AttemptGetCapturedAttributeAggreg
 		{
 			return CaptureSpec->AttemptGetAttributeAggregatorSnapshot(OutSnapshottedAggregator);
 		}
+	}
+
+	return false;
+}
+
+bool FGameplayEffectCustomExecutionParameters::AttemptGatherAttributeMods(const FGameplayEffectAttributeCaptureDefinition& InCaptureDef, const FAggregatorEvaluateParameters& InEvalParams, OUT TMap<EGameplayModEvaluationChannel, const TArray<FAggregatorMod>*>& OutModMap) const
+{
+	check(OwningSpec);
+
+	const FAggregator* CalcAgg = ScopedModifierAggregators.Find(InCaptureDef);
+	if (CalcAgg)
+	{
+		CalcAgg->GetAllAggregatorMods(OutModMap);
+	}
+	else
+	{
+		const FGameplayEffectAttributeCaptureSpec* CaptureSpec = OwningSpec->CapturedRelevantAttributes.FindCaptureSpecByDefinition(InCaptureDef, true);
+		if (CaptureSpec)
+		{
+			return CaptureSpec->AttemptGatherAttributeMods(InEvalParams, OutModMap);
+		}
+	}
+
+	return false;
+}
+
+bool FGameplayEffectCustomExecutionParameters::ForEachQualifiedAttributeMod(const FGameplayEffectAttributeCaptureDefinition& InCaptureDef, const FAggregatorEvaluateParameters& InEvalParams, TFunction< void(EGameplayModEvaluationChannel, EGameplayModOp::Type, const FAggregatorMod&) > Func) const
+{
+	TMap<EGameplayModEvaluationChannel, const TArray<FAggregatorMod>*> ModMap;
+	if (AttemptGatherAttributeMods(InCaptureDef, InEvalParams, ModMap))
+	{
+		for (auto It : ModMap)
+		{
+			const TArray<FAggregatorMod>* ModList = It.Value;
+			for (int32 ModOpIdx = 0; ModOpIdx < EGameplayModOp::Max; ++ModOpIdx)
+			{
+				const TArray<FAggregatorMod>& CurModArray = ModList[ModOpIdx];
+				for (const FAggregatorMod& AggMod : CurModArray)
+				{
+					if (AggMod.Qualifies())
+					{
+						Func(It.Key, (EGameplayModOp::Type)ModOpIdx, AggMod);
+					}
+				}
+			}
+		}
+		return true;
 	}
 
 	return false;

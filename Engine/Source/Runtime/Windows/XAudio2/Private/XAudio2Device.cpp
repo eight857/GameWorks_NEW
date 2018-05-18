@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	XeAudioDevice.cpp: Unreal XAudio2 Audio interface object.
@@ -61,10 +61,6 @@ const float* FXAudioDeviceProperties::OutputMixMatrix = NULL;
 #if XAUDIO_SUPPORTS_DEVICE_DETAILS
 XAUDIO2_DEVICE_DETAILS FXAudioDeviceProperties::DeviceDetails;
 #endif	//XAUDIO_SUPPORTS_DEVICE_DETAILS
-
-#if PLATFORM_WINDOWS
-FMMNotificationClient* FXAudioDeviceProperties::NotificationClient = nullptr;
-#endif
 
 /*------------------------------------------------------------------------------------
 	FAudioDevice Interface.
@@ -291,6 +287,37 @@ void FXAudio2Device::TeardownHardware()
 
 void FXAudio2Device::UpdateHardware()
 {
+	// If the audio device changed, we need to tear down and restart the audio engine state
+	if (DeviceProperties->DidAudioDeviceChange())
+	{
+		//Cache the current audio clock.
+		CachedAudioClockStartTime = GetAudioClock();
+
+		// Flush stops all sources so sources can be safely deleted below.
+		Flush(nullptr);
+
+		// Remove the effects manager
+		if (Effects)
+		{
+			delete Effects;
+			Effects = nullptr;
+		}
+	
+		// Teardown hardware
+		TeardownHardware();
+		
+		// Restart the hardware
+		InitializeHardware();
+
+		// Recreate the effects manager
+		Effects = CreateEffectsManager();
+
+		// Now reset and restart the sound source objects
+		FreeSources.Reset();
+		Sources.Reset();
+
+		InitSoundSources();
+	}
 }
 
 void FXAudio2Device::UpdateAudioClock()
@@ -305,7 +332,7 @@ void FXAudio2Device::UpdateAudioClock()
 	}
 	else
 	{
-		AudioClock = NewAudioClock;
+		AudioClock = NewAudioClock + CachedAudioClockStartTime;
 	}
 }
 

@@ -1,7 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SSkeletonTreeRow.h"
 #include "ISkeletonTree.h"
+#include "Preferences/PersonaOptions.h"
 
 void SSkeletonTreeRow::Construct( const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTableView )
 {
@@ -44,7 +45,11 @@ TSharedRef< SWidget > SSkeletonTreeRow::GenerateWidgetForColumn( const FName& Co
 	{
 		TSharedPtr< SHorizontalBox > RowBox;
 
-		SAssignNew( RowBox, SHorizontalBox );
+		SAssignNew( RowBox, SHorizontalBox )
+			.Visibility_Lambda([this]()
+			{
+				return Item.Pin()->GetFilterResult() == ESkeletonTreeFilterResult::ShownDescendant && GetMutableDefault<UPersonaOptions>()->bHideParentsWhenFiltering ? EVisibility::Collapsed : EVisibility::Visible;
+			});
 
 		RowBox->AddSlot()
 			.AutoWidth()

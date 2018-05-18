@@ -1,6 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sound/SoundWaveProcedural.h"
+
+#include "AudioDevice.h"
+#include "Engine/Engine.h"
+
 
 USoundWaveProcedural::USoundWaveProcedural(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -8,13 +12,48 @@ USoundWaveProcedural::USoundWaveProcedural(const FObjectInitializer& ObjectIniti
 	bProcedural = true;
 	bReset = false;
 	NumBufferUnderrunSamples = 512;
-	NumSamplesToGeneratePerCallback = 1024;
+	NumSamplesToGeneratePerCallback = DEFAULT_PROCEDURAL_SOUNDWAVE_BUFFER_SIZE;
+
+	// If the main audio device has been set up, we can use this to define our callback size.
+	// We need to do this for procedural sound waves that we do not process asynchronously,
+	// to ensure that we do not underrun.
+	
+	if (GEngine)
+	{
+		FAudioDevice* MainAudioDevice = GEngine->GetMainAudioDevice();
+		if (MainAudioDevice && !MainAudioDevice->IsAudioMixerEnabled())
+		{
+#if PLATFORM_MAC
+			// We special case the mac callback on the old audio engine, Since Buffer Length is smaller than the device callback size.
+			NumSamplesToGeneratePerCallback = 2048;
+#else
+			NumSamplesToGeneratePerCallback = MainAudioDevice->GetBufferLength();
+#endif
+			NumBufferUnderrunSamples = NumSamplesToGeneratePerCallback / 2;
+		}
+	}
+
+	SampleByteSize = 2;
+
+	// This is set to true to default to old behavior in old audio engine
+	// Audio mixer uses sound wave procedural in async tasks and sets this to false when using it.
+	bIsReadyForDestroy = true;
+
 	checkf(NumSamplesToGeneratePerCallback >= NumBufferUnderrunSamples, TEXT("Should generate more samples than this per callback."));
+}
+
+USoundWaveProcedural::USoundWaveProcedural(FVTableHelper& Helper)
+	: Super(Helper)
+{
+	bIsReadyForDestroy = true;
 }
 
 void USoundWaveProcedural::QueueAudio(const uint8* AudioData, const int32 BufferSize)
 {
-	if (BufferSize == 0 || !ensure((BufferSize % sizeof(int16)) == 0))
+	Audio::EAudioMixerStreamDataFormat::Type Format = GetGeneratedPCMDataFormat();
+	SampleByteSize = (Format == Audio::EAudioMixerStreamDataFormat::Int16) ? 2 : 4;
+
+	if (BufferSize == 0 || !ensure((BufferSize % SampleByteSize) == 0))
 	{
 		return;
 	}
@@ -44,9 +83,13 @@ int32 USoundWaveProcedural::GeneratePCMData(uint8* PCMData, const int32 SamplesN
 	{
 		bReset = false;
 		AudioBuffer.Reset();
+		AvailableByteCount.Reset();
 	}
 
-	int32 SamplesAvailable = AudioBuffer.Num() / sizeof(int16);
+	Audio::EAudioMixerStreamDataFormat::Type Format = GetGeneratedPCMDataFormat();
+	SampleByteSize = (Format == Audio::EAudioMixerStreamDataFormat::Int16) ? 2 : 4;
+
+	int32 SamplesAvailable = AudioBuffer.Num() / SampleByteSize;
 	int32 SamplesToGenerate = FMath::Min(NumSamplesToGeneratePerCallback, SamplesNeeded);
 
 	check(SamplesToGenerate >= NumBufferUnderrunSamples);
@@ -74,13 +117,13 @@ int32 USoundWaveProcedural::GeneratePCMData(uint8* PCMData, const int32 SamplesN
 		PumpQueuedAudio();
 	}
 
-	SamplesAvailable = AudioBuffer.Num() / sizeof(int16);
+	SamplesAvailable = AudioBuffer.Num() / SampleByteSize;
 
 	// Wait until we have enough samples that are requested before starting.
 	if (SamplesAvailable >= SamplesToGenerate)
 	{
 		const int32 SamplesToCopy = FMath::Min<int32>(SamplesToGenerate, SamplesAvailable);
-		const int32 BytesToCopy = SamplesToCopy * sizeof(int16);
+		const int32 BytesToCopy = SamplesToCopy * SampleByteSize;
 
 		FMemory::Memcpy((void*)PCMData, &AudioBuffer[0], BytesToCopy);
 		AudioBuffer.RemoveAt(0, BytesToCopy);
@@ -92,7 +135,7 @@ int32 USoundWaveProcedural::GeneratePCMData(uint8* PCMData, const int32 SamplesN
 	}
 
 	// There wasn't enough data ready, write out zeros
-	const int32 BytesCopied = NumBufferUnderrunSamples * sizeof(int16);
+	const int32 BytesCopied = NumBufferUnderrunSamples * SampleByteSize;
 	FMemory::Memzero(PCMData, BytesCopied);
 	return BytesCopied;
 }
@@ -119,6 +162,11 @@ int32 USoundWaveProcedural::GetResourceSizeForFormat(FName Format)
 void USoundWaveProcedural::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const
 {
 	Super::GetAssetRegistryTags(OutTags);
+}
+
+bool USoundWaveProcedural::IsReadyForFinishDestroy()
+{
+	return bIsReadyForDestroy;
 }
 
 bool USoundWaveProcedural::HasCompressedData(FName Format) const

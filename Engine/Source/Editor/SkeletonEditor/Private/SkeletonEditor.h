@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,11 +9,13 @@
 #include "EditorUndoClient.h"
 #include "IDetailsView.h"
 #include "ISkeletonEditor.h"
+#include "ArrayView.h"
 
 class IPersonaToolkit;
 class IPersonaViewport;
 class ISkeletonTree;
 class USkeleton;
+class ISkeletonTreeItem;
 
 namespace SkeletonEditorModes
 {
@@ -62,7 +64,7 @@ public:
 	/** FTickableEditorObject Interface */
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
-	virtual bool IsTickable() const override { return true; }
+	virtual ETickableTickType GetTickableTickType() const override { return ETickableTickType::Always; }
 
 	/** @return the documentation location for this editor */
 	virtual FString GetDocumentationLink() const override
@@ -77,6 +79,8 @@ public:
 	void HandleObjectsSelected(const TArray<UObject*>& InObjects);
 
 	void HandleObjectSelected(UObject* InObject);
+
+	void HandleSelectionChanged(const TArrayView<TSharedPtr<ISkeletonTreeItem>>& InSelectedItems, ESelectInfo::Type InSelectInfo);
 
 	void HandleDetailsCreated(const TSharedRef<class IDetailsView>& InDetailsView);
 

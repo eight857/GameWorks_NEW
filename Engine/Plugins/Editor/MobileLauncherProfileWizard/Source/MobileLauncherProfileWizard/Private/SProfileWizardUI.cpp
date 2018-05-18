@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SProfileWizardUI.h"
@@ -29,7 +29,7 @@
 #include "InstalledPlatformInfo.h"
 #include "PlatformInfo.h"
 #include "DesktopPlatformModule.h"
-#include "Common/GameProjectHelper.h"
+#include "GameProjectHelper.h"
 
 #define LOCTEXT_NAMESPACE "MobileLauncherProfileWizard"
 

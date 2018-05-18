@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 TextureInstanceView.h: Definitions of classes used for texture streaming.
@@ -44,6 +44,15 @@ void FTextureInstanceView::FBounds4::Clear(int32 Index)
 	MinRangeSq.Component(Index) = 0;
 	MaxRangeSq.Component(Index) = FLT_MAX;
 	LastRenderTime.Component(Index) = -FLT_MAX;
+}
+
+void FTextureInstanceView::FBounds4::OffsetBounds(int32 Index, const FVector& Offset)
+{
+	check(Index >= 0 && Index < 4);
+
+	OriginX.Component(Index) += Offset.X;
+	OriginY.Component(Index) += Offset.Y;
+	OriginZ.Component(Index) += Offset.Z;
 }
 
 void FTextureInstanceView::FBounds4::UpdateLastRenderTime(int32 Index, float InLastRenderTime)

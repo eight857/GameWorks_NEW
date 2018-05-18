@@ -1,4 +1,6 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
+
+#include "MediaAssetsPrivate.h"
 
 #include "CoreMinimal.h"
 #include "Misc/CoreMisc.h"
@@ -6,7 +8,7 @@
 #include "Modules/ModuleManager.h"
 #include "UObject/UObjectHash.h"
 #include "UObject/UObjectIterator.h"
-#include "MediaAssetsPrivate.h"
+
 #include "MediaPlayer.h"
 
 

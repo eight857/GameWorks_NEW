@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================================
 	MacPlatformMath.h: Mac platform Math functions
@@ -50,6 +50,16 @@ struct FMacPlatformMath : public FGenericPlatformMath
 		// Note: the x2 is to workaround the rounding-to-nearest-even-number issue when the fraction is .5
 		return -(_mm_cvt_ss2si(_mm_set_ss(-0.5f - (F + F))) >> 1);
 	}
+
+#if PLATFORM_ENABLE_POPCNT_INTRINSIC
+	/**
+	 * Use the SSE instruction to count bits
+	 */
+	static FORCEINLINE int32 CountBits(uint64 Bits)
+	{
+		return __builtin_popcountll(Bits);
+	}
+#endif
 
 	static FORCEINLINE float CeilToFloat(float F)
 	{

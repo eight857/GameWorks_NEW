@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -64,6 +64,10 @@ class NETCODEUNITTEST_API FScopedLog
 {
 protected:
 	FScopedLog()
+		: LogCategories()
+		, UnitTest(nullptr)
+		, bRemoteLogging(false)
+		, bSuppressLogging(false)
 	{
 	}
 
@@ -75,13 +79,15 @@ public:
 	 * @param InUnitTest		When tracking netcode-related logs, or doing remote logging, specify the client unit test here
 	 * @param bInRemoteLogging	Whether or not to enable logging on the remote server
 	 */
-	FScopedLog(const TArray<FString>& InLogCategories, UClientUnitTest* InUnitTest=NULL, bool bInRemoteLogging=false)
+	FORCEINLINE FScopedLog(const TArray<FString>& InLogCategories, UClientUnitTest* InUnitTest=nullptr, bool bInRemoteLogging=false)
+		: FScopedLog()
 	{
 		InternalConstruct(InLogCategories, InUnitTest, bInRemoteLogging);
 	}
 
 	// As above, but for a single log category
-	FScopedLog(const FString InLogCategory, UClientUnitTest* InUnitTest=NULL, bool bInRemoteLogging=false)
+	FORCEINLINE FScopedLog(const FString InLogCategory, UClientUnitTest* InUnitTest=nullptr, bool bInRemoteLogging=false)
+		: FScopedLog()
 	{
 		TArray<FString> TempLogCategories;
 		TempLogCategories.Add(InLogCategory);
@@ -105,15 +111,45 @@ protected:
 
 	/** Whether or not this is also controlling remote logging as well */
 	bool bRemoteLogging;
+
+	/** Whether or not to suppress instead of enable logging */
+	bool bSuppressLogging;
 };
 
 /**
- * Version of the above, for scoped logging of all netcode-related logs
+ * Version of FScopedLog, for suppressing instead of enabling log entries
+ */
+class FScopedLogSuppress : public FScopedLog
+{
+public:
+	FORCEINLINE FScopedLogSuppress(const TArray<FString>& InLogCategories, UClientUnitTest* InUnitTest=nullptr,
+									bool bInRemoteLogging=false)
+		: FScopedLog()
+	{
+		bSuppressLogging = true;
+
+		InternalConstruct(InLogCategories, InUnitTest, bInRemoteLogging);
+	}
+
+	FORCEINLINE FScopedLogSuppress(const FString InLogCategory, UClientUnitTest* InUnitTest=nullptr, bool bInRemoteLogging=false)
+		: FScopedLog()
+	{
+		TArray<FString> TempLogCategories;
+		TempLogCategories.Add(InLogCategory);
+
+		bSuppressLogging = true;
+
+		InternalConstruct(TempLogCategories, InUnitTest, bInRemoteLogging);
+	}
+};
+
+/**
+ * Version of FScopedLog, for scoped logging of all netcode-related logs
  */
 class NETCODEUNITTEST_API FScopedLogNet : public FScopedLog
 {
 public:
-	FScopedLogNet(UClientUnitTest* InUnitTest, bool bInRemoteLogging=false)
+	FORCEINLINE FScopedLogNet(UClientUnitTest* InUnitTest, bool bInRemoteLogging=false)
 	{
 		TArray<FString> TempLogCategories;
 
@@ -133,6 +169,10 @@ public:
 };
 
 
+// @todo #JohnB: When you continue implementing this, as a part of the ProcessEvent stack trace feature below,
+//					merge this class with the very similar 'FProcessEventHook' class in NUTUtilNet.h,
+//					then make the stack trace hook use that.
+#if 0
 #if !UE_BUILD_SHIPPING
 /**
  * Base class for transparently hooking ProcessEvent
@@ -162,8 +202,13 @@ protected:
 	/** If a 'Actor::ProcessEventDelegate' value was already set, this caches it so it can be transparently hooked and restored later */
 	FOnProcessEvent		OrigEventHook;
 };
+#endif
+#endif
 
 
+
+// @todo #JohnB: Reimplement this, by refactoring the above commented class, when this debug feature is next needed
+#if 0
 /**
  * A class for hooking and logging all ProcessEvent calls, within a particular code scope, similar to the above code
  */
@@ -427,7 +472,7 @@ public:
 	/**
 	 * Destructor
 	 */
-	~FLogStackTraceManager()
+	virtual ~FLogStackTraceManager() override
 	{
 		if (GLog != nullptr)
 		{
@@ -596,7 +641,16 @@ public:
 				if (CurEntry.LogLine == Data)
 				{
 					bWithinLogTrace = true;
-					GTraceManager->AddTrace(CurEntry.LogLine, false, CurEntry.bDump);
+
+					if (CurEntry.bDump)
+					{
+						GTraceManager->TraceAndDump(CurEntry.LogLine);
+					}
+					else
+					{
+						GTraceManager->AddTrace(CurEntry.LogLine);
+					}
+
 					bWithinLogTrace = false;
 				}
 			}
@@ -609,7 +663,16 @@ public:
 					{
 						// NOTE: Do not use Data for the TraceName, as this makes things much harder to track
 						bWithinLogTrace = true;
-						GTraceManager->AddTrace(CurEntry.LogLine, false, CurEntry.bDump);
+
+						if (CurEntry.bDump)
+						{
+							GTraceManager->TraceAndDump(CurEntry.LogLine);
+						}
+						else
+						{
+							GTraceManager->AddTrace(CurEntry.LogLine);
+						}
+
 						bWithinLogTrace = false;
 					}
 				}

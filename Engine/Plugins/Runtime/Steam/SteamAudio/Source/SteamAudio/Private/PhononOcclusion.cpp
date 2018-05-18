@@ -15,8 +15,9 @@
 namespace SteamAudio
 {
 	FPhononOcclusion::FPhononOcclusion()
-		: EnvironmentalRenderer(nullptr)
-		, SteamAudioModule(nullptr)
+		: Environment(nullptr)
+		, EnvironmentalRenderer(nullptr)
+		, EnvironmentCriticalSectionHandle(nullptr)
 	{
 		InputAudioFormat.channelLayout = IPL_CHANNELLAYOUT_MONO;
 		InputAudioFormat.channelLayoutType = IPL_CHANNELLAYOUTTYPE_SPEAKERS;
@@ -41,29 +42,27 @@ namespace SteamAudio
 	{
 	}
 
-	void FPhononOcclusion::Initialize(const int32 SampleRate, const int32 NumSources, const int32 FrameSize)
+	void FPhononOcclusion::Initialize(const FAudioPluginInitializationParams InitializationParams)
 	{
-		DirectSoundSources.AddDefaulted(NumSources);
+		DirectSoundSources.AddDefaulted(InitializationParams.NumSources);
 
-		for (auto& DirectSoundSource : DirectSoundSources)
+		for (FDirectSoundSource& DirectSoundSource : DirectSoundSources)
 		{
 			DirectSoundSource.InBuffer.format = InputAudioFormat;
-			DirectSoundSource.InBuffer.numSamples = FrameSize;
+			DirectSoundSource.InBuffer.numSamples = InitializationParams.BufferLength;
 			DirectSoundSource.InBuffer.interleavedBuffer = nullptr;
 			DirectSoundSource.InBuffer.deinterleavedBuffer = nullptr;
 
 			DirectSoundSource.OutBuffer.format = OutputAudioFormat;
-			DirectSoundSource.OutBuffer.numSamples = FrameSize;
+			DirectSoundSource.OutBuffer.numSamples = InitializationParams.BufferLength;
 			DirectSoundSource.OutBuffer.interleavedBuffer = nullptr;
 			DirectSoundSource.OutBuffer.deinterleavedBuffer = nullptr;
 		}
-
-		SteamAudioModule = &FModuleManager::GetModuleChecked<FSteamAudioModule>("SteamAudio");
 	}
 
 	void FPhononOcclusion::OnInitSource(const uint32 SourceId, const FName& AudioComponentUserId, const uint32 NumChannels, UOcclusionPluginSourceSettingsBase* InSettings)
 	{
-		if (!EnvironmentalRenderer)
+		if (!Environment || !EnvironmentalRenderer)
 		{
 			UE_LOG(LogSteamAudio, Error, TEXT("Unable to find environmental renderer for occlusion. Audio will not be occluded. Make sure to export the scene."));
 			return;
@@ -103,9 +102,9 @@ namespace SteamAudio
 
 	void FPhononOcclusion::ProcessAudio(const FAudioPluginSourceInputData& InputData, FAudioPluginSourceOutputData& OutputData)
 	{
-		auto& DirectSoundSource = DirectSoundSources[InputData.SourceId];
+		FDirectSoundSource& DirectSoundSource = DirectSoundSources[InputData.SourceId];
 
-		if (!EnvironmentalRenderer)
+		if (!Environment || !EnvironmentalRenderer)
 		{
 			FMemory::Memcpy(OutputData.AudioBuffer.GetData(), InputData.AudioBuffer->GetData(), InputData.AudioBuffer->Num() * sizeof(float));
 			return;
@@ -125,18 +124,17 @@ namespace SteamAudio
 		DirectSoundEffectOptions.applyDistanceAttenuation = static_cast<IPLbool>(DirectSoundSources[InputData.SourceId].bDirectAttenuation);
 		DirectSoundEffectOptions.directOcclusionMode = static_cast<IPLDirectOcclusionMode>(DirectSoundSources[InputData.SourceId].DirectOcclusionMode);
 
-		iplApplyDirectSoundEffect(DirectSoundSource.DirectSoundEffect, DirectSoundSource.InBuffer, DirectSoundSource.DirectSoundPath,
-			DirectSoundEffectOptions, DirectSoundSource.OutBuffer);
+		iplApplyDirectSoundEffect(DirectSoundSource.DirectSoundEffect, DirectSoundSource.InBuffer, DirectSoundSource.DirectSoundPath, DirectSoundEffectOptions, DirectSoundSource.OutBuffer);
 	}
 
 	void FPhononOcclusion::UpdateDirectSoundSources(const FVector& ListenerPosition, const FVector& ListenerForward, const FVector& ListenerUp)
 	{
-		if (!EnvironmentalRenderer)
+		if (!Environment || !EnvironmentalRenderer || !EnvironmentCriticalSectionHandle)
 		{
 			return;
 		}
 
-		FScopeLock EnvironmentLock(&SteamAudioModule->GetEnvironmentCriticalSection());
+		FScopeLock EnvironmentLock(EnvironmentCriticalSectionHandle);
 
 		for (FDirectSoundSource& DirectSoundSource : DirectSoundSources)
 		{
@@ -144,7 +142,7 @@ namespace SteamAudio
 
 			if (DirectSoundSource.bNeedsUpdate)
 			{
-				IPLDirectSoundPath DirectSoundPath = iplGetDirectSoundPath(EnvironmentalRenderer, SteamAudio::UnrealToPhononIPLVector3(ListenerPosition),
+				IPLDirectSoundPath DirectSoundPath = iplGetDirectSoundPath(Environment, SteamAudio::UnrealToPhononIPLVector3(ListenerPosition),
 					SteamAudio::UnrealToPhononIPLVector3(ListenerForward, false), SteamAudio::UnrealToPhononIPLVector3(ListenerUp, false),
 					DirectSoundSource.Position, DirectSoundSource.Radius * SteamAudio::SCALEFACTOR,
 					static_cast<IPLDirectOcclusionMode>(DirectSoundSource.DirectOcclusionMode),
@@ -156,10 +154,21 @@ namespace SteamAudio
 		}
 	}
 
+	void FPhononOcclusion::SetEnvironment(IPLhandle InEnvironment)
+	{
+		Environment = InEnvironment;
+	}
+
 	void FPhononOcclusion::SetEnvironmentalRenderer(IPLhandle InEnvironmentalRenderer)
 	{
 		EnvironmentalRenderer = InEnvironmentalRenderer;
 	}
+
+	void FPhononOcclusion::SetCriticalSectionHandle(FCriticalSection* CriticalSectionHandle)
+	{
+		EnvironmentCriticalSectionHandle = CriticalSectionHandle;
+	}
+
 }
 
 //==================================================================================================================================================

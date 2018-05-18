@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Transport/TcpDeserializedMessage.h"
 #include "UObject/Package.h"
@@ -34,7 +34,7 @@ FTcpDeserializedMessage::~FTcpDeserializedMessage()
 /* FTcpDeserializedMessage interface
  *****************************************************************************/
 
-bool FTcpDeserializedMessage::Deserialize(const FArrayReaderPtr& Message)
+bool FTcpDeserializedMessage::Deserialize(const TSharedPtr<FArrayReader, ESPMode::ThreadSafe>& Message)
 {
 	FArrayReader& MessageReader = Message.ToSharedRef().Get();
 
@@ -161,7 +161,7 @@ const TWeakObjectPtr<UScriptStruct>& FTcpDeserializedMessage::GetMessageTypeInfo
 }
 
 
-IMessageContextPtr FTcpDeserializedMessage::GetOriginalContext() const
+TSharedPtr<IMessageContext, ESPMode::ThreadSafe> FTcpDeserializedMessage::GetOriginalContext() const
 {
 	return nullptr;
 }

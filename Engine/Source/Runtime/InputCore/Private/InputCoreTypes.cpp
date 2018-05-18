@@ -1,12 +1,15 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "InputCoreTypes.h"
 #include "UObject/UnrealType.h"
 #include "UObject/PropertyPortFlags.h"
+#include "HAL/PlatformInput.h"
 
 DEFINE_LOG_CATEGORY(LogInput);
 
 #define LOCTEXT_NAMESPACE "InputKeys"
+
+const TCHAR* FKey::SyntheticCharPrefix = TEXT("UnknownCharCode_");
 
 const FKey EKeys::AnyKey("AnyKey");
 
@@ -1067,13 +1070,32 @@ bool FKey::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject* Parent
 	}
 	Buffer = NewBuffer;
 	KeyName = *Temp;
-	KeyDetails.Reset();
+
+	ResetKey();
+
 	return true;
 }
 
 void FKey::PostSerialize(const FArchive& Ar)
 {
+	ResetKey();
+}
+
+void FKey::ResetKey()
+{
 	KeyDetails.Reset();
+
+	const FString KeyNameStr = KeyName.ToString();
+	if (KeyNameStr.StartsWith(FKey::SyntheticCharPrefix))
+	{
+		// This was a dynamically added key, so we need to force it to be synthesized if it doesn't already exist
+		const FString KeyNameStr2 = KeyNameStr.RightChop(FCString::Strlen(FKey::SyntheticCharPrefix));
+		const uint32 CharCode = FCString::Atoi(*KeyNameStr2);
+		if (CharCode > 0)
+		{
+			FInputKeyManager::Get().GetKeyFromCodes(INDEX_NONE, CharCode);
+		}
+	}
 }
 
 TSharedPtr<FInputKeyManager> FInputKeyManager::Instance;
@@ -1096,8 +1118,8 @@ void FInputKeyManager::InitKeyMappings()
 	uint32 KeyCodes[MAX_KEY_MAPPINGS], CharCodes[MAX_KEY_MAPPINGS];
 	FString KeyNames[MAX_KEY_MAPPINGS], CharKeyNames[MAX_KEY_MAPPINGS];
 
-	uint32 const CharKeyMapSize(FPlatformMisc::GetCharKeyMap(CharCodes, CharKeyNames, MAX_KEY_MAPPINGS));
-	uint32 const KeyMapSize(FPlatformMisc::GetKeyMap(KeyCodes, KeyNames, MAX_KEY_MAPPINGS));
+	uint32 const CharKeyMapSize(FPlatformInput::GetCharKeyMap(CharCodes, CharKeyNames, MAX_KEY_MAPPINGS));
+	uint32 const KeyMapSize(FPlatformInput::GetKeyMap(KeyCodes, KeyNames, MAX_KEY_MAPPINGS));
 
 	for (uint32 Idx=0; Idx<KeyMapSize; ++Idx)
 	{
@@ -1130,9 +1152,17 @@ void FInputKeyManager::InitKeyMappings()
 FKey FInputKeyManager::GetKeyFromCodes( const uint32 KeyCode, const uint32 CharCode ) const
 {
 	const FKey* KeyPtr(KeyMapVirtualToEnum.Find(KeyCode));
-	if (KeyPtr == NULL)
+	if (KeyPtr == nullptr)
 	{
 		KeyPtr = KeyMapCharToEnum.Find(CharCode);
+	}
+	// If we didn't find a FKey and the CharCode is not a control character (using 32/space as the start of that range),
+	// then we want to synthesize a new FKey for this unknown character so that key binding on non-qwerty keyboards works better
+	if (KeyPtr == nullptr && CharCode > 32)
+	{
+		FKey NewKey(*FString::Printf(TEXT("%s%d"), FKey::SyntheticCharPrefix, CharCode));
+		EKeys::AddKey(FKeyDetails(NewKey, FText::AsCultureInvariant(FString::Chr(CharCode)), FKeyDetails::NotBlueprintBindableKey));
+		return NewKey;
 	}
 	return KeyPtr ? *KeyPtr : EKeys::Invalid;
 }

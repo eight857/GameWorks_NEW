@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -6,34 +6,32 @@ namespace UnrealBuildTool.Rules
 	{
 		public MediaAssets(ReadOnlyTargetRules Target) : base(Target)
 		{
-            PublicDependencyModuleNames.AddRange(
-                new string[] {
+			PublicDependencyModuleNames.AddRange(
+				new string[] {
+					"AudioMixer",
 					"Core",
 					"CoreUObject",
 					"Engine",
-                    "Media",
+					"Media",
 					"MediaUtils",
-				}
-            );
+				});
 
 			PrivateDependencyModuleNames.AddRange(
 				new string[] {
-                    "RenderCore",
-                    "RHI",
+					"RenderCore",
+					"RHI",
 					"ShaderCore",
 					"UtilityShaders",
-				}
-			);
+				});
 
 			PrivateIncludePaths.AddRange(
 				new string[] {
 					"Runtime/MediaAssets/Private",
 					"Runtime/MediaAssets/Private/Assets",
 					"Runtime/MediaAssets/Private/Misc",
-				}
-			);
+				});
 
-			if (UEBuildConfiguration.bBuildEditor)
+			if (Target.bBuildEditor)
 			{
 				PrivateIncludePathModuleNames.Add("TargetPlatform");
 			}

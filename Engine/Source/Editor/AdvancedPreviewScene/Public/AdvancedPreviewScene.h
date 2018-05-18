@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PrettyPreviewScene.h: Pretty preview scene definitions.
@@ -30,9 +30,13 @@ public:
 
 	void UpdateScene(FPreviewSceneProfile& Profile, bool bUpdateSkyLight = true, bool bUpdateEnvironment = true, bool bUpdatePostProcessing = true, bool bUpdateDirectionalLight = true);
 
+	/** Begin FPreviewScene */
+	virtual FLinearColor GetBackgroundColor() const override;
+	/** End FPreviewScene */
+
 	/* Begin FTickableEditorObject */
 	virtual void Tick(float DeltaTime) override;
-	virtual bool IsTickable() const override;
+	virtual ETickableTickType GetTickableTickType() const override { return ETickableTickType::Always; }
 	virtual TStatId GetStatId() const override;
 	/* End FTickableEditorObject */
 
@@ -56,16 +60,18 @@ protected:
 	void BindCommands();
 
 	/** Toggle the sky sphere on and off */
-	void HandleToggleSky();
+	void HandleToggleEnvironment();
 
 	/** Toggle the floor mesh on and off */
 	void HandleToggleFloor();
+
+	/** Toggle post processing on and off */
+	void HandleTogglePostProcessing();
 
 	/** Handle refreshing the scene when settings change */
 	void OnAssetViewerSettingsRefresh(const FName& InPropertyName);
 
 protected:
-	USkyLightComponent* SkyLightComponent;
 	UStaticMeshComponent* SkyComponent;
 	USphereReflectionCaptureComponent* SphereReflectionComponent;
 	UMaterialInstanceConstant* InstancedSkyMaterial;

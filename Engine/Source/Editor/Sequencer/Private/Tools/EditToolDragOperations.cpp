@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tools/EditToolDragOperations.h"
 #include "ISequencer.h"
@@ -149,10 +149,11 @@ void FEditToolDragOperation::EndTransaction()
 	Sequencer.NotifyMovieSceneDataChanged( EMovieSceneDataChangeType::TrackValueChanged );
 }
 
-FResizeSection::FResizeSection( FSequencer& InSequencer, TArray<FSectionHandle> InSections, bool bInDraggingByEnd )
+FResizeSection::FResizeSection( FSequencer& InSequencer, TArray<FSectionHandle> InSections, bool bInDraggingByEnd, bool bInIsSlipping )
 	: FEditToolDragOperation( InSequencer )
 	, Sections( MoveTemp(InSections) )
 	, bDraggingByEnd(bInDraggingByEnd)
+	, bIsSlipping(bInIsSlipping)
 	, MouseDownTime(0.f)
 {
 }
@@ -265,6 +266,10 @@ void FResizeSection::OnDrag(const FPointerEvent& MouseEvent, FVector2D LocalMous
 						float DilationFactor = NewSize / Section->GetTimeSize();
 						SequencerSection->DilateSection(DilationFactor, Section->GetStartTime(), DraggedKeyHandles);
 					}
+					else if (bIsSlipping)
+					{
+						SequencerSection->SlipSection( NewTime );
+					}
 					else
 					{
 						SequencerSection->ResizeSection( SSRM_TrailingEdge, NewTime );
@@ -281,6 +286,10 @@ void FResizeSection::OnDrag(const FPointerEvent& MouseEvent, FVector2D LocalMous
 						float NewSize = Section->GetEndTime() - NewTime;
 						float DilationFactor = NewSize / Section->GetTimeSize();
 						SequencerSection->DilateSection(DilationFactor, Section->GetEndTime(), DraggedKeyHandles);
+					}
+					else if (bIsSlipping)
+					{
+						SequencerSection->SlipSection( NewTime );
 					}
 					else
 					{
@@ -363,6 +372,19 @@ void FMoveSection::OnBeginDrag(const FPointerEvent& MouseEvent, FVector2D LocalM
 		Section->GetKeyHandles(DraggedKeyHandles, Section->GetRange());
 		RelativeOffsets.Add(FRelativeOffset{ Section->GetStartTime() - InitialPosition.X, Section->GetEndTime() - InitialPosition.X });
 	}
+
+	TSet<UMovieSceneTrack*> Tracks;
+	for (int32 Index = 0; Index < Sections.Num(); ++Index)
+	{
+		Tracks.Add(Sections[Index].TrackNode->GetTrack());
+	}
+	for (UMovieSceneTrack* Track : Tracks)
+	{
+		for (auto Section : Track->GetAllSections())
+		{
+			InitialRowIndices.Add(FInitialRowIndex{ Section, Section->GetRowIndex() });
+		}
+	}
 }
 
 void FMoveSection::OnEndDrag(const FPointerEvent& MouseEvent, FVector2D LocalMousePos, const FVirtualTrackArea& VirtualTrackArea)
@@ -373,6 +395,7 @@ void FMoveSection::OnEndDrag(const FPointerEvent& MouseEvent, FVector2D LocalMou
 	}
 
 	DraggedKeyHandles.Empty();
+	InitialRowIndices.Empty();
 
 	TSet<UMovieSceneTrack*> Tracks;
 	bool bRowIndicesFixed = false;
@@ -555,6 +578,12 @@ void FMoveSection::OnDrag(const FPointerEvent& MouseEvent, FVector2D LocalMouseP
 					const int32 NewIndex = FMath::FloorToInt((VirtualMousePos.Y - VirtualSectionTop) / VirtualRowHeight);
 					TargetRowIndex = FMath::Clamp(NewIndex, 0, MaxRowIndex);
 				}
+				
+				// If close to the top of the row, move else everything down
+				if (VirtualMousePos.Y <= VirtualSectionTop)
+				{
+					TargetRowIndex = -1;
+				}
 			}
 			else if(Handle.TrackNode->GetSubTrackMode() == FSequencerTrackNode::ESubTrackMode::SubTrack)
 			{
@@ -599,9 +628,45 @@ void FMoveSection::OnDrag(const FPointerEvent& MouseEvent, FVector2D LocalMouseP
 			)
 		)
 		{
-			Section->Modify();
-			Section->SetRowIndex(TargetRowIndex);
-			bRowIndexChanged = true;
+			// Reached the top, move everything else we're not moving downwards
+			if (TargetRowIndex == -1)
+			{
+				if (!bSectionsAreOnDifferentRows)
+				{
+					// If the sections being moved are all at the top, and all others are below it, do nothing
+					bool bSectionsBeingMovedAreAtTop = true;
+					for (auto InitialRowIndex : InitialRowIndices)
+					{
+						if (!SectionsBeingMoved.Contains(InitialRowIndex.Section))
+						{
+							if (InitialRowIndex.RowIndex <= FirstRowIndex)
+							{
+								bSectionsBeingMovedAreAtTop = false;
+								break;
+							}
+						}
+					}
+
+					if (!bSectionsBeingMovedAreAtTop)
+					{
+						for (auto InitialRowIndex : InitialRowIndices)
+						{
+							if (!SectionsBeingMoved.Contains(InitialRowIndex.Section))
+							{
+								InitialRowIndex.Section->Modify();
+								InitialRowIndex.Section->SetRowIndex(InitialRowIndex.RowIndex+1);
+								bRowIndexChanged = true;
+							}
+						}
+					}
+				}
+			}
+			else
+			{
+				Section->Modify();
+				Section->SetRowIndex(TargetRowIndex);
+				bRowIndexChanged = true;
+			}
 		}
 	}
 

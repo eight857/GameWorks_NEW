@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once 
 
@@ -40,6 +40,9 @@ public:
 
 	/** Toggle if we care about locking */
 	TSharedPtr< FUICommandInfo > ToggleRespectLocks;
+
+	/** Toggle the localization preview on/off */
+	TSharedPtr< FUICommandInfo > ToggleLocalizationPreview;
 
 public:
 	/** Registers our commands with the binding system */

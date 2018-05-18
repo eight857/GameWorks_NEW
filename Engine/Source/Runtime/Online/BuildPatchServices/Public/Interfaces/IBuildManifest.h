@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	IBuildManifest.h: Declares the IBuildManifest and IManifestField interfaces.
@@ -88,7 +88,13 @@ public:
 	 * @return		the launch command line
 	 */
 	virtual const FString& GetLaunchCommand() const = 0;
-	
+
+	/**
+	 * Get the list of prereq ids that the prereq installer of this manifest satisfies
+	 * @return		the set containing the prereq ids.
+	 */
+	virtual const TSet<FString>& GetPrereqIds() const = 0;
+
 	/**
 	 * Get the name of the prerequisites installer for the app
 	 * @return		the prerequisites installer name

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	BlendSpaceBase.cpp: Base class for blend space objects
@@ -200,6 +200,34 @@ void UBlendSpaceBase::TickAssetPlayer(FAnimTickRecord& Instance, struct FAnimNot
 				PreInterpAnimLength = GetAnimationLengthFromSampleData(NewSampleDataList);
 				UE_LOG(LogAnimation, Verbose, TEXT("BlendSpace(%s) - BlendInput(%s) : PreAnimLength(%0.5f) "), *GetName(), *BlendInput.ToString(), PreInterpAnimLength);
 
+#if WITH_EDITOR
+				//Validate target samples (samples can be deleted in editor this stops us crashing if a previous sample is now invalid)
+				float TotalWeight = 0.f;
+				bool bModified = false;
+
+				for (int32 i = OldSampleDataList.Num() - 1; i >= 0; --i)
+				{
+					if (!SampleData.IsValidIndex(OldSampleDataList[i].SampleDataIndex))
+					{
+						//Sample no longer valid
+						OldSampleDataList.RemoveAtSwap(i);
+						bModified = true;
+					}
+					else
+					{
+						TotalWeight += OldSampleDataList[i].GetWeight();
+					}
+				}
+
+				if (bModified) // Bring weights back to 1
+				{
+					for (FBlendSampleData& Sample : OldSampleDataList)
+					{
+						Sample.TotalWeight /= TotalWeight;
+					}
+				}
+#endif
+
 				// target weight interpolation
 				if (InterpolateWeightOfSampleData(DeltaTime, OldSampleDataList, NewSampleDataList, SampleDataList))
 				{
@@ -353,11 +381,11 @@ void UBlendSpaceBase::TickAssetPlayer(FAnimTickRecord& Instance, struct FAnimNot
 
 			// generate notifies and sets time
 			{
-				TArray<const FAnimNotifyEvent*> Notifies;
+				TArray<FAnimNotifyEventReference> Notifies;
 
 				const float ClampedNormalizedPreviousTime = FMath::Clamp<float>(NormalizedPreviousTime, 0.f, 1.f);
 				const float ClampedNormalizedCurrentTime = FMath::Clamp<float>(NormalizedCurrentTime, 0.f, 1.f);
-				const bool bGenerateNotifies = Context.ShouldGenerateNotifies() && (NormalizedCurrentTime != NormalizedPreviousTime) && NotifyTriggerMode != ENotifyTriggerMode::None;
+				const bool bGenerateNotifies = (NormalizedCurrentTime != NormalizedPreviousTime) && NotifyTriggerMode != ENotifyTriggerMode::None;
 				
 				// Get the index of the highest weight, assuming that the first is the highest until we find otherwise
 				const bool bTriggerNotifyHighestWeightedAnim = NotifyTriggerMode == ENotifyTriggerMode::HighestWeightedAnimation && SampleDataList.Num() > 0;
@@ -420,7 +448,7 @@ void UBlendSpaceBase::TickAssetPlayer(FAnimTickRecord& Instance, struct FAnimNot
 
 				if (bGenerateNotifies && Notifies.Num() > 0)
 				{
-					NotifyQueue.AddAnimNotifies(Notifies, Instance.EffectiveBlendWeight);
+					NotifyQueue.AddAnimNotifies(Context.ShouldGenerateNotifies(), Notifies, Instance.EffectiveBlendWeight);
 				}
 			}
 		}
@@ -637,11 +665,14 @@ bool UBlendSpaceBase::GetSamplesFromBlendInput(const FVector &BlendInput, TArray
 		for(int32 Ind = 0; Ind < GridElement.MAX_VERTICES; ++Ind)
 		{
 			const int32 SampleDataIndex = GridElement.Indices[Ind];		
-			if(SampleDataIndex != INDEX_NONE && SampleData.IsValidIndex(SampleDataIndex))
+			if(SampleData.IsValidIndex(SampleDataIndex))
 			{
 				int32 Index = OutSampleDataList.AddUnique(SampleDataIndex);
-				OutSampleDataList[Index].AddWeight(GridElement.Weights[Ind]*GridWeight);
-				OutSampleDataList[Index].Animation = SampleData[SampleDataIndex].Animation;
+				FBlendSampleData& NewSampleData = OutSampleDataList[Index];
+
+				NewSampleData.AddWeight(GridElement.Weights[Ind]*GridWeight);
+				NewSampleData.Animation = SampleData[SampleDataIndex].Animation;
+				NewSampleData.SamplePlayRate = SampleData[SampleDataIndex].RateScale;
 			}
 		}
 	}
@@ -649,13 +680,22 @@ bool UBlendSpaceBase::GetSamplesFromBlendInput(const FVector &BlendInput, TArray
 	// go through merge down to first sample 
 	for (int32 Index1 = 0; Index1 < OutSampleDataList.Num(); ++Index1)
 	{
+		FBlendSampleData& FirstSample = OutSampleDataList[Index1];
 		for (int32 Index2 = Index1 + 1; Index2 < OutSampleDataList.Num(); ++Index2)
 		{
+			FBlendSampleData& SecondSample = OutSampleDataList[Index2];
 			// if they have sample sample, remove the Index2, and get out
-			if (OutSampleDataList[Index1].Animation == OutSampleDataList[Index2].Animation)
+			if (FirstSample.Animation == SecondSample.Animation)
 			{
+				//Calc New Sample Playrate
+				const float TotalWeight = FirstSample.GetWeight() + SecondSample.GetWeight();
+				const float OriginalWeightedPlayRate = FirstSample.SamplePlayRate * (FirstSample.GetWeight() / TotalWeight);
+				const float SecondSampleWeightedPlayRate = SecondSample.SamplePlayRate * (SecondSample.GetWeight() / TotalWeight);
+				FirstSample.SamplePlayRate = OriginalWeightedPlayRate + SecondSampleWeightedPlayRate;
+
 				// add weight
-				OutSampleDataList[Index1].AddWeight(OutSampleDataList[Index2].GetWeight());
+				FirstSample.AddWeight(SecondSample.GetWeight());
+
 				// as for time or previous time will be the master one(Index1)
 				OutSampleDataList.RemoveAtSwap(Index2, 1, false);
 				--Index2;
@@ -1020,7 +1060,9 @@ float UBlendSpaceBase::GetAnimationLengthFromSampleData(const TArray<FBlendSampl
 			const FBlendSample& Sample = SampleData[SampleDataIndex];
 			if (Sample.Animation)
 			{
-				const float MultipliedSampleRateScale = Sample.Animation->RateScale * Sample.RateScale;
+				//Use the SamplePlayRate from the SampleDataList, not the RateScale from SampleData as SamplePlayRate might contain
+				//Multiple samples contribution which we would otherwise lose
+				const float MultipliedSampleRateScale = Sample.Animation->RateScale * SampleDataList[I].SamplePlayRate;
 				// apply rate scale to get actual playback time
 				BlendAnimLength += (Sample.Animation->SequenceLength / ((MultipliedSampleRateScale) != 0.0f ? FMath::Abs(MultipliedSampleRateScale) : 1.0f))*SampleDataList[I].GetWeight();
 				UE_LOG(LogAnimation, Verbose, TEXT("[%d] - Sample Animation(%s) : Weight(%0.5f) "), I+1, *Sample.Animation->GetName(), SampleDataList[I].GetWeight());

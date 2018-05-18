@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DialogueWaveDetails.h"
 #include "Widgets/SWidget.h"
@@ -183,7 +183,7 @@ void FDialogueContextMappingNodeBuilder::LocalizationKeyFormatEditableText_Updat
 		FText NewLocalizationKeyErrorMsg;
 
 		// Check for duplicates in the localization keys
-		const TArray<TWeakObjectPtr<UObject>>& RootObjects = DetailLayoutBuilder->GetDetailsView().GetSelectedObjects();
+		const TArray<TWeakObjectPtr<UObject>>& RootObjects = DetailLayoutBuilder->GetSelectedObjects();
 		if (RootObjects.Num() == 1)
 		{
 			auto DialogueWave = Cast<const UDialogueWave>(RootObjects[0].Get());
@@ -242,7 +242,7 @@ void FDialogueContextMappingNodeBuilder::LocalizationKeyFormatEditableText_Updat
 
 FText FDialogueContextMappingNodeBuilder::LocalizationKey_GetText() const
 {
-	const TArray<TWeakObjectPtr<UObject>>& RootObjects = DetailLayoutBuilder->GetDetailsView().GetSelectedObjects();
+	const TArray<TWeakObjectPtr<UObject>>& RootObjects = DetailLayoutBuilder->GetSelectedObjects();
 	if (RootObjects.Num() == 1)
 	{
 		auto DialogueWave = Cast<const UDialogueWave>(RootObjects[0].Get());

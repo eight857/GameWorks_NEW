@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "StatsPages/StaticMeshLightingInfoStatsPage.h"
 #include "GameFramework/Actor.h"
@@ -195,7 +195,7 @@ struct StaticMeshLightingInfoStatsGenerator
 			// Iterate over static mesh components in the list of levels...
 			for (TObjectIterator<UStaticMeshComponent> SMCIt; SMCIt; ++SMCIt)
 			{
-				AActor* Owner = Cast<AActor>( (*SMCIt)->GetOwner() );			
+				AActor* Owner = (*SMCIt)->GetOwner();
 				if (Owner && !Owner->HasAnyFlags(RF_ClassDefaultObject) )
 				{
 					int32 Dummy;

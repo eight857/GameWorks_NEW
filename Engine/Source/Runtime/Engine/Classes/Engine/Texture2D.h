@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,15 +16,6 @@ UCLASS(hidecategories=Object, MinimalAPI, BlueprintType)
 class UTexture2D : public UTexture
 {
 	GENERATED_UCLASS_BODY()
-
-public:
-	/** Number of miplevels the texture should have resident.					*/
-	UPROPERTY(transient, NonTransactional)
-	int32 RequestedMips;
-
-	/** Number of miplevels currently resident.									*/
-	UPROPERTY(transient, NonTransactional)
-	int32 ResidentMips;
 
 private:
 	/** FStreamingTexture index used by the texture streaming system. */
@@ -48,14 +39,6 @@ public:
 	UPROPERTY()
 	int32 FirstResourceMemMip;
 
-private:
-	/**
-	 * The imported size of the texture. Only valid on cooked builds when texture source is not
-	 * available. Access ONLY via the GetImportedSize() accessor!
-	 */
-	UPROPERTY()
-	FIntPoint ImportedSize;
-
 public:
 	/**
 	 * Retrieves the size of the source image from which the texture was created.
@@ -70,44 +53,36 @@ public:
 	}
 
 private:
-	/** WorldSettings timestamp that tells the streamer to force all miplevels to be resident up until that time. */
-	UPROPERTY(transient)
-	double ForceMipLevelsToBeResidentTimestamp;
-
 	/** True if streaming is temporarily disabled so we can update subregions of this texture's resource 
 	without streaming clobbering it. Automatically cleared before saving. */
 	UPROPERTY(transient)
-	uint32 bTemporarilyDisableStreaming:1;
+	uint8 bTemporarilyDisableStreaming:1;
 
 public:
 	/** Whether the texture is currently streamable or not.						*/
 	UPROPERTY(transient, NonTransactional)
-	uint32 bIsStreamable:1;
+	uint8 bIsStreamable:1;
 
 	/** Whether some mips might be streamed soon. If false, the texture is not planned resolution will be stable. */
 	UPROPERTY(transient, NonTransactional)
-	uint32 bHasStreamingUpdatePending:1;
-
-	/** Whether the current texture mip change request is pending cancellation.	*/
-	UPROPERTY(transient, NonTransactional)
-	uint32 bHasCancelationPending:1;
+	uint8 bHasStreamingUpdatePending:1;
 
 	/** Override whether to fully stream even if texture hasn't been rendered.	*/
 	UPROPERTY(transient)
-	uint32 bForceMiplevelsToBeResident:1;
+	uint8 bForceMiplevelsToBeResident:1;
 
 	/** Ignores the streaming mip bias used to accommodate memory constraints. */
 	UPROPERTY(transient)
-	uint32 bIgnoreStreamingMipBias:1;
+	uint8 bIgnoreStreamingMipBias:1;
 
 	/** Global and serialized version of ForceMiplevelsToBeResident.				*/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=LevelOfDetail, meta=(DisplayName="Global Force Resident Mip Levels"), AdvancedDisplay)
-	uint32 bGlobalForceMipLevelsToBeResident:1;
+	uint8 bGlobalForceMipLevelsToBeResident:1;
 
 #if WITH_EDITORONLY_DATA
 	/** Whether the texture has been painted in the editor.						*/
 	UPROPERTY()
-	uint32 bHasBeenPaintedInEditor:1;
+	uint8 bHasBeenPaintedInEditor:1;
 #endif // WITH_EDITORONLY_DATA
 
 	/** The addressing mode to use for the X axis.								*/
@@ -118,6 +93,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Texture, meta=(DisplayName="Y-axis Tiling Method"), AssetRegistrySearchable, AdvancedDisplay)
 	TEnumAsByte<enum TextureAddress> AddressY;
 
+private:
+	/**
+	 * The imported size of the texture. Only valid on cooked builds when texture source is not
+	 * available. Access ONLY via the GetImportedSize() accessor!
+	 */
+	UPROPERTY()
+	FIntPoint ImportedSize;
+
+	/** WorldSettings timestamp that tells the streamer to force all miplevels to be resident up until that time. */
+	UPROPERTY(transient)
+	double ForceMipLevelsToBeResidentTimestamp;
+
 public:
 	/** The derived data for this texture on this platform. */
 	FTexturePlatformData *PlatformData;
@@ -125,34 +112,35 @@ public:
 	/* cooked platform data for this texture */
 	TMap<FString, FTexturePlatformData*> CookedPlatformData;
 #endif
-	/**
-	 * Thread-safe counter indicating the texture streaming state. The definitions below are mirrored in Texture.h.
-	 *
-		 enum ETextureStreamingState
-		 {
-			// The renderer hasn't created the resource yet.
-			TexState_InProgress_Initialization	= -1,
-			// There are no pending requests/ all requests have been fulfilled.
-			TexState_ReadyFor_Requests			= 0,
-			// Finalization has been kicked off and is in progress.
-			TexState_InProgress_Finalization	= 1,
-			// Initial request has completed and finalization needs to be kicked off.
-			TexState_ReadyFor_Finalization		= 2,
-			// We're currently loading in mip data.
-			TexState_InProgress_Loading			= 3,
-			// ...
-			// States 3+N means we're currently loading in N mips
-			// ...
-			// Memory has been allocated and we're ready to start loading in mips.
-			TexState_ReadyFor_Loading			= 100,
-			// We're currently allocating/preparing memory for the new mip count.
-			TexState_InProgress_Allocating		= 101,
-		};
-	*/
-	mutable FThreadSafeCounter	PendingMipChangeRequestStatus;
 
 	/** memory used for directly loading bulk mip data */
 	FTexture2DResourceMem*		ResourceMem;
+
+	/**
+	 * Loads mips from disk to memory. Only usable if the texture is streamable.
+	 *
+	 * @param NewMipCount - The desired mip count after the mips are loaded.
+	 * @param bHighPrio   - true if the load request is of high priority and must be issued before other texture requests.
+	 * @return Whether any mips were resquested to be loaded.
+	 */
+	ENGINE_API bool StreamIn(int32 NewMipCount, bool bHighPrio);
+
+	/**
+	 * Unload some mips from memory. Only usable if the texture is streamable.
+	 *
+	 * @param NewMipCount - The desired mip count after the mips are unloaded.
+	 * @return Whether any mips were requested to be unloaded.
+	 */
+	ENGINE_API bool StreamOut(int32 NewMipCount);
+
+	/** true if the texture is currently being updated through StreamIn() or StreamOut(). */
+	FORCEINLINE bool HasPendingUpdate() const { return PendingUpdate != nullptr; }
+
+protected:
+
+	/** Helper to manage the current pending update following a call to StreamIn() or StreamOut(). */
+	class FTexture2DUpdate* PendingUpdate;
+	friend class FTexture2DUpdate;
 
 public:
 
@@ -161,7 +149,6 @@ public:
 #if WITH_EDITOR
 	virtual void PostLinkerChange() override;
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-	virtual void WillNeverCacheCookedPlatformDataAgain() override;
 #endif // WITH_EDITOR
 	virtual void BeginDestroy() override;
 	virtual void PostLoad() override;
@@ -174,7 +161,7 @@ public:
 	virtual float GetSurfaceWidth() const override { return GetSizeX(); }
 	virtual float GetSurfaceHeight() const override { return GetSizeY(); }
 	virtual FTextureResource* CreateResource() override;
-	virtual EMaterialValueType GetMaterialType() override { return MCT_Texture2D; }
+	virtual EMaterialValueType GetMaterialType() const override { return MCT_Texture2D; }
 	virtual void UpdateResource() override;
 	virtual float GetAverageBrightness(bool bIgnoreTrueBlack, bool bUseGrayscale) override;
 	virtual FTexturePlatformData** GetRunningPlatformData() override { return &PlatformData; }
@@ -230,8 +217,24 @@ public:
 		return PlatformData->Mips;
 	}
 
-
 	FORCEINLINE int32 GetStreamingIndex() const { return StreamingIndex; }
+	
+	/** The number of mips currently in memory. */
+	ENGINE_API int32 GetNumResidentMips() const;
+
+	/** When the texture is being updated from StreamIn() or StreamOut(), returns the number of mips requested. */
+	int32 GetNumRequestedMips() const;
+
+	/**
+	 * Calculates the maximum number of mips the engine allows to be loaded for this texture. 
+	 * The cinematic mips will be considered as loadable, streaming enabled or not.
+	 * Note that in the cooking process, mips smaller than the min residency count
+	 * can be stripped out by the cooker.
+	 *
+	 * @param bIgnoreMinResidency - Whether to ignore min residency limitations.
+	 * @return The maximum allowed number mips for this texture.
+	 */
+	ENGINE_API int32 GetNumMipsAllowed(bool bIgnoreMinResidency) const;
 
 private:
 	/** The minimum number of mips that must be resident in memory (cannot be streamed). */
@@ -260,7 +263,7 @@ public:
 	 *						Mips.Num() - FirstMipToLoad + 1 entries. Upon
 	 *						return those pointers will contain mip data.
 	 */
-	void GetMipData(int32 FirstMipToLoad, void** OutMipData);
+	ENGINE_API void GetMipData(int32 FirstMipToLoad, void** OutMipData);
 
 	/**
 	 * Returns the number of mips in this texture that are not able to be streamed.
@@ -321,7 +324,7 @@ public:
 	 *
 	 * @return true if initialized and ready for streaming, false otherwise
 	 */
-	bool IsReadyForStreaming();
+	ENGINE_API bool IsReadyForStreaming() const;
 
 	/**
 	 * Waits until all streaming requests for this texture has been fully processed.

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -28,6 +28,9 @@ namespace Audio
 		// Sets the delay line length. Will clamp to within range of the max initialized delay line length (won't resize).
 		void SetDelayMsec(const float InDelayMsec);
 
+		// Same as SetDelayMsec, except in samples.
+		void SetDelaySamples(const float InDelaySamples);
+
 		// Sets the delay line length but using the internal easing function for smooth delay line interpolation.
 		void SetEasedDelayMsec(const float InDelayMsec, const bool bIsInit = false);
 
@@ -48,6 +51,9 @@ namespace Audio
 
 		// Process audio input and output buffer
 		virtual void ProcessAudio(const float* InAudio, float* OutAudio);
+
+		// Process audio in the delay line, return the delayed value
+		float ProcessAudio(const float InAudio);
 
 	protected:
 
@@ -74,9 +80,6 @@ namespace Audio
 
 		// Eased delay in msec
 		FExponentialEase EaseDelayMsec;
-
-		// Current delay in msec
-		float DelayMsec;
 
 		// Output attenuation value.
 		float OutputAttenuation;

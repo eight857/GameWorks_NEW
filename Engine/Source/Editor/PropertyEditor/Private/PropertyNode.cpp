@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "PropertyNode.h"
@@ -64,6 +64,7 @@ FPropertyNode::FPropertyNode(void)
 	, MaxChildDepthAllowed(FPropertyNodeConstants::NoDepthRestrictions)
 	, PropertyNodeFlags (EPropertyNodeFlags::NoFlags)
 	, bRebuildChildrenRequested( false )
+	, bChildrenRebuilt(false)
 	, PropertyPath(TEXT(""))
 	, bIsEditConst(false)
 	, bUpdateEditConstState(true)
@@ -114,7 +115,14 @@ void FPropertyNode::InitNode( const FPropertyNodeInitParams& InitParams )
 	//default to copying from the parent
 	if (ParentNode)
 	{
-		SetNodeFlags(EPropertyNodeFlags::ShowCategories, !!ParentNode->HasNodeFlags(EPropertyNodeFlags::ShowCategories));
+		if (ParentNode->HasNodeFlags(EPropertyNodeFlags::ShowCategories) != 0)
+		{
+			SetNodeFlags(EPropertyNodeFlags::ShowCategories, true);
+		}
+		else
+		{
+			SetNodeFlags(EPropertyNodeFlags::ShowCategories, false);
+		}
 
 		// We are advanced if our parent is advanced or our property is marked as advanced
 		SetNodeFlags(EPropertyNodeFlags::IsAdvanced, ParentNode->HasNodeFlags(EPropertyNodeFlags::IsAdvanced) || bAdvanced );
@@ -236,6 +244,7 @@ void FPropertyNode::RebuildChildren()
 
 	// Children have been rebuilt, clear any pending rebuild requests
 	bRebuildChildrenRequested = false;
+	bChildrenRebuilt = true;
 
 	// Notify any listener that children have been rebuilt
 	OnRebuildChildren.ExecuteIfBound();
@@ -387,6 +396,13 @@ EPropertyDataValidationResult FPropertyNode::EnsureDataIsValid()
 {
 	bool bValidateChildren = !HasNodeFlags(EPropertyNodeFlags::SkipChildValidation);
 	bool bValidateChildrenKeyNodes = false;		// by default, we don't check this, since it's just for Map properties
+
+	// If we have rebuilt children since last EnsureDataIsValid call let the caller know
+	if (bChildrenRebuilt)
+	{
+		bChildrenRebuilt = false;
+		return EPropertyDataValidationResult::ChildrenRebuilt;
+	}
 
 	// The root must always be validated
 	if( GetParentNode() == NULL || HasNodeFlags(EPropertyNodeFlags::RequiresValidation) != 0 )
@@ -1570,11 +1586,6 @@ bool FPropertyNode::GetDiffersFromDefaultForObject( FPropertyItemValueDataTracke
 				{
 					PortFlags |= PPF_DeepCompareInstances;
 				}
-				// Use PPF_DeltaComparison for instanced objects
-				else
-				{
-					PortFlags |= PPF_DeltaComparison;
-				}
 			}
 
 			if ( ValueTracker.GetPropertyValueAddress() == NULL || ValueTracker.GetPropertyDefaultAddress() == NULL )
@@ -1689,11 +1700,6 @@ FString FPropertyNode::GetDefaultValueAsStringForObject( FPropertyItemValueDataT
 					{
 						PortFlags |= PPF_DeepCompareInstances;
 					}
-					// Use PPF_DeltaComparison for instanced objects
-					else
-					{
-						PortFlags |= PPF_DeltaComparison;
-					}
 				}
 
 				if ( ValueTracker.GetPropertyValueAddress() == NULL || ValueTracker.GetPropertyDefaultAddress() == NULL )
@@ -1800,10 +1806,13 @@ void FPropertyNode::ResetToDefault( FNotifyHook* InNotifyHook )
 
 		TArray< TMap<FString, int32> > ArrayIndicesPerObject;
 
+		// List of top level objects sent to the PropertyChangedEvent
+		TArray<const UObject*> TopLevelObjects;
+		TopLevelObjects.Reserve(ObjectNode->GetNumObjects());
+
 		for( int32 ObjIndex = 0; ObjIndex < ObjectNode->GetNumObjects(); ++ObjIndex )
 		{
-			TWeakObjectPtr<UObject> ObjectWeakPtr = ObjectNode->GetUObject( ObjIndex );
-			UObject* Object = ObjectWeakPtr.Get();
+			UObject* Object = ObjectNode->GetUObject( ObjIndex );
 
 			// special case for UObject class - it has no defaults
 			if( Object && Object != UObject::StaticClass() && Object != UObject::StaticClass()->GetDefaultObject() )
@@ -2009,6 +2018,8 @@ void FPropertyNode::ResetToDefault( FNotifyHook* InNotifyHook )
 						PropagatePropertyChange(Object, *ValueAfterImport, PreviousArrayValue.IsEmpty() ? PreviousValue : PreviousArrayValue);
 					}
 
+					TopLevelObjects.Add(Object);
+
 					if(OldGWorld)
 					{
 						// restore the original (editor) GWorld
@@ -2025,7 +2036,7 @@ void FPropertyNode::ResetToDefault( FNotifyHook* InNotifyHook )
 		{
 			// Call PostEditchange on all the objects
 			// Assume reset to default, can change topology
-			FPropertyChangedEvent ChangeEvent( TheProperty, EPropertyChangeType::ValueSet );
+			FPropertyChangedEvent ChangeEvent( TheProperty, EPropertyChangeType::ValueSet, &TopLevelObjects );
 			ChangeEvent.SetArrayIndexPerObject(ArrayIndicesPerObject);
 
 			NotifyPostChange( ChangeEvent, InNotifyHook );
@@ -2036,6 +2047,25 @@ void FPropertyNode::ResetToDefault( FNotifyHook* InNotifyHook )
 			RequestRebuildChildren();
 		}
 	}
+}
+
+bool FPropertyNode::IsReorderable()
+{
+	UProperty* NodeProperty = GetProperty();
+	if (NodeProperty == nullptr)
+	{
+		return false;
+	}
+	// It is reorderable if the parent is an array and metadata doesn't prohibit it
+	const UArrayProperty* OuterArrayProp = Cast<UArrayProperty>(NodeProperty->GetOuter());
+
+	static const FName Name_DisableReordering("EditFixedOrder");
+	static const FName NAME_ArraySizeEnum("ArraySizeEnum");
+	return OuterArrayProp != nullptr 
+		&& !OuterArrayProp->HasMetaData(Name_DisableReordering)
+		&& !IsEditConst()
+		&& !OuterArrayProp->HasMetaData(NAME_ArraySizeEnum)
+		&& !FApp::IsGame();
 }
 
 /**
@@ -2301,6 +2331,9 @@ void FPropertyNode::NotifyPreChange( UProperty* PropertyAboutToChange, FNotifyHo
 			}
 		}
 	}
+
+	// Broadcast the change to any listeners
+	BroadcastPropertyPreChangeDelegates();
 }
 
 void FPropertyNode::NotifyPostChange( FPropertyChangedEvent& InPropertyChangedEvent, class FNotifyHook* InNotifyHook )
@@ -2421,7 +2454,7 @@ void FPropertyNode::NotifyPostChange( FPropertyChangedEvent& InPropertyChangedEv
 	if( OriginalActiveProperty )
 	{
 		//if i have metadata forcing other property windows to rebuild
-		FString MetaData = OriginalActiveProperty->GetMetaData(TEXT("ForceRebuildProperty"));
+		const FString& MetaData = OriginalActiveProperty->GetMetaData(TEXT("ForceRebuildProperty"));
 
 		if( MetaData.Len() > 0 )
 		{
@@ -2458,6 +2491,24 @@ void FPropertyNode::BroadcastPropertyChangedDelegates()
 		if( LocalParentNode->OnChildPropertyValueChanged().IsBound() )
 		{
 			LocalParentNode->OnChildPropertyValueChanged().Broadcast();
+		}
+
+		LocalParentNode = LocalParentNode->GetParentNode();
+	}
+
+}
+
+void FPropertyNode::BroadcastPropertyPreChangeDelegates()
+{
+	PropertyValuePreChangeEvent.Broadcast();
+
+	// Walk through the parents and broadcast
+	FPropertyNode* LocalParentNode = GetParentNode();
+	while (LocalParentNode)
+	{
+		if (LocalParentNode->OnChildPropertyValuePreChange().IsBound())
+		{
+			LocalParentNode->OnChildPropertyValuePreChange().Broadcast();
 		}
 
 		LocalParentNode = LocalParentNode->GetParentNode();
@@ -2619,18 +2670,7 @@ bool FPropertyNode::IsFilterAcceptable(const TArray<FString>& InAcceptableNames,
 	return bCompleteMatchFound;
 }
 
-void FPropertyNode::AdditionalInitializationUDS(UProperty* Property, uint8* RawPtr)
-{
-	if (const UStructProperty* StructProperty = Cast<const UStructProperty>(Property))
-	{
-		if (!FStructureEditorUtils::Fill_MakeStructureDefaultValue(Cast<const UUserDefinedStruct>(StructProperty->Struct), RawPtr))
-		{
-			UE_LOG(LogPropertyNode, Warning, TEXT("MakeStructureDefaultValue parsing error. Property: %s "), *StructProperty->GetPathName());
-		}
-	}
-}
-
-void FPropertyNode::PropagateContainerPropertyChange( UObject* ModifiedObject, const FString& OriginalContainerContent, EPropertyArrayChangeType::Type ChangeType, int32 Index )
+void FPropertyNode::PropagateContainerPropertyChange( UObject* ModifiedObject, const FString& OriginalContainerContent, EPropertyArrayChangeType::Type ChangeType, int32 Index, TMap<UObject*, bool>* PropagationResult, int32 SwapIndex /*= INDEX_NONE*/)
 {
 	UProperty* NodeProperty = GetProperty();
 	UArrayProperty* ArrayProperty = NULL;
@@ -2719,6 +2759,12 @@ void FPropertyNode::PropagateContainerPropertyChange( UObject* ModifiedObject, c
 
 				bool bIsDefaultContainerContent = OriginalContent == OriginalContainerContent;
 
+				// Return instance changes result to caller
+				if (PropagationResult != nullptr)
+				{
+					PropagationResult->Add(ActualObjToChange, bIsDefaultContainerContent);
+				}
+
 				if (ArrayProperty)
 				{
 					FScriptArrayHelper ArrayHelper(ArrayProperty, Addr);
@@ -2748,10 +2794,12 @@ void FPropertyNode::PropagateContainerPropertyChange( UObject* ModifiedObject, c
 							NodeProperty->CopyCompleteValue(ArrayHelper.GetRawPtr(ArrayIndex), ArrayHelper.GetRawPtr(ArrayIndex + 1));
 							Object->InstanceSubobjectTemplates();
 							break;
-						}
-						if (ElementToInitialize >= 0)
-						{
-							AdditionalInitializationUDS(ArrayProperty->Inner, ArrayHelper.GetRawPtr(ElementToInitialize));
+						case EPropertyArrayChangeType::Swap:
+							if (SwapIndex != INDEX_NONE)
+							{
+								ArrayHelper.SwapValues(Index, SwapIndex);
+							}
+							break;
 						}
 					}
 				}	// End Array
@@ -2784,11 +2832,6 @@ void FPropertyNode::PropagateContainerPropertyChange( UObject* ModifiedObject, c
 							check(false);	// Duplicate not supported on sets
 							break;
 						}
-
-						if (ElementToInitialize >= 0)
-						{
-							AdditionalInitializationUDS(SetProperty->ElementProp, SetHelper.GetElementPtr(ElementToInitialize));
-						}
 					}
 				}	// End Set
 				else if (MapProperty)
@@ -2818,14 +2861,6 @@ void FPropertyNode::PropagateContainerPropertyChange( UObject* ModifiedObject, c
 						case EPropertyArrayChangeType::Duplicate:
 							check(false);	// Duplicate is not supported for maps
 							break;
-						}
-
-						if (ElementToInitialize >= 0)
-						{
-							uint8* PairPtr = MapHelper.GetPairPtr(ElementToInitialize);
-
-							AdditionalInitializationUDS(MapProperty->KeyProp, MapProperty->KeyProp->ContainerPtrToValuePtr<uint8>(PairPtr));
-							AdditionalInitializationUDS(MapProperty->ValueProp, MapProperty->ValueProp->ContainerPtrToValuePtr<uint8>(PairPtr));
 						}
 					}
 				}	// End Map
@@ -2937,19 +2972,7 @@ void FPropertyNode::PropagatePropertyChange( UObject* ModifiedObject, const TCHA
 				bool bShouldImport = false;
 				{
 					uint8* TempComplexPropAddr = (uint8*)FMemory::Malloc(ComplexProperty->GetSize(), ComplexProperty->GetMinAlignment());
-					
-					if (ComplexProperty->ArrayDim > 1)
-					{
-						for (int32 i = 0; i < ComplexProperty->ArrayDim; ++i)
-						{
-							ComplexProperty->InitializeValue((uint8*)TempComplexPropAddr + i * ComplexProperty->ElementSize);
-						}
-					}
-					else
-					{
-						ComplexProperty->InitializeValue(TempComplexPropAddr);
-					}
-					
+					ComplexProperty->InitializeValue(TempComplexPropAddr);
 					ON_SCOPE_EXIT
 					{
 						ComplexProperty->DestroyValue(TempComplexPropAddr);

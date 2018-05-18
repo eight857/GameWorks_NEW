@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -35,6 +35,7 @@ private:
 	FGuid DataGuid;
 	FString MeshId;
 	bool bIsRuntime;
+	bool bVerifyDDC;
 
 public:
 	FDerivedDataPhysXCooker(FName InFormat, EPhysXMeshCookFlags InRuntimeCookFlags, UBodySetup* InBodySetup, bool InIsRuntime);
@@ -49,7 +50,7 @@ public:
 		// This is a version string that mimics the old versioning scheme. If you
 		// want to bump this version, generate a new guid using VS->Tools->Create GUID and
 		// return it here. Ex.
-		return TEXT("48A34D3CEFD54C709592943289228CCF");	
+		return TEXT("0A50D9145BC447B69254BED33438406D");	
 	}
 
 	virtual FString GetPluginSpecificCacheKeySuffix() const override
@@ -72,7 +73,7 @@ public:
 			(int32)bGenerateMirroredMesh,
 			(int32)bGenerateUVInfo,
 			(int32)RuntimeCookFlags,
-			(int32)BodyComplexity,
+			BodyComplexity,
 			PhysXVersion,
 			Cooker ? Cooker->GetVersion( Format ) : 0xffff
 			);
@@ -83,6 +84,13 @@ public:
 	{
 		return false;
 	}
+
+	virtual bool IsDeterministic() const override
+	{
+		return true;
+	}
+
+	virtual FString GetDebugContextString() const override;
 
 	virtual bool Build( TArray<uint8>& OutData ) override;
 

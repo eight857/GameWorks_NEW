@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D11Shaders.cpp: D3D shader RHI implementation.
@@ -237,9 +237,17 @@ FD3D11BoundShaderState::FD3D11BoundShaderState(
 
 	FShaderCodeReader VertexShaderCode(InVertexShader->Code);
 
-	VERIFYD3D11RESULT_EX(
+	if (InVertexDeclaration == nullptr)
+	{
+		InputLayout = nullptr;
+	}
+	else
+	{
+		FMemory::Memcpy(StreamStrides, InVertexDeclaration->StreamStrides, sizeof(StreamStrides));
+
+		VERIFYD3D11RESULT_EX(
 		Direct3DDevice->CreateInputLayout(
-			InVertexDeclaration ? InVertexDeclaration->VertexElements.GetData() : &NullInputElement,
+			InVertexDeclaration && InVertexDeclaration->VertexElements.Num() ? InVertexDeclaration->VertexElements.GetData() : &NullInputElement,
 			InVertexDeclaration ? InVertexDeclaration->VertexElements.Num() : 0,
 			&InVertexShader->Code[ InVertexShader->Offset ],			// TEMP ugly
 			VertexShaderCode.GetActualShaderCodeSize() - InVertexShader->Offset,
@@ -247,6 +255,7 @@ FD3D11BoundShaderState::FD3D11BoundShaderState(
 			),
 		Direct3DDevice
 		);
+	}
 
 	VertexShader = InVertexShader->Resource;
 	PixelShader = InPixelShader ? InPixelShader->Resource : NULL;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * File to hold common package helper functions.
@@ -228,7 +228,7 @@ void DoActionToAllPackages( UCommandlet* Commandlet, const FString& Params )
 	{
 		const FString& Filename = FilesInPath[FileIndex];
 
-		const bool bIsAutoSave = FString(*Filename).ToUpper().Contains( TEXT("AUTOSAVES") );
+		const bool bIsAutoSave = Filename.Contains( TEXT("AUTOSAVES") );
 		
 		// See if we should skip read only packages
 		if( bSkipReadOnly && !bOverrideSkipOnly )

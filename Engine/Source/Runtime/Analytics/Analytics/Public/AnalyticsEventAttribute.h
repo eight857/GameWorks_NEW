@@ -1,9 +1,19 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "AnalyticsConversion.h"
+
+struct FJsonNull
+{
+};
+
+struct FJsonFragment
+{
+	explicit FJsonFragment(FString&& StringRef) : FragmentString(MoveTemp(StringRef)) {}
+	FString FragmentString;
+};
 
 /**
  * Struct to hold key/value pairs that will be sent as attributes along with analytics events.
@@ -12,12 +22,125 @@
  */
 struct FAnalyticsEventAttribute
 {
-	FString AttrName;
-	FString AttrValue;
+	const FString AttrName;
+
+	const FString AttrValueString;
+	const double AttrValueNumber;
+	const bool AttrValueBool;
+
+	enum class AttrTypeEnum
+	{
+		String,
+		Number,
+		Boolean,
+		Null,
+		JsonFragment
+	};
+	const AttrTypeEnum AttrType;
+
 	/** Default ctor since we declare a custom ctor. */
 	FAnalyticsEventAttribute()
+		: AttrName()
+		, AttrValueString()
+		, AttrValueNumber(0)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::String)
 	{}
 
+	/** If you need the old AttrValue behavior (i.e. stringify everything), call this function instead. */
+	FString ToString() const
+	{
+		switch (AttrType)
+		{
+		case AttrTypeEnum::String:
+		case AttrTypeEnum::JsonFragment:
+			return AttrValueString;
+		case AttrTypeEnum::Number:
+			if (AttrValueNumber - FMath::TruncToFloat(AttrValueNumber) == 0.0)
+				return Lex::ToSanitizedString((int64)AttrValueNumber);
+			return Lex::ToSanitizedString(AttrValueNumber);
+		case AttrTypeEnum::Boolean:
+			return Lex::ToString(AttrValueBool);
+		case AttrTypeEnum::Null:
+			return TEXT("null");
+		default:
+			ensure(false);
+			return FString();
+		}
+	}
+
+public: // null
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, FJsonNull)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(0)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::Null)
+	{
+	}
+
+public: // numeric types
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, double InValue)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(InValue)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::Number)
+	{
+	}
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, float InValue)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(InValue)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::Number)
+	{
+	}
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, int32 InValue)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(InValue)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::Number)
+	{
+	}
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, uint32 InValue)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(InValue)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::Number)
+	{
+	}
+
+public: // boolean
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, bool InValue)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(0)
+		, AttrValueBool(InValue)
+		, AttrType(AttrTypeEnum::Boolean)
+	{
+	}
+
+public: // json fragment
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, FJsonFragment&& Fragment)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString(MoveTemp(Fragment.FragmentString))
+		, AttrValueNumber(0)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::JsonFragment)
+	{
+	}
+
+public: // string (catch-all)
 	/**
 	 * Helper constructor to make an attribute from a name/value pair by forwarding through Lex::ToString and AnalyticsConversion::ToString.
 	 * 
@@ -27,7 +150,10 @@ struct FAnalyticsEventAttribute
 	template <typename NameType, typename ValueType>
 	FAnalyticsEventAttribute(NameType&& InName, ValueType&& InValue)
 		: AttrName(Lex::ToString(Forward<NameType>(InName)))
-		, AttrValue(AnalyticsConversion::ToString(Forward<ValueType>(InValue)))
+		, AttrValueString(AnalyticsConversion::ToString(Forward<ValueType>(InValue)))
+		, AttrValueNumber(0)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::String)
 	{}
 };
 

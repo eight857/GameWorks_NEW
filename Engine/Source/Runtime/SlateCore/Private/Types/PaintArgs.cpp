@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Types/PaintArgs.h"
 #include "Layout/ArrangedWidget.h"
@@ -61,7 +61,7 @@ FPaintArgs FPaintArgs::RecordHittestGeometry(const SWidget* Widget, const FGeome
 		}
 
 		int32 RealLastHitTestIndex = LastHittestIndex;
-		if ( bIsVolatilityPass && ParentCacheNode )
+		if ( bIsVolatilityPass && !bIsCaching && ParentCacheNode )
 		{
 			RealLastHitTestIndex = ParentCacheNode->LastRecordedHittestIndex;
 			UpdatedArgs.ParentCacheNode = nullptr;

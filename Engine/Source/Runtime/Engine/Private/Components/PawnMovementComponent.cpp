@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameFramework/PawnMovementComponent.h"
 #include "GameFramework/Pawn.h"
@@ -84,12 +84,6 @@ void UPawnMovementComponent::RequestPathMove(const FVector& MoveInput)
 	{
 		PawnOwner->Internal_AddMovementInput(MoveInput);
 	}
-}
-
-// TODO: deprecated, remove
-FVector UPawnMovementComponent::GetInputVector() const
-{
-	return GetPendingInputVector();
 }
 
 // TODO: deprecated, remove

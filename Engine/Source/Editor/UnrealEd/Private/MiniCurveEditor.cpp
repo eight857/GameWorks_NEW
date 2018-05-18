@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "MiniCurveEditor.h"
@@ -87,4 +87,9 @@ double SMiniCurveEditor::GetLastActivationTime()
 {
 	//@TODO: This editor should probably derive from FAssetEditorToolkit instead!
 	return 0.0;
+}
+
+void SMiniCurveEditor::RemoveEditingAsset(UObject* Asset)
+{
+	//@TODO: This editor should probably derive from FAssetEditorToolkit instead!
 }

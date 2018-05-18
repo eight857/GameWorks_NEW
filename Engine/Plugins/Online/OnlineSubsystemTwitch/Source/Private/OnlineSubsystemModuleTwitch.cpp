@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSubsystemTwitchPrivate.h"
 
@@ -16,9 +16,9 @@ public:
 
 	virtual IOnlineSubsystemPtr CreateSubsystem(FName InstanceName)
 	{
-		if (FOnlineSubsystemTwitch::IsEnabled())
+		FOnlineSubsystemTwitchPtr OnlineSub = MakeShared<FOnlineSubsystemTwitch, ESPMode::ThreadSafe>(InstanceName);
+		if (OnlineSub->IsEnabled())
 		{
-			FOnlineSubsystemTwitchPtr OnlineSub = MakeShared<FOnlineSubsystemTwitch, ESPMode::ThreadSafe>(InstanceName);
 			if (!OnlineSub->Init())
 			{
 				UE_LOG_ONLINE(Warning, TEXT("Twitch API failed to initialize instance %s!"), *InstanceName.ToString());
@@ -37,6 +37,8 @@ public:
 				UE_LOG_ONLINE(Log, TEXT("Twitch API disabled."));
 				bHasAlerted = true;
 			}
+			OnlineSub->Shutdown();
+			OnlineSub.Reset();
 		}
 
 		return nullptr;
@@ -45,7 +47,7 @@ public:
 
 void FOnlineSubsystemTwitchModule::StartupModule()
 {
-	UE_LOG_ONLINE(Log, TEXT("Twitch Startup!"));
+	UE_LOG_ONLINE(Verbose, TEXT("Twitch Startup!"));
 
 	TwitchFactory = MakeUnique<FOnlineFactoryTwitch>();
 
@@ -56,7 +58,7 @@ void FOnlineSubsystemTwitchModule::StartupModule()
 
 void FOnlineSubsystemTwitchModule::ShutdownModule()
 {
-	UE_LOG_ONLINE(Log, TEXT("Twitch Shutdown!"));
+	UE_LOG_ONLINE(Verbose, TEXT("Twitch Shutdown!"));
 
 	FOnlineSubsystemModule& OSS = FModuleManager::GetModuleChecked<FOnlineSubsystemModule>("OnlineSubsystem");
 	OSS.UnregisterPlatformService(TWITCH_SUBSYSTEM);

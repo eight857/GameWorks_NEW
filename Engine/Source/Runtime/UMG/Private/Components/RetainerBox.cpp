@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/RetainerBox.h"
 #include "Widgets/SNullWidget.h"
@@ -19,7 +19,17 @@ URetainerBox::URetainerBox(const FObjectInitializer& ObjectInitializer)
 	Visibility = ESlateVisibility::Visible;
 	Phase = 0;
 	PhaseCount = 1;
+	RenderOnPhase = true;
+	RenderOnInvalidation = false;
 	TextureParameter = DefaultTextureParameterName;
+}
+
+void URetainerBox::RequestRender()
+{
+	if ( MyRetainerWidget.IsValid() )
+	{
+		MyRetainerWidget->RequestRender();
+	}
 }
 
 UMaterialInstanceDynamic* URetainerBox::GetEffectMaterial() const
@@ -61,6 +71,8 @@ TSharedRef<SWidget> URetainerBox::RebuildWidget()
 {
 	MyRetainerWidget =
 		SNew(SRetainerWidget)
+		.RenderOnInvalidation(RenderOnInvalidation)
+		.RenderOnPhase(RenderOnPhase)
 		.Phase(Phase)
 		.PhaseCount(PhaseCount)
 #if STATS

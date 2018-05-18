@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -64,11 +64,11 @@ enum class EVectorVMOp : uint8
 	min,
 	max,
 	pow,
+	round,
 	sign,
 	step,
 	random,
 	noise,
-	output,
 
 	//Comparison ops.
 	cmplt,
@@ -93,6 +93,7 @@ enum class EVectorVMOp : uint8
 	absi,
 	negi,
 	signi,
+	randomi,
 	cmplti,
 	cmplei,
 	cmpgti,
@@ -136,10 +137,6 @@ enum class EVectorVMOp : uint8
 	enter_stat_scope,
 	exit_stat_scope,
 
-	//TODO: Move back to the float ops when we can auto recompile existing data.
-	round,
-
-
 	NumOpcodes
 };
 
@@ -166,8 +163,8 @@ namespace VectorVM
 	/** Constants. */
 	enum
 	{
-		NumTempRegisters = 100,
-		MaxInputRegisters = 100,
+		NumTempRegisters = 400,
+		MaxInputRegisters = 400,
 		MaxOutputRegisters = MaxInputRegisters,
 		MaxConstants = 256,
 		FirstTempRegister = 0,
@@ -192,18 +189,17 @@ namespace VectorVM
 	VECTORVM_API void Exec(
 		uint8 const* Code,
 		uint8** InputRegisters,
-		uint8* InputRegisterSizes,
 		int32 NumInputRegisters,
 		uint8** OutputRegisters,
-		uint8* OutputRegisterSizes,
 		int32 NumOutputRegisters,
 		uint8 const* ConstantTable,
 		TArray<FDataSetMeta> &DataSetMetaTable,
 		FVMExternalFunction* ExternalFunctionTable,
+		void** UserPtrTable,
 		int32 NumInstances
 
 #if STATS
-		, TArray<TStatId>& StatScopes
+		, const TArray<TStatId>& StatScopes
 #endif
 		);
 
@@ -216,12 +212,10 @@ namespace VectorVM
   /**
   * Context information passed around during VM execution.
   */
-struct FVectorVMContext
+struct FVectorVMContext : TThreadSingleton<FVectorVMContext>
 {
 	/** Pointer to the next element in the byte code. */
 	uint8 const* RESTRICT Code;
-	/** Pointer to the table of vector register arrays. */
-	uint8* RESTRICT * RESTRICT RegisterTable;
 	/** Pointer to the constant table. */
 	uint8 const* RESTRICT ConstantTable;
 	/** Pointer to the data set index counter table */
@@ -230,45 +224,44 @@ struct FVectorVMContext
 	int32 NumSecondaryDataSets;
 	/** Pointer to the shared data table. */
 	FVMExternalFunction* RESTRICT ExternalFunctionTable;
+	/** Table of user pointers.*/
+	void** UserPtrTable;
 	/** Number of instances to process. */
 	int32 NumInstances;
 	/** Start instance of current chunk. */
 	int32 StartInstance;
 
 #if STATS
-	TArray<FCycleCounter> StatCounterStack;
-	TArray<TStatId>& StatScopes;
+	TArray<FCycleCounter, TInlineAllocator<64>> StatCounterStack;
+	const TArray<TStatId>* StatScopes;
 #endif
 
-	/** Initialization constructor. */
-	FVectorVMContext(
-		const uint8* InCode,
-		uint8** InRegisterTable,
+	TArray<uint8, TAlignedHeapAllocator<VECTOR_WIDTH_BYTES>> TempRegTable;
+	uint8 *RESTRICT RegisterTable[VectorVM::MaxRegisters];
+
+	FVectorVMContext();
+
+	void PrepareForExec(
+		uint8*RESTRICT*RESTRICT InputRegisters,
+		uint8*RESTRICT*RESTRICT OutputRegisters,
+		int32 NumInputRegisters,
+		int32 NumOutputRegisters,
 		const uint8* InConstantTable,
 		int32 *InDataSetIndexTable,
 		int32 *InDataSetOffsetTable,
+		int32 InNumSecondaryDatasets,
 		FVMExternalFunction* InExternalFunctionTable,
-		int32 InNumInstances,
-		int32 InStartInstance
+		void** InUserPtrTable
 #if STATS
-		, TArray<TStatId>& InStatScopes
+		, const TArray<TStatId>* InStatScopes
 #endif
-	)
-		: Code(InCode)
-		, RegisterTable(InRegisterTable)
-		, ConstantTable(InConstantTable)
-		, DataSetIndexTable(InDataSetIndexTable)
-		, DataSetOffsetTable(InDataSetOffsetTable)
-		, ExternalFunctionTable(InExternalFunctionTable)
-		, NumInstances(InNumInstances)
-		, StartInstance(InStartInstance)
-#if STATS
-		, StatScopes(InStatScopes)
-#endif
+	);
+
+	void PrepareForChunk(const uint8* InCode, int32 InNumInstances, int32 InStartInstance)
 	{
-#if STATS
-		StatCounterStack.Reserve(StatScopes.Num());
-#endif
+		Code = InCode;
+		NumInstances = InNumInstances;
+		StartInstance = InStartInstance;
 	}
 };
 
@@ -368,6 +361,22 @@ struct FRegisterHandlerBase
 	FRegisterHandlerBase(FVectorVMContext& Context)
 		: RegisterIndex(DecodeU16(Context))
 	{}
+};
+
+template<typename T>
+struct FUserPtrHandler
+{
+	int32 UserPtrIdx;
+	T* Ptr;
+	FUserPtrHandler(FVectorVMContext& Context)
+		: UserPtrIdx(*(int32*)(Context.ConstantTable + DecodeU16(Context)))
+		, Ptr((T*)Context.UserPtrTable[UserPtrIdx])
+	{
+		check(UserPtrIdx != INDEX_NONE);
+	}
+	FORCEINLINE T* Get() { return Ptr; }
+	FORCEINLINE T* operator->() { return Ptr; }
+	FORCEINLINE operator T*() { return Ptr; }
 };
 
 template<typename T>

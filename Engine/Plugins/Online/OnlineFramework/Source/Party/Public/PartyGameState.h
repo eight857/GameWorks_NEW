@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -61,7 +61,9 @@ enum class EJoinPartyDenialReason : uint8
 	/** Party has been marked as private and the join request is revoked */
 	PartyPrivate,
 	/** Player is still in tutorials and no able to do invites */
-	NeedsTutorial
+	NeedsTutorial,
+	/** Player is in a game mode that restricts joining */
+	GameModeRestricted
 };
 
 enum class EApprovalAction : uint8
@@ -720,7 +722,7 @@ inline const TCHAR* ToString(EPartyType Type)
 	}
 	default:
 	{
-		return TEXT("");
+		return TEXT("Unknown");
 	}
 	}
 }
@@ -759,7 +761,7 @@ inline const TCHAR* ToString(EJoinPartyDenialReason Type)
 	}
 	default:
 	{
-		return TEXT("");
+		return TEXT("Unknown");
 	}
 	}
 }
@@ -786,7 +788,7 @@ inline const TCHAR* ToString(EApprovalAction Type)
 	}
 	default:
 	{
-		return TEXT("");
+		return TEXT("Unknown");
 	}
 	}
 }

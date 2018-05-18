@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SlatePostProcessor.h"
 #include "SlatePostProcessResource.h"
@@ -309,13 +309,14 @@ void FSlatePostProcessor::UpsampleRect(FRHICommandListImmediate& RHICmdList, IRe
 
 	RHICmdList.SetViewport(0, 0, 0, DestTextureWidth, DestTextureHeight, 0.0f);
 
-	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, Params.SourceTexture);
+	// Perform Writable transitions first
 	RHICmdList.TransitionResource(EResourceTransitionAccess::EWritable, DestTexture);
+	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, SrcTexture);
 
 	SetRenderTarget(RHICmdList, DestTexture, FTextureRHIRef());
 	RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
 
-	Params.RestoreStateFunc(GraphicsPSOInit);
+	Params.RestoreStateFunc(RHICmdList, GraphicsPSOInit);
 
 	TShaderMapRef<FScreenPS> PixelShader(ShaderMap);
 

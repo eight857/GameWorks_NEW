@@ -1,11 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
+#include "Containers/UnrealString.h"
 #include "UObject/ObjectMacros.h"
 #include "Misc/Guid.h"
+
 #include "MessageRpcMessages.generated.h"
+
 
 /** Message for canceling an RPC call. */
 USTRUCT()

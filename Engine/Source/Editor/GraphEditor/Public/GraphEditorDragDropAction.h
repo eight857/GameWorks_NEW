@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -24,6 +24,8 @@ class GRAPHEDITOR_API FGraphEditorDragDropAction : public FDragDropOperation
 {
 public:
 	DRAG_DROP_OPERATOR_TYPE(FGraphEditorDragDropAction, FDragDropOperation)
+
+	FGraphEditorDragDropAction();
 
 	void SetHoveredPin(UEdGraphPin* InPin);
 	void SetHoveredNode(const TSharedPtr<SGraphNode>& InNode);
@@ -98,12 +100,14 @@ public:
 	static TSharedRef<FGraphSchemaActionDragDropAction> New(TSharedPtr<FEdGraphSchemaAction> InActionNode )
 	{
 		TSharedRef<FGraphSchemaActionDragDropAction> Operation = MakeShareable(new FGraphSchemaActionDragDropAction);
-		Operation->ActionNode = InActionNode;
+		Operation->SourceAction = InActionNode;
 		Operation->Construct();
 		return Operation;
 	}
 
 protected:
+	virtual void GetDefaultStatusSymbol(const FSlateBrush*& PrimaryBrushOut, FSlateColor& IconColorOut, FSlateBrush const*& SecondaryBrushOut, FSlateColor& SecondaryColorOut) const;
+
 	/** */
-	TSharedPtr<FEdGraphSchemaAction> ActionNode;
+	TSharedPtr<FEdGraphSchemaAction> SourceAction;
 };

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_WaitAbilityCommit.h"
 
@@ -33,7 +33,7 @@ void UAbilityTask_WaitAbilityCommit::Activate()
 {
 	if (AbilitySystemComponent)	
 	{		
-		OnAbilityCommitDelegateHandle = AbilitySystemComponent->AbilityCommitedCallbacks.AddUObject(this, &UAbilityTask_WaitAbilityCommit::OnAbilityCommit);
+		OnAbilityCommitDelegateHandle = AbilitySystemComponent->AbilityCommittedCallbacks.AddUObject(this, &UAbilityTask_WaitAbilityCommit::OnAbilityCommit);
 	}
 }
 
@@ -41,7 +41,7 @@ void UAbilityTask_WaitAbilityCommit::OnDestroy(bool AbilityEnded)
 {
 	if (AbilitySystemComponent)
 	{
-		AbilitySystemComponent->AbilityCommitedCallbacks.Remove(OnAbilityCommitDelegateHandle);
+		AbilitySystemComponent->AbilityCommittedCallbacks.Remove(OnAbilityCommitDelegateHandle);
 	}
 
 	Super::OnDestroy(AbilityEnded);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Kismet/GameplayStatics.h"
 #include "Serialization/MemoryWriter.h"
@@ -39,7 +39,8 @@
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "PhysicsEngine/PhysicsSettings.h"
 #include "PhysicsEngine/BodySetup.h"
-#include "EngineStats.h"
+#include "Misc/EngineVersion.h"
+#include "ContentStreaming.h"
 
 #define LOCTEXT_NAMESPACE "GameplayStatics"
 
@@ -61,6 +62,7 @@ struct FSaveGameFileVersion
 
 DECLARE_CYCLE_STAT(TEXT("BreakHitResult"), STAT_BreakHitResult, STATGROUP_Game);
 DECLARE_CYCLE_STAT(TEXT("MakeHitResult"), STAT_MakeHitResult, STATGROUP_Game);
+DECLARE_CYCLE_STAT(TEXT("SpawnTime"), STAT_SpawnTime, STATGROUP_Game);
 
 //////////////////////////////////////////////////////////////////////////
 // UGameplayStatics
@@ -282,7 +284,7 @@ bool UGameplayStatics::ApplyRadialDamageWithFalloff(const UObject* WorldContextO
 	TArray<FOverlapResult> Overlaps;
 	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
-		World->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, FCollisionObjectQueryParams(FCollisionObjectQueryParams::InitType::AllDynamicObjects), FCollisionShape::MakeSphere(DamageOuterRadius), SphereParams);
+	World->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, FCollisionObjectQueryParams(FCollisionObjectQueryParams::InitType::AllDynamicObjects), FCollisionShape::MakeSphere(DamageOuterRadius), SphereParams);
 	}
 
 	// collate into per-actor list of hit components
@@ -310,25 +312,25 @@ bool UGameplayStatics::ApplyRadialDamageWithFalloff(const UObject* WorldContextO
 
 	if (OverlapComponentMap.Num() > 0)
 	{
-		// make sure we have a good damage type
-		TSubclassOf<UDamageType> const ValidDamageTypeClass = DamageTypeClass ? DamageTypeClass : TSubclassOf<UDamageType>(UDamageType::StaticClass());
+	// make sure we have a good damage type
+	TSubclassOf<UDamageType> const ValidDamageTypeClass = DamageTypeClass ? DamageTypeClass : TSubclassOf<UDamageType>(UDamageType::StaticClass());
 
 		FRadialDamageEvent DmgEvent;
 		DmgEvent.DamageTypeClass = ValidDamageTypeClass;
 		DmgEvent.Origin = Origin;
 		DmgEvent.Params = FRadialDamageParams(BaseDamage, MinimumDamage, DamageInnerRadius, DamageOuterRadius, DamageFalloff);
 
-		// call damage function on each affected actors
-		for (TMap<AActor*, TArray<FHitResult> >::TIterator It(OverlapComponentMap); It; ++It)
-		{
-			AActor* const Victim = It.Key();
-			TArray<FHitResult> const& ComponentHits = It.Value();
-			DmgEvent.ComponentHits = ComponentHits;
+	// call damage function on each affected actors
+	for (TMap<AActor*, TArray<FHitResult> >::TIterator It(OverlapComponentMap); It; ++It)
+	{
+		AActor* const Victim = It.Key();
+		TArray<FHitResult> const& ComponentHits = It.Value();
+		DmgEvent.ComponentHits = ComponentHits;
 
-			Victim->TakeDamage(BaseDamage, DmgEvent, InstigatedByController, DamageCauser);
+		Victim->TakeDamage(BaseDamage, DmgEvent, InstigatedByController, DamageCauser);
 
-			bAppliedDamage = true;
-		}
+		bAppliedDamage = true;
+	}
 	}
 
 	return bAppliedDamage;
@@ -364,6 +366,12 @@ float UGameplayStatics::ApplyDamage(AActor* DamagedActor, float BaseDamage, ACon
 
 UObject* UGameplayStatics::SpawnObject(TSubclassOf<UObject> ObjectClass, UObject* Outer)
 {
+	if (*ObjectClass == nullptr)
+	{
+		UE_LOG(LogScript, Warning, TEXT("UGameplayStatics::SpawnObject no class specified"));
+		return nullptr;
+	}
+
 	if (!Outer)
 	{
 		UE_LOG(LogScript, Warning, TEXT("UGameplayStatics::SpawnObject null outer"));
@@ -405,6 +413,7 @@ class AActor* UGameplayStatics::BeginSpawningActorFromClass(const UObject* World
 
 class AActor* UGameplayStatics::BeginDeferredActorSpawnFromClass(const UObject* WorldContextObject, TSubclassOf<AActor> ActorClass, const FTransform& SpawnTransform, ESpawnActorCollisionHandlingMethod CollisionHandlingOverride /*= ESpawnActorCollisionHandlingMethod::Undefined*/, AActor* Owner /*= nullptr*/)
 {
+	SCOPE_CYCLE_COUNTER(STAT_SpawnTime);
 	if (UClass* Class = *ActorClass)
 	{
 		// If the WorldContextObject is a Pawn we will use that as the instigator.
@@ -439,6 +448,7 @@ class AActor* UGameplayStatics::BeginDeferredActorSpawnFromClass(const UObject* 
 
 AActor* UGameplayStatics::FinishSpawningActor(AActor* Actor, const FTransform& SpawnTransform)
 {
+	SCOPE_CYCLE_COUNTER(STAT_SpawnTime);
 	if (Actor)
 	{
 		Actor->FinishSpawning(SpawnTransform);
@@ -690,36 +700,51 @@ UParticleSystemComponent* CreateParticleSystem(UParticleSystem* EmitterTemplate,
 
 UParticleSystemComponent* UGameplayStatics::SpawnEmitterAtLocation(const UObject* WorldContextObject, UParticleSystem* EmitterTemplate, FVector SpawnLocation, FRotator SpawnRotation, bool bAutoDestroy)
 {
+	return SpawnEmitterAtLocation(WorldContextObject, EmitterTemplate, SpawnLocation, SpawnRotation, FVector(1.f), bAutoDestroy);
+}
+
+UParticleSystemComponent* UGameplayStatics::InternalSpawnEmitterAtLocation(UWorld* World, UParticleSystem* EmitterTemplate, FVector SpawnLocation, FRotator SpawnRotation, FVector SpawnScale, bool bAutoDestroy)
+{
+	check(World && EmitterTemplate);
+
+	UParticleSystemComponent* PSC = CreateParticleSystem(EmitterTemplate, World, World->GetWorldSettings(), bAutoDestroy);
+
+	PSC->bAbsoluteLocation = true;
+	PSC->bAbsoluteRotation = true;
+	PSC->bAbsoluteScale = true;
+	PSC->RelativeLocation = SpawnLocation;
+	PSC->RelativeRotation = SpawnRotation;
+	PSC->RelativeScale3D = SpawnScale;
+
+	PSC->RegisterComponentWithWorld(World);
+	PSC->ActivateSystem(true);
+
+	// Notify the texture streamer so that PSC gets managed as a dynamic component.
+	IStreamingManager::Get().NotifyPrimitiveAttached(PSC, DPT_Spawned);
+
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+	if (PSC->Template && PSC->Template->IsImmortal())
+	{
+		UE_LOG(LogParticles, Warning, TEXT("GameplayStatics::SpawnEmitterAtLocation spawned potentially immortal particle system! %s (%s) may stay in world despite never spawning particles after burst spawning is over."),
+			*(PSC->GetPathName()), *(PSC->Template->GetPathName())
+			);
+	}
+#endif
+
+	return PSC;
+}
+
+UParticleSystemComponent* UGameplayStatics::SpawnEmitterAtLocation(const UObject* WorldContextObject, UParticleSystem* EmitterTemplate, FVector SpawnLocation, FRotator SpawnRotation, FVector SpawnScale, bool bAutoDestroy)
+{
+	UParticleSystemComponent* PSC = nullptr;
 	if (EmitterTemplate)
 	{
 		if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 		{
-			UParticleSystemComponent* PSC = CreateParticleSystem(EmitterTemplate, World, World->GetWorldSettings(), bAutoDestroy);
-
-			PSC->bAbsoluteLocation = true;
-			PSC->bAbsoluteRotation = true;
-			PSC->bAbsoluteScale = true;
-			PSC->RelativeLocation = SpawnLocation;
-			PSC->RelativeRotation = SpawnRotation;
-			PSC->RelativeScale3D = FVector(1.f);
-
-			PSC->RegisterComponentWithWorld(World);
-
-			PSC->ActivateSystem(true);
-
-#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-			if (PSC->Template && PSC->Template->IsImmortal())
-			{
-				UE_LOG(LogParticles, Warning, TEXT("GameplayStatics::SpawnEmitterAtLocation spawned potentially immortal particle system! %s (%s) may stay in world despite never spawning particles after burst spawning is over."),
-					*(PSC->GetPathName()), *(PSC->Template->GetPathName())
-					);
-			}
-#endif
-
-			return PSC;
+			PSC = InternalSpawnEmitterAtLocation(World, EmitterTemplate, SpawnLocation, SpawnRotation, SpawnScale, bAutoDestroy);
 		}
 	}
-	return nullptr;
+	return PSC;
 }
 
 UParticleSystemComponent* UGameplayStatics::SpawnEmitterAtLocation(UWorld* World, UParticleSystem* EmitterTemplate, const FTransform& SpawnTransform, bool bAutoDestroy)
@@ -727,34 +752,17 @@ UParticleSystemComponent* UGameplayStatics::SpawnEmitterAtLocation(UWorld* World
 	UParticleSystemComponent* PSC = nullptr;
 	if (World && EmitterTemplate)
 	{
-		PSC = CreateParticleSystem(EmitterTemplate, World, World->GetWorldSettings(), bAutoDestroy);
-
-		PSC->bAbsoluteLocation = true;
-		PSC->bAbsoluteRotation = true;
-		PSC->bAbsoluteScale = true;
-		PSC->RelativeLocation = SpawnTransform.GetLocation();
-		PSC->RelativeRotation = SpawnTransform.GetRotation().Rotator();
-		PSC->RelativeScale3D = SpawnTransform.GetScale3D();
-
-		PSC->RegisterComponentWithWorld(World);
-
-		PSC->ActivateSystem(true);
-
-#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-		if (PSC->Template && PSC->Template->IsImmortal())
-		{
-			UE_LOG(LogParticles, Warning, TEXT("GameplayStatics::SpawnEmitterAtLocation spawned potentially immortal particle system! %s (%s) may stay in world despite never spawning particles after burst spawning is over."),
-				*(PSC->GetPathName()), *(PSC->Template->GetPathName())
-				);
-		}
-#endif
-
+		PSC = InternalSpawnEmitterAtLocation(World, EmitterTemplate, SpawnTransform.GetLocation(), SpawnTransform.GetRotation().Rotator(), SpawnTransform.GetScale3D(), bAutoDestroy);
 	}
 	return PSC;
 }
 
-
 UParticleSystemComponent* UGameplayStatics::SpawnEmitterAttached(UParticleSystem* EmitterTemplate, USceneComponent* AttachToComponent, FName AttachPointName, FVector Location, FRotator Rotation, EAttachLocation::Type LocationType, bool bAutoDestroy)
+{
+	return SpawnEmitterAttached(EmitterTemplate, AttachToComponent, AttachPointName, Location, Rotation, FVector(1.f), LocationType, bAutoDestroy);
+}
+
+UParticleSystemComponent* UGameplayStatics::SpawnEmitterAttached(UParticleSystem* EmitterTemplate, USceneComponent* AttachToComponent, FName AttachPointName, FVector Location, FRotator Rotation, FVector Scale, EAttachLocation::Type LocationType, bool bAutoDestroy)
 {
 	UParticleSystemComponent* PSC = nullptr;
 	if (EmitterTemplate)
@@ -775,11 +783,11 @@ UParticleSystemComponent* UGameplayStatics::SpawnEmitterAttached(UParticleSystem
 				if (LocationType == EAttachLocation::KeepWorldPosition)
 				{
 					const FTransform ParentToWorld = AttachToComponent->GetSocketTransform(AttachPointName);
-					const FTransform ComponentToWorld(Rotation, Location);
+					const FTransform ComponentToWorld(Rotation, Location, Scale);
 					const FTransform RelativeTM = ComponentToWorld.GetRelativeTransform(ParentToWorld);
 					PSC->RelativeLocation = RelativeTM.GetLocation();
 					PSC->RelativeRotation = RelativeTM.GetRotation().Rotator();
-					PSC->RelativeScale3D = FVector(1.f);
+					PSC->RelativeScale3D = RelativeTM.GetScale3D();
 				}
 				else
 				{
@@ -788,19 +796,22 @@ UParticleSystemComponent* UGameplayStatics::SpawnEmitterAttached(UParticleSystem
 					
 					if (LocationType == EAttachLocation::SnapToTarget)
 					{
-						// SnapToTarget indicates we "keep world scale", and since we pass in no scale, we assume we want to keep a scale of 1,
-						// which indicates we want the inverse of the parent-to-world scale to maintain world scale of 1.
+						// SnapToTarget indicates we "keep world scale", this indicates we we want the inverse of the parent-to-world scale 
+						// to calculate world scale at Scale 1, and then apply the passed in Scale
 						const FTransform ParentToWorld = AttachToComponent->GetSocketTransform(AttachPointName);
-						PSC->RelativeScale3D = ParentToWorld.GetSafeScaleReciprocal(ParentToWorld.GetScale3D());
+						PSC->RelativeScale3D = Scale * ParentToWorld.GetSafeScaleReciprocal(ParentToWorld.GetScale3D());
 					}
 					else
 					{
-						PSC->RelativeScale3D = FVector(1.f);
+						PSC->RelativeScale3D = Scale;
 					}
 				}
 
 				PSC->RegisterComponentWithWorld(World);
 				PSC->ActivateSystem(true);
+				
+				// Notify the texture streamer so that PSC gets managed as a dynamic component.
+				IStreamingManager::Get().NotifyPrimitiveAttached(PSC, DPT_Spawned);
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 				if (PSC->Template && PSC->Template->IsImmortal())
@@ -818,12 +829,13 @@ UParticleSystemComponent* UGameplayStatics::SpawnEmitterAttached(UParticleSystem
 	return PSC;
 }
 
-void UGameplayStatics::BreakHitResult(const FHitResult& Hit, bool& bBlockingHit, bool& bInitialOverlap, float& Time, FVector& Location, FVector& ImpactPoint, FVector& Normal, FVector& ImpactNormal, UPhysicalMaterial*& PhysMat, AActor*& HitActor, UPrimitiveComponent*& HitComponent, FName& HitBoneName, int32& HitItem, int32& FaceIndex, FVector& TraceStart, FVector& TraceEnd)
+void UGameplayStatics::BreakHitResult(const FHitResult& Hit, bool& bBlockingHit, bool& bInitialOverlap, float& Time, float& Distance, FVector& Location, FVector& ImpactPoint, FVector& Normal, FVector& ImpactNormal, UPhysicalMaterial*& PhysMat, AActor*& HitActor, UPrimitiveComponent*& HitComponent, FName& HitBoneName, int32& HitItem, int32& FaceIndex, FVector& TraceStart, FVector& TraceEnd)
 {
 	SCOPE_CYCLE_COUNTER(STAT_BreakHitResult);
 	bBlockingHit = Hit.bBlockingHit;
 	bInitialOverlap = Hit.bStartPenetrating;
 	Time = Hit.Time;
+	Distance = Hit.Distance;
 	Location = Hit.Location;
 	ImpactPoint = Hit.ImpactPoint;
 	Normal = Hit.Normal;
@@ -838,13 +850,14 @@ void UGameplayStatics::BreakHitResult(const FHitResult& Hit, bool& bBlockingHit,
 	FaceIndex = Hit.FaceIndex;
 }
 
-FHitResult UGameplayStatics::MakeHitResult(bool bBlockingHit, bool bInitialOverlap, float Time, FVector Location, FVector ImpactPoint, FVector Normal, FVector ImpactNormal, class UPhysicalMaterial* PhysMat, class AActor* HitActor, class UPrimitiveComponent* HitComponent, FName HitBoneName, int32 HitItem, int32 FaceIndex, FVector TraceStart, FVector TraceEnd)
+FHitResult UGameplayStatics::MakeHitResult(bool bBlockingHit, bool bInitialOverlap, float Time, float Distance, FVector Location, FVector ImpactPoint, FVector Normal, FVector ImpactNormal, class UPhysicalMaterial* PhysMat, class AActor* HitActor, class UPrimitiveComponent* HitComponent, FName HitBoneName, int32 HitItem, int32 FaceIndex, FVector TraceStart, FVector TraceEnd)
 {
 	SCOPE_CYCLE_COUNTER(STAT_MakeHitResult);
 	FHitResult Hit;
 	Hit.bBlockingHit = bBlockingHit;
 	Hit.bStartPenetrating = bInitialOverlap;
 	Hit.Time = Time;
+	Hit.Distance = Distance;
 	Hit.Location = Location;
 	Hit.ImpactPoint = ImpactPoint;
 	Hit.Normal = Normal;
@@ -962,7 +975,7 @@ void UGameplayStatics::SetGlobalListenerFocusParameters(const UObject* WorldCont
 	}
 }
 
-void UGameplayStatics::PlaySound2D(const UObject* WorldContextObject, class USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier, float StartTime, class USoundConcurrency* ConcurrencySettings)
+void UGameplayStatics::PlaySound2D(const UObject* WorldContextObject, class USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier, float StartTime, class USoundConcurrency* ConcurrencySettings, AActor* OwningActor)
 {
 	if (!Sound || !GEngine || !GEngine->UseSound())
 	{
@@ -991,6 +1004,8 @@ void UGameplayStatics::PlaySound2D(const UObject* WorldContextObject, class USou
 		NewActiveSound.ConcurrencySettings = ConcurrencySettings;
 		NewActiveSound.Priority = Sound->Priority;
 		NewActiveSound.SubtitlePriority = Sound->GetSubtitlePriority();
+
+		NewActiveSound.SetOwner(OwningActor);
 
 		AudioDevice->AddNewActiveSound(NewActiveSound);
 	}
@@ -1049,7 +1064,7 @@ UAudioComponent* UGameplayStatics::SpawnSound2D(const UObject* WorldContextObjec
 	return AudioComponent;
 }
 
-void UGameplayStatics::PlaySoundAtLocation(const UObject* WorldContextObject, class USoundBase* Sound, FVector Location, FRotator Rotation, float VolumeMultiplier, float PitchMultiplier, float StartTime, class USoundAttenuation* AttenuationSettings, class USoundConcurrency* ConcurrencySettings)
+void UGameplayStatics::PlaySoundAtLocation(const UObject* WorldContextObject, class USoundBase* Sound, FVector Location, FRotator Rotation, float VolumeMultiplier, float PitchMultiplier, float StartTime, class USoundAttenuation* AttenuationSettings, class USoundConcurrency* ConcurrencySettings, AActor* OwningActor)
 {
 	if (!Sound || !GEngine || !GEngine->UseSound())
 	{
@@ -1064,7 +1079,7 @@ void UGameplayStatics::PlaySoundAtLocation(const UObject* WorldContextObject, cl
 
 	if (FAudioDevice* AudioDevice = ThisWorld->GetAudioDevice())
 	{
-		AudioDevice->PlaySoundAtLocation(Sound, ThisWorld, VolumeMultiplier, PitchMultiplier, StartTime, Location, Rotation, AttenuationSettings, ConcurrencySettings);
+		AudioDevice->PlaySoundAtLocation(Sound, ThisWorld, VolumeMultiplier, PitchMultiplier, StartTime, Location, Rotation, AttenuationSettings, ConcurrencySettings, nullptr, OwningActor);
 	}
 }
 
@@ -1403,7 +1418,7 @@ UDecalComponent* CreateDecalComponent(class UMaterialInterface* DecalMaterial, F
 {
 	UDecalComponent* DecalComp = NewObject<UDecalComponent>((Actor ? Actor : (UObject*)World));
 	DecalComp->bAllowAnyoneToDestroyMe = true;
-	DecalComp->DecalMaterial = DecalMaterial;
+	DecalComp->SetDecalMaterial(DecalMaterial);
 	DecalComp->DecalSize = DecalSize;
 	DecalComp->bAbsoluteScale = true;
 	DecalComp->RegisterComponentWithWorld(World);
@@ -1766,7 +1781,7 @@ float UGameplayStatics::GetAudioTimeSeconds(const UObject* WorldContextObject)
 
 void UGameplayStatics::GetAccurateRealTime(const UObject* WorldContextObject, int32& Seconds, float& PartialSeconds)
 {
-	double TimeSeconds = FPlatformTime::Seconds();
+	double TimeSeconds = FPlatformTime::Seconds() - GStartTime;
 	Seconds = floor(TimeSeconds);
 	PartialSeconds = TimeSeconds - double(Seconds);
 }
@@ -2339,13 +2354,14 @@ bool UGameplayStatics::ProjectWorldToScreen(APlayerController const* Player, con
 		if (LP->GetProjectionData(LP->ViewportClient->Viewport, eSSP_FULL, /*out*/ ProjectionData))
 		{
 			FMatrix const ViewProjectionMatrix = ProjectionData.ComputeViewProjectionMatrix();
-			const bool bResult = FSceneView::ProjectWorldToScreen(WorldPosition, ProjectionData.GetConstrainedViewRect(), ViewProjectionMatrix, ScreenPosition);
+			bool bResult = FSceneView::ProjectWorldToScreen(WorldPosition, ProjectionData.GetConstrainedViewRect(), ViewProjectionMatrix, ScreenPosition);
 
 			if (bPlayerViewportRelative)
 			{
 				ScreenPosition -= FVector2D(ProjectionData.GetConstrainedViewRect().Min);
 			}
 
+			bResult = Player->PostProcessWorldToScreen(WorldPosition, ScreenPosition, bPlayerViewportRelative);
 			return bResult;
 		}
 	}

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,6 +8,7 @@
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
 #include "AssetData.h"
+#include "UObject/ObjectKey.h"
 #include "EdGraphSchema.generated.h"
 
 class FSlateRect;
@@ -48,6 +49,38 @@ enum ECanCreateConnectionResponse
 	CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE,
 
 	CONNECT_RESPONSE_MAX,
+};
+
+// Used to opaquely verify that two different persistent entries backing actions are part of the same section/category (e.g., both are variables in the same Blueprint)
+struct FEdGraphSchemaActionDefiningObject
+{
+	FEdGraphSchemaActionDefiningObject(UObject* InObject, void* AdditionalPointer = nullptr, FName AdditionalName = NAME_None)
+		: DefiningObject(InObject)
+		, DefiningPointer(AdditionalPointer)
+		, DefiningName(AdditionalName)
+		, bIsEditable((InObject != nullptr) ? !InObject->IsNative() : false)
+	{
+	}
+
+	friend bool operator==(const FEdGraphSchemaActionDefiningObject& A, const FEdGraphSchemaActionDefiningObject& B)
+	{
+		return (A.DefiningObject == B.DefiningObject) && (A.DefiningPointer == B.DefiningPointer) && (A.DefiningName == B.DefiningName) && (A.bIsEditable == B.bIsEditable);
+	}
+
+	friend bool operator!=(const FEdGraphSchemaActionDefiningObject& A, const FEdGraphSchemaActionDefiningObject& B)
+	{
+		return !(A == B);
+	}
+
+	bool IsPotentiallyEditable() const
+	{
+		return bIsEditable;
+	}
+private:
+	FObjectKey DefiningObject;
+	void* DefiningPointer;
+	FName DefiningName;
+	bool bIsEditable;
 };
 
 /** This structure represents a context dependent action, with sufficient information for the schema to perform it. */
@@ -148,7 +181,9 @@ public:
 		return NewNode;
 	}
 
-	void UpdateCategory(FText NewCategory);
+	// Updates the category of the *action* and refreshes the search text; does not change the persistent backing item
+	// (e.g., it will not actually move a user added variable or function to a new category)
+	void CosmeticUpdateCategory(FText NewCategory);
 
 	void UpdateSearchData(FText NewMenuDescription, FText NewToolTipDescription, FText NewCategory, FText NewKeywords);
 
@@ -235,6 +270,19 @@ public:
 
 	// GC.
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) {}
+
+	// Moves the item backing this action to the specified category if it is possible (does nothing for native-introduced variables/functions/etc...)
+	virtual void MovePersistentItemToCategory(const FText& NewCategoryName) {}
+
+	// Returns the ordering index of this action in the parent container (if the item cannot be reordered then this will return INDEX_NONE)
+	virtual int32 GetReorderIndexInContainer() const { return INDEX_NONE; }
+
+	// Reorders this action to be before the other item in the parent container (returns false if they are not in the same container or cannot be reordered)
+	virtual bool ReorderToBeforeAction(TSharedRef<FEdGraphSchemaAction> OtherAction) { return false; }
+
+	// Returns an opaque handle that can be used to confirm that two different persistent entries backing actions are part of the same section/category
+	// (e.g., both are variables in the same Blueprint)
+	virtual FEdGraphSchemaActionDefiningObject GetPersistentItemDefiningObject() const { return FEdGraphSchemaActionDefiningObject(nullptr); }
 
 private:
 	void UpdateSearchText();
@@ -783,10 +831,10 @@ class ENGINE_API UEdGraphSchema : public UObject
 	 * @param	SourcePin	The pin where the link begins.
 	 * @param	TargetLink	The pin where the link ends.
 	 */
-	virtual void BreakSinglePinLink(UEdGraphPin* SourcePin, UEdGraphPin* TargetPin);
+	virtual void BreakSinglePinLink(UEdGraphPin* SourcePin, UEdGraphPin* TargetPin) const;
 
 	/** Split a pin in to subelements */
-	virtual void SplitPin(UEdGraphPin* Pin) const { };
+	virtual void SplitPin(UEdGraphPin* Pin, bool bNotify = true) const { };
 
 	/** Collapses a pin and its siblings back in to the original pin */
 	virtual void RecombinePin(UEdGraphPin* Pin) const { };
@@ -796,7 +844,7 @@ class ENGINE_API UEdGraphSchema : public UObject
 
 	/** Break links on this pin and create links instead on MoveToPin */
 	virtual FPinConnectionResponse MovePinLinks(UEdGraphPin& MoveFromPin, UEdGraphPin& MoveToPin, bool bIsIntermediateMove = false) const;
-
+	 
 	/** Copies pin links from one pin to another without breaking the original links */
 	virtual FPinConnectionResponse CopyPinLinks(UEdGraphPin& CopyFromPin, UEdGraphPin& CopyToPin, bool bIsIntermediateCopy = false) const;
 
@@ -804,7 +852,7 @@ class ENGINE_API UEdGraphSchema : public UObject
 	virtual bool IsSelfPin(const UEdGraphPin& Pin) const   {return false;}
 
 	/** Is given string a delegate category name ? */
-	virtual bool IsDelegateCategory(const FString& Category) const   {return false;}
+	virtual bool IsDelegateCategory(const FName Category) const   {return false;}
 
 	/** 
 	 * Populate new graph with any default nodes
@@ -831,7 +879,7 @@ class ENGINE_API UEdGraphSchema : public UObject
 	 * @param	InOutExtraNames	List of extra names that are in-use from the substitution should be added to this list to prevent other substitutions from attempting to use them
 	 * @return					NULL if a substitute node cannot be created; otherwise, the substitute node instance
 	 */
-	virtual UEdGraphNode* CreateSubstituteNode(UEdGraphNode* Node, const UEdGraph* Graph, FObjectInstancingGraph* InstanceGraph, TArray<FName>& InOutExtraNames) const { return nullptr; }
+	virtual UEdGraphNode* CreateSubstituteNode(UEdGraphNode* Node, const UEdGraph* Graph, FObjectInstancingGraph* InstanceGraph, TSet<FName>& InOutExtraNames) const { return nullptr; }
 
 
 	/**
@@ -926,7 +974,7 @@ class ENGINE_API UEdGraphSchema : public UObject
 	 * @param InSourcePinDirection			Direction of the source pin
 	 * @return								Returns the new pin if created
 	 */
-	virtual UEdGraphPin* DropPinOnNode(UEdGraphNode* InTargetNode, const FString& InSourcePinName, const FEdGraphPinType& InSourcePinType, EEdGraphPinDirection InSourcePinDirection) const { return nullptr; }
+	virtual UEdGraphPin* DropPinOnNode(UEdGraphNode* InTargetNode, const FName& InSourcePinName, const FEdGraphPinType& InSourcePinType, EEdGraphPinDirection InSourcePinDirection) const { return nullptr; }
 
 	/**
 	 * Checks if the node supports dropping a pin on it
@@ -952,4 +1000,11 @@ class ENGINE_API UEdGraphSchema : public UObject
 
 	/** Forces cached visualization data to refresh */
 	virtual void ForceVisualizationCacheClear() const {};
+
+	/** 
+	 * Check whether new nodes can be user-created (by dragging off pins etc.) 
+	 * @param	InSourcePin	The pin we dragged off
+	 * @return the response to making a new connection
+	 */
+	virtual FPinConnectionResponse CanCreateNewNodes(UEdGraphPin* InSourcePin) const { return FPinConnectionResponse(); }
 };

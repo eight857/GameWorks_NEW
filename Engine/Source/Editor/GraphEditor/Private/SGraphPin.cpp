@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SGraphPin.h"
@@ -181,11 +181,7 @@ void SGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
 			.Image(this, &SGraphPin::GetPinStatusIcon)
 		];
 
-	TSharedRef<SWidget> LabelWidget = SNew(STextBlock)
-		.Text(this, &SGraphPin::GetPinLabel)
-		.TextStyle(FEditorStyle::Get(), InArgs._PinLabelStyle)
-		.Visibility(this, &SGraphPin::GetPinLabelVisibility)
-		.ColorAndOpacity(this, &SGraphPin::GetPinTextColor);
+	TSharedRef<SWidget> LabelWidget = GetLabelWidget(InArgs._PinLabelStyle);
 
 	// Create the widget used for the pin body (status indicator, label, and value)
 	TSharedRef<SWrapBox> LabelAndValue =
@@ -306,6 +302,15 @@ TSharedRef<SWidget>	SGraphPin::GetDefaultValueWidget()
 	return SNullWidget::NullWidget;
 }
 
+TSharedRef<SWidget> SGraphPin::GetLabelWidget(const FName& InLabelStyle)
+{
+	return SNew(STextBlock)
+		.Text(this, &SGraphPin::GetPinLabel)
+		.TextStyle(FEditorStyle::Get(), InLabelStyle)
+		.Visibility(this, &SGraphPin::GetPinLabelVisibility)
+		.ColorAndOpacity(this, &SGraphPin::GetPinTextColor);
+}
+
 void SGraphPin::SetIsEditable(TAttribute<bool> InIsEditable)
 {
 	IsEditable = InIsEditable;
@@ -356,7 +361,7 @@ FReply SGraphPin::OnPinMouseDown( const FGeometry& SenderGeometry, const FPointe
 				struct FLinkedToPinInfo
 				{
 					// Pin name string
-					FString PinName;
+					FName PinName;
 
 					// A weak reference to the node object that owns the pin
 					TWeakObjectPtr<UEdGraphNode> OwnerNodePtr;
@@ -366,7 +371,7 @@ FReply SGraphPin::OnPinMouseDown( const FGeometry& SenderGeometry, const FPointe
 				TArray<FLinkedToPinInfo> LinkedToPinInfoArray;
 				for (UEdGraphPin* Pin : GetPinObj()->LinkedTo)
 				{
-					if (auto PinWidget = PinToPinWidgetMap.Find(Pin))
+					if (TSharedRef<SGraphPin>* PinWidget = PinToPinWidgetMap.Find(Pin))
 					{
 						check((*PinWidget)->OwnerNodePtr.IsValid());
 

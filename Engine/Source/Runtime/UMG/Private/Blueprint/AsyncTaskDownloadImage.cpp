@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Blueprint/AsyncTaskDownloadImage.h"
 #include "Modules/ModuleManager.h"
 #include "Engine/Texture2D.h"
 #include "Engine/Texture2DDynamic.h"
-#include "Interfaces/IImageWrapperModule.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
 #include "Interfaces/IHttpResponse.h"
 #include "HttpModule.h"
 
@@ -89,7 +90,7 @@ void UAsyncTaskDownloadImage::HandleImageRequest(FHttpRequestPtr HttpRequest, FH
 	if ( bSucceeded && HttpResponse.IsValid() && HttpResponse->GetContentLength() > 0 )
 	{
 		IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-		IImageWrapperPtr ImageWrappers[3] =
+		TSharedPtr<IImageWrapper> ImageWrappers[3] =
 		{
 			ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG),
 			ImageWrapperModule.CreateImageWrapper(EImageFormat::JPEG),

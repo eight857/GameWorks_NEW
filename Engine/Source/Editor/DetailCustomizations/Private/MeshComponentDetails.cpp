@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MeshComponentDetails.h"
 #include "Components/MeshComponent.h"
@@ -21,7 +21,7 @@ void FMeshComponentDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLayout
 	if( MaterialProperty->IsValidHandle() )
 	{
 		// Only show this in the advanced section of the category if we have selected actors (which will show a separate material section)
-		bool bIsAdvanced = DetailLayout.GetDetailsView().GetSelectedActorInfo().NumSelected > 0;
+		bool bIsAdvanced = DetailLayout.GetDetailsView()->GetSelectedActorInfo().NumSelected > 0;
 
 		RenderingCategory->AddProperty( MaterialProperty, bIsAdvanced ? EPropertyLocation::Advanced : EPropertyLocation::Default );
 	}

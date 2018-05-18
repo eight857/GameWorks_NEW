@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineIdentityGoogle.h"
 #include "OnlineSubsystemGooglePrivate.h"
@@ -10,7 +10,6 @@
 
 FOnlineIdentityGoogle::FOnlineIdentityGoogle(FOnlineSubsystemGoogle* InSubsystem)
 	: FOnlineIdentityGoogleCommon(InSubsystem)
-	, bHasLoginOutstanding(false)
 {
 	UE_LOG(LogOnline, Display, TEXT("FOnlineIdentityGoogle::FOnlineIdentityGoogle()"));
 

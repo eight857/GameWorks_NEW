@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	LevelTick.cpp: Level timer tick function
@@ -36,8 +36,10 @@
 #include "PhysicsPublic.h"
 #include "Tickable.h"
 #include "IHeadMountedDisplay.h"
+#include "IXRTrackingSystem.h"
 #include "TimerManager.h"
 #include "Camera/CameraPhotography.h"
+#include "HAL/LowLevelMemTracker.h"
 
 //#include "SoundDefinitions.h"
 #include "FXSystem.h"
@@ -112,8 +114,11 @@ DEFINE_STAT(STAT_NetConsiderActorsTime);
 DEFINE_STAT(STAT_NetUpdateUnmappedObjectsTime);
 DEFINE_STAT(STAT_NetInitialDormantCheckTime);
 DEFINE_STAT(STAT_NetPrioritizeActorsTime);
-DEFINE_STAT(STAT_NetReplicateActorsTime);
+DEFINE_STAT(STAT_NetReplicateActorTime);
 DEFINE_STAT(STAT_NetReplicateDynamicPropTime);
+DEFINE_STAT(STAT_NetReplicateDynamicPropCompareTime);
+DEFINE_STAT(STAT_NetReplicateDynamicPropSendTime);
+DEFINE_STAT(STAT_NetReplicateDynamicPropSendBackCompatTime);
 DEFINE_STAT(STAT_NetSkippedDynamicProps);
 DEFINE_STAT(STAT_NetSerializeItemDeltaTime);
 DEFINE_STAT(STAT_NetUpdateGuidToReplicatorMap);
@@ -121,6 +126,9 @@ DEFINE_STAT(STAT_NetReplicateStaticPropTime);
 DEFINE_STAT(STAT_NetBroadcastPostTickTime);
 DEFINE_STAT(STAT_NetRebuildConditionalTime);
 DEFINE_STAT(STAT_PackageMap_SerializeObjectTime);
+
+DECLARE_CYCLE_STAT(TEXT("TickableGameObjects Time"), STAT_TickableGameObjectsTime, STATGROUP_Game);
+
 
 /*-----------------------------------------------------------------------------
 	Externs.
@@ -134,7 +142,6 @@ extern bool GShouldLogOutAFrameOfSetBodyTransform;
 -----------------------------------------------------------------------------*/
 
 /** Static array of tickable objects */
-TArray<FTickableGameObject*> FTickableGameObject::TickableObjects;
 bool FTickableGameObject::bIsTickingObjects = false;
 
 #if LOG_DETAILED_PATHFINDING_STATS
@@ -163,7 +170,7 @@ FDetailedTickStats::FDetailedTickStats( int32 InNumObjectsToReport, float InTime
 FDetailedTickStats::~FDetailedTickStats()
 {
 	// remove callback as we are dead
-	FCoreUObjectDelegates::PreGarbageCollect.Remove(OnPreGarbageCollectDelegateHandle);
+	FCoreUObjectDelegates::GetPreGarbageCollectDelegate().Remove(OnPreGarbageCollectDelegateHandle);
 }
 
 /**
@@ -223,7 +230,7 @@ void FDetailedTickStats::EndObject( UObject* Object, float DeltaTime, bool bForS
 		{
 			GCCallBackRegistered = true;
 			// register callback so that we can avoid finding the wrong stats for new objects reusing memory that used to be associated with a different object
-			OnPreGarbageCollectDelegateHandle = FCoreUObjectDelegates::PreGarbageCollect.AddRaw(this, &FDetailedTickStats::OnPreGarbageCollect);
+			OnPreGarbageCollectDelegateHandle = FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddRaw(this, &FDetailedTickStats::OnPreGarbageCollect);
 		}
 
 		FTickStats NewTickStats;
@@ -312,7 +319,7 @@ void FDetailedTickStats::DumpStats()
 		Totals.Count		= 0;
 
 		// Dump tick stats sorted by total time.
-		UE_LOG(LogLevel, Log, TEXT("Per object stats, frame # %i"), GFrameCounter);
+		UE_LOG(LogLevel, Log, TEXT("Per object stats, frame # %llu"), (uint64)GFrameCounter);
 		for( int32 i=0; i<SortedTickStats.Num(); i++ )
 		{
 			const FTickStats& TickStats = SortedTickStats[i];
@@ -563,129 +570,134 @@ void UWorld::ProcessLevelStreamingVolumes(FVector* OverrideViewLocation)
 
 	SCOPE_CYCLE_COUNTER( STAT_VolumeStreamingTickTime );
 
-	// Begin by assembling a list of kismet streaming objects that have non-EditorPreVisOnly volumes associated with them.
-	// @todo DB: Cache this, e.g. level startup.
-	TArray<ULevelStreaming*> LevelStreamingObjectsWithVolumes;
-	TMap<ULevelStreaming*,bool> LevelStreamingObjectsWithVolumesOtherThanBlockingLoad;
-	for( int32 LevelIndex = 0 ; LevelIndex < StreamingLevels.Num() ; ++LevelIndex )
-	{
-		ULevelStreaming* LevelStreamingObject = StreamingLevels[LevelIndex];
-		if( LevelStreamingObject )
-		{
-			for ( int32 i = 0 ; i < LevelStreamingObject->EditorStreamingVolumes.Num() ; ++i )
-			{
-				ALevelStreamingVolume* StreamingVolume = LevelStreamingObject->EditorStreamingVolumes[i];
-				if( StreamingVolume 
-				&& !StreamingVolume->bEditorPreVisOnly 
-				&& !StreamingVolume->bDisabled )
-				{
-					LevelStreamingObjectsWithVolumes.Add( LevelStreamingObject );
-					if( StreamingVolume->StreamingUsage != SVB_BlockingOnLoad )
-					{
-						LevelStreamingObjectsWithVolumesOtherThanBlockingLoad.Add( LevelStreamingObject, true );
-					}
-					break;
-				}
-			}
-		}
-	}
-
-	// The set of levels with volumes whose volumes current contain player viewpoints.
-	TMap<ULevelStreaming*,FVisibleLevelStreamingSettings> VisibleLevelStreamingObjects;
-
-	// Iterate over all players and build a list of level streaming objects with
-	// volumes that contain player viewpoints.
 	bool bStreamingVolumesAreRelevant = false;
-	for( FConstPlayerControllerIterator Iterator = GetPlayerControllerIterator(); Iterator; ++Iterator )
+	for (FConstPlayerControllerIterator Iterator = GetPlayerControllerIterator(); Iterator; ++Iterator)
 	{
 		APlayerController* PlayerActor = Iterator->Get();
 		if (PlayerActor->bIsUsingStreamingVolumes)
 		{
 			bStreamingVolumesAreRelevant = true;
+			break;
+		}
+	}
 
-			FVector ViewLocation(0,0,0);
-			// let the caller override the location to check for volumes
-			if (OverrideViewLocation)
+	if (bStreamingVolumesAreRelevant)
+	{
+		// Begin by assembling a list of kismet streaming objects that have non-EditorPreVisOnly volumes associated with them.
+		// @todo DB: Cache this, e.g. level startup.
+		TArray<ULevelStreaming*> LevelStreamingObjectsWithVolumes;
+		TSet<ULevelStreaming*> LevelStreamingObjectsWithVolumesOtherThanBlockingLoad;
+		for (ULevelStreaming* LevelStreamingObject : StreamingLevels)
+		{
+			if( LevelStreamingObject )
 			{
-				ViewLocation = *OverrideViewLocation;
-			}
-			else
-			{
-				FRotator ViewRotation(0,0,0);
-				PlayerActor->GetPlayerViewPoint( ViewLocation, ViewRotation );
-			}
-
-			TMap<AVolume*,bool> VolumeMap;
-
-			// Iterate over streaming levels with volumes and compute whether the
-			// player's ViewLocation is in any of their volumes.
-			for( int32 LevelIndex = 0 ; LevelIndex < LevelStreamingObjectsWithVolumes.Num() ; ++LevelIndex )
-			{
-				ULevelStreaming* LevelStreamingObject = LevelStreamingObjectsWithVolumes[ LevelIndex ];
-
-				// StreamingSettings is an OR of all level streaming settings of volumes containing player viewpoints.
-				FVisibleLevelStreamingSettings StreamingSettings;
-
-				// See if level streaming settings were computed for other players.
-				FVisibleLevelStreamingSettings* ExistingStreamingSettings = VisibleLevelStreamingObjects.Find( LevelStreamingObject );
-				if ( ExistingStreamingSettings )
+				for (ALevelStreamingVolume* StreamingVolume : LevelStreamingObject->EditorStreamingVolumes)
 				{
-					// Stop looking for viewpoint-containing volumes once all streaming settings have been enabled for the level.
-					if ( ExistingStreamingSettings->AllSettingsEnabled() )
+					if( StreamingVolume 
+					&& !StreamingVolume->bEditorPreVisOnly 
+					&& !StreamingVolume->bDisabled )
 					{
-						continue;
+						LevelStreamingObjectsWithVolumes.Add(LevelStreamingObject);
+						if( StreamingVolume->StreamingUsage != SVB_BlockingOnLoad )
+						{
+							LevelStreamingObjectsWithVolumesOtherThanBlockingLoad.Add(LevelStreamingObject);
+						}
+						break;
 					}
+				}
+			}
+		}
 
-					// Initialize the level's streaming settings with settings that were computed for other players.
-					StreamingSettings = *ExistingStreamingSettings;
+		// The set of levels with volumes whose volumes current contain player viewpoints.
+		TMap<ULevelStreaming*,FVisibleLevelStreamingSettings> VisibleLevelStreamingObjects;
+
+		// Iterate over all players and build a list of level streaming objects with
+		// volumes that contain player viewpoints.
+		for( FConstPlayerControllerIterator Iterator = GetPlayerControllerIterator(); Iterator; ++Iterator )
+		{
+			APlayerController* PlayerActor = Iterator->Get();
+			if (PlayerActor->bIsUsingStreamingVolumes)
+			{
+				FVector ViewLocation(0,0,0);
+				// let the caller override the location to check for volumes
+				if (OverrideViewLocation)
+				{
+					ViewLocation = *OverrideViewLocation;
+				}
+				else
+				{
+					FRotator ViewRotation(0,0,0);
+					PlayerActor->GetPlayerViewPoint( ViewLocation, ViewRotation );
 				}
 
-				// For each streaming volume associated with this level . . .
-				for ( int32 i = 0 ; i < LevelStreamingObject->EditorStreamingVolumes.Num() ; ++i )
+				TMap<AVolume*,bool> VolumeMap;
+
+				// Iterate over streaming levels with volumes and compute whether the
+				// player's ViewLocation is in any of their volumes.
+				for( int32 LevelIndex = 0 ; LevelIndex < LevelStreamingObjectsWithVolumes.Num() ; ++LevelIndex )
 				{
-					ALevelStreamingVolume* StreamingVolume = LevelStreamingObject->EditorStreamingVolumes[i];
-					if ( StreamingVolume && !StreamingVolume->bEditorPreVisOnly && !StreamingVolume->bDisabled )
+					ULevelStreaming* LevelStreamingObject = LevelStreamingObjectsWithVolumes[ LevelIndex ];
+
+					// StreamingSettings is an OR of all level streaming settings of volumes containing player viewpoints.
+					FVisibleLevelStreamingSettings StreamingSettings;
+
+					// See if level streaming settings were computed for other players.
+					FVisibleLevelStreamingSettings* ExistingStreamingSettings = VisibleLevelStreamingObjects.Find( LevelStreamingObject );
+					if ( ExistingStreamingSettings )
 					{
-						bool bViewpointInVolume;
-						bool* bResult = VolumeMap.Find(StreamingVolume);
-						if ( bResult )
+						// Stop looking for viewpoint-containing volumes once all streaming settings have been enabled for the level.
+						if ( ExistingStreamingSettings->AllSettingsEnabled() )
 						{
-							// This volume has already been considered for another level.
-							bViewpointInVolume = *bResult;
-						}
-						else
-						{						
-							// Compute whether the viewpoint is inside the volume and cache the result.
-							bViewpointInVolume = StreamingVolume->EncompassesPoint( ViewLocation );								
-						
-							VolumeMap.Add( StreamingVolume, bViewpointInVolume );
-							INC_DWORD_STAT( STAT_VolumeStreamingChecks );
+							continue;
 						}
 
-						if ( bViewpointInVolume )
+						// Initialize the level's streaming settings with settings that were computed for other players.
+						StreamingSettings = *ExistingStreamingSettings;
+					}
+
+					// For each streaming volume associated with this level . . .
+					for ( int32 i = 0 ; i < LevelStreamingObject->EditorStreamingVolumes.Num() ; ++i )
+					{
+						ALevelStreamingVolume* StreamingVolume = LevelStreamingObject->EditorStreamingVolumes[i];
+						if ( StreamingVolume && !StreamingVolume->bEditorPreVisOnly && !StreamingVolume->bDisabled )
 						{
-							// Copy off the streaming settings for this volume.
-							StreamingSettings |= FVisibleLevelStreamingSettings( (EStreamingVolumeUsage) StreamingVolume->StreamingUsage );
-
-							// Update the streaming settings for the level.
-							// This also marks the level as "should be loaded".
-							VisibleLevelStreamingObjects.Add( LevelStreamingObject, StreamingSettings );
-
-							// Stop looking for viewpoint-containing volumes once all streaming settings have been enabled.
-							if ( StreamingSettings.AllSettingsEnabled() )
+							bool bViewpointInVolume;
+							bool* bResult = VolumeMap.Find(StreamingVolume);
+							if ( bResult )
 							{
-								break;
+								// This volume has already been considered for another level.
+								bViewpointInVolume = *bResult;
+							}
+							else
+							{						
+								// Compute whether the viewpoint is inside the volume and cache the result.
+								bViewpointInVolume = StreamingVolume->EncompassesPoint( ViewLocation );								
+						
+								VolumeMap.Add( StreamingVolume, bViewpointInVolume );
+								INC_DWORD_STAT( STAT_VolumeStreamingChecks );
+							}
+
+							if ( bViewpointInVolume )
+							{
+								// Copy off the streaming settings for this volume.
+								StreamingSettings |= FVisibleLevelStreamingSettings( (EStreamingVolumeUsage) StreamingVolume->StreamingUsage );
+
+								// Update the streaming settings for the level.
+								// This also marks the level as "should be loaded".
+								VisibleLevelStreamingObjects.Add( LevelStreamingObject, StreamingSettings );
+
+								// Stop looking for viewpoint-containing volumes once all streaming settings have been enabled.
+								if ( StreamingSettings.AllSettingsEnabled() )
+								{
+									break;
+								}
 							}
 						}
 					}
-				}
-			} // for each streaming level 
-		} // bIsUsingStreamingVolumes
-	} // for each PlayerController
+				} // for each streaming level 
+			} // bIsUsingStreamingVolumes
+		} // for each PlayerController
 
-	// do nothing if no players are using streaming volumes
-	if (bStreamingVolumesAreRelevant)
-	{
 		// Iterate over all streaming levels and set the level's loading status based
 		// on whether it was found to be visible by a level streaming volume.
 		for( int32 LevelIndex = 0 ; LevelIndex < LevelStreamingObjectsWithVolumes.Num() ; ++LevelIndex )
@@ -772,11 +784,6 @@ static TAutoConsoleVariable<int32> CVarAllowAsyncRenderThreadUpdatesEditor(
 	TEXT("AllowAsyncRenderThreadUpdatesEditor"),
 	0,
 	TEXT("Used to control async renderthread updates in the editor."));
-
-static TAutoConsoleVariable<int32> CVarCollectGarbageEveryFrame(
-	TEXT("gc.CollectGarbageEveryFrame"),
-	0,
-	TEXT("Used to debug garbage collection...Collects garbage every frame if the value is > 0."));
 
 namespace EComponentMarkedForEndOfFrameUpdateState
 {
@@ -879,6 +886,42 @@ bool UWorld::HasEndOfFrameUpdates()
 	return ComponentsThatNeedEndOfFrameUpdate_OnGameThread.Num() > 0 || ComponentsThatNeedEndOfFrameUpdate.Num() > 0;
 }
 
+TDrawEvent<FRHICommandList>* BeginSendEndOfFrameUpdatesDrawEvent()
+{
+	TDrawEvent<FRHICommandList>* DrawEvent = NULL;
+
+#if WANTS_DRAW_MESH_EVENTS
+	DrawEvent = new TDrawEvent<FRHICommandList>();
+
+	ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
+		BeginDrawEventCommand,
+		TDrawEvent<FRHICommandList>*,DrawEvent,DrawEvent,
+	{
+		BEGIN_DRAW_EVENTF(
+			RHICmdList, 
+			SendAllEndOfFrameUpdates, 
+			(*DrawEvent),
+			TEXT("SendAllEndOfFrameUpdates"));
+	});
+
+#endif
+
+	return DrawEvent;
+}
+
+void EndSendEndOfFrameUpdatesDrawEvent(TDrawEvent<FRHICommandList>* DrawEvent)
+{
+#if WANTS_DRAW_MESH_EVENTS
+	ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
+		EndDrawEventCommand,
+		TDrawEvent<FRHICommandList>*,DrawEvent,DrawEvent,
+	{
+		STOP_DRAW_EVENT((*DrawEvent));
+		delete DrawEvent;
+	});
+#endif
+}
+
 /**
 	* Send all render updates to the rendering thread.
 	*/
@@ -889,6 +932,10 @@ void UWorld::SendAllEndOfFrameUpdates()
 	{
 		return;
 	}
+
+	// Issue a GPU event to wrap GPU work done during SendAllEndOfFrameUpdates, like skin cache updates
+	TDrawEvent<FRHICommandList>* DrawEvent = BeginSendEndOfFrameUpdatesDrawEvent();
+
 	// update all dirty components. 
 	TGuardValue<bool> GuardIsFlushedGlobal( bPostTickComponentUpdate, true ); 
 
@@ -952,6 +999,8 @@ void UWorld::SendAllEndOfFrameUpdates()
 		ParallelFor(LocalComponentsThatNeedEndOfFrameUpdate.Num(), ParallelWork);
 	}
 	LocalComponentsThatNeedEndOfFrameUpdate.Reset();
+
+	EndSendEndOfFrameUpdatesDrawEvent(DrawEvent);
 }
 
 
@@ -1100,13 +1149,6 @@ public:
 extern bool GCollisionAnalyzerIsRecording;
 #endif // ENABLE_COLLISION_ANALYZER
 
-#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-static TAutoConsoleVariable<int32> CVarStressTestGCWhileStreaming(
-	TEXT("gc.StressTestGC"),
-	0,
-	TEXT("If set to 1, the engine will attempt to trigger GC each frame while async loading."));
-#endif
-
 DECLARE_CYCLE_STAT(TEXT("TG_PrePhysics"), STAT_TG_PrePhysics, STATGROUP_TickGroups);
 DECLARE_CYCLE_STAT(TEXT("TG_StartPhysics"), STAT_TG_StartPhysics, STATGROUP_TickGroups);
 DECLARE_CYCLE_STAT(TEXT("Start TG_DuringPhysics"), STAT_TG_DuringPhysics, STATGROUP_TickGroups);
@@ -1114,14 +1156,6 @@ DECLARE_CYCLE_STAT(TEXT("TG_EndPhysics"), STAT_TG_EndPhysics, STATGROUP_TickGrou
 DECLARE_CYCLE_STAT(TEXT("TG_PostPhysics"), STAT_TG_PostPhysics, STATGROUP_TickGroups);
 DECLARE_CYCLE_STAT(TEXT("TG_PostUpdateWork"), STAT_TG_PostUpdateWork, STATGROUP_TickGroups);
 DECLARE_CYCLE_STAT(TEXT("TG_LastDemotable"), STAT_TG_LastDemotable, STATGROUP_TickGroups);
-
-static float GTimeBetweenPurgingPendingKillObjects = 60.0f;
-static FAutoConsoleVariableRef CVarTimeBetweenPurgingPendingKillObjects(
-	TEXT("gc.TimeBetweenPurgingPendingKillObjects"),
-	GTimeBetweenPurgingPendingKillObjects,
-	TEXT("Time in seconds (game time) we should wait between purging object references to objects that are pending kill."),
-	ECVF_Default
-	);
 
 #include "GameFramework/SpawnActorTimer.h"
 
@@ -1157,6 +1191,17 @@ void EndTickDrawEvent(TDrawEvent<FRHICommandList>* TickDrawEvent)
 
 void FTickableGameObject::TickObjects(UWorld* World, const int32 InTickType, const bool bIsPaused, const float DeltaSeconds)
 {
+	SCOPE_CYCLE_COUNTER(STAT_TickableGameObjectsTime);
+
+	TArray<FTickableGameObject*>& PendingTickableObjects = GetPendingTickableObjects();
+	TArray<FTickableObjectEntry>& TickableObjects = GetTickableObjects();
+
+	for (FTickableGameObject* PendingTickable : PendingTickableObjects)
+	{
+		AddTickableObject(TickableObjects, PendingTickable);
+	}
+	PendingTickableObjects.Empty();
+
 	if (TickableObjects.Num() > 0)
 	{
 		check(!bIsTickingObjects);
@@ -1165,12 +1210,12 @@ void FTickableGameObject::TickObjects(UWorld* World, const int32 InTickType, con
 		bool bNeedsCleanup = false;
 		const ELevelTick TickType = (ELevelTick)InTickType;
 
-		for (int32 i = 0; i < TickableObjects.Num(); ++i)
+		for (const FTickableObjectEntry& TickableEntry : TickableObjects)
 		{
-			if (FTickableGameObject* TickableObject = TickableObjects[i])
+			if (FTickableGameObject* TickableObject = static_cast<FTickableGameObject*>(TickableEntry.TickableObject))
 			{
 				// If it is tickable and in this world
-				if (TickableObject->IsTickable() && (TickableObject->GetTickableGameObjectWorld() == World))
+				if (((TickableEntry.TickType == ETickableTickType::Always) || TickableObject->IsTickable()) && (TickableObject->GetTickableGameObjectWorld() == World))
 				{
 					const bool bIsGameWorld = InTickType == LEVELTICK_All || (World && World->IsGameWorld());
 					// If we are in editor and it is editor tickable, always tick
@@ -1182,7 +1227,7 @@ void FTickableGameObject::TickObjects(UWorld* World, const int32 InTickType, con
 						TickableObject->Tick(DeltaSeconds);
 
 						// In case it was removed during tick
-						if (TickableObjects[i] == nullptr)
+						if (TickableEntry.TickableObject == nullptr)
 						{
 							bNeedsCleanup = true;
 						}
@@ -1197,7 +1242,7 @@ void FTickableGameObject::TickObjects(UWorld* World, const int32 InTickType, con
 
 		if (bNeedsCleanup)
 		{
-			TickableObjects.RemoveAll([](FTickableGameObject* Object) { return Object == nullptr; });
+			TickableObjects.RemoveAll([](const FTickableObjectEntry& Entry) { return Entry.TickableObject == nullptr; });
 		}
 
 		bIsTickingObjects = false;
@@ -1236,9 +1281,9 @@ void UWorld::Tick( ELevelTick TickType, float DeltaSeconds )
 	SCOPE_CYCLE_COUNTER(STAT_WorldTickTime);
 
 	// @todo vreditor: In the VREditor, this isn't actually wrapping the whole frame.  That would have to happen in EditorEngine.cpp's Tick.  However, it didn't seem to affect anything when I tried that.
-	if (GEngine->HMDDevice.IsValid())
+	if (GEngine->XRSystem.IsValid())
 	{
-		GEngine->HMDDevice->OnStartGameFrame( GEngine->GetWorldContextFromWorldChecked( this ) );
+		GEngine->XRSystem->OnStartGameFrame( GEngine->GetWorldContextFromWorldChecked( this ) );
 	}
 
 #if ENABLE_SPAWNACTORTIMER
@@ -1265,6 +1310,7 @@ void UWorld::Tick( ELevelTick TickType, float DeltaSeconds )
 	{
 		SCOPE_CYCLE_COUNTER(STAT_NetWorldTickTime);
 		SCOPE_TIME_GUARD(TEXT("UWorld::Tick - NetTick"));
+		LLM_SCOPE(ELLMTag::Networking);
 		// Update the net code and fetch all incoming packets.
 		BroadcastTickDispatch(DeltaSeconds);
 
@@ -1352,12 +1398,12 @@ void UWorld::Tick( ELevelTick TickType, float DeltaSeconds )
 		ResetAsyncTrace();
 	}
 
-	for (FLevelCollection& LC : LevelCollections)
+	for (int32 i = 0; i < LevelCollections.Num(); ++i)
 	{
 		// Build a list of levels from the collection that are also in the world's Levels array.
 		// Collections may contain levels that aren't loaded in the world at the moment.
 		TArray<ULevel*> LevelsToTick;
-		for (ULevel* CollectionLevel : LC.GetLevels())
+		for (ULevel* CollectionLevel : LevelCollections[i].GetLevels())
 		{
 			if (Levels.Contains(CollectionLevel))
 			{
@@ -1366,7 +1412,7 @@ void UWorld::Tick( ELevelTick TickType, float DeltaSeconds )
 		}
 
 		// Set up context on the world for this level collection
-		FScopedLevelCollectionContextSwitch LevelContext(&LC, this);
+		FScopedLevelCollectionContextSwitch LevelContext(i, this);
 
 		// If caller wants time update only, or we are paused, skip the rest.
 		if (bDoingActorTicks)
@@ -1476,7 +1522,7 @@ void UWorld::Tick( ELevelTick TickType, float DeltaSeconds )
 		}
 		
 		// We only want to run the following once, so only run it for the source level collection.
-		if (LC.GetType() == ELevelCollectionType::DynamicSourceLevels)
+		if (LevelCollections[i].GetType() == ELevelCollectionType::DynamicSourceLevels)
 		{
 			// Process any remaining latent actions
 			if( !bIsPaused )
@@ -1565,10 +1611,14 @@ void UWorld::Tick( ELevelTick TickType, float DeltaSeconds )
 	{
 		SCOPE_CYCLE_COUNTER(STAT_TickTime);
 
+		FWorldDelegates::OnWorldPostActorTick.Broadcast(this, TickType, DeltaSeconds);
+
+#if WITH_PHYSX
 		if ( PhysicsScene != NULL )
 		{
 			GPhysCommandHandler->Flush();
 		}
+#endif // WITH_PHYSX
 		
 		// All tick is done, execute async trace
 		{
@@ -1619,55 +1669,7 @@ void UWorld::Tick( ELevelTick TickType, float DeltaSeconds )
 	bInTick = false;
 	Mark.Pop();
 
-	
-#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-	if (CVarStressTestGCWhileStreaming.GetValueOnGameThread() && IsAsyncLoading())
-	{
-		TryCollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true);
-	}
-	else 
-#endif
-	if (FullPurgeTriggered)
-	{
-		if (TryCollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true))
-		{
-			CleanupActors();
-			FullPurgeTriggered = false;
-			TimeSinceLastPendingKillPurge = 0.0f;
-		}
-	}
-	else if( HasBegunPlay() )
-	{
-		TimeSinceLastPendingKillPurge += DeltaSeconds;
-
-		const float TimeBetweenPurgingPendingKillObjects = GetTimeBetweenGarbageCollectionPasses();
-
-		
-
-		// See if we should delay garbage collect for this frame
-		if (bShouldDelayGarbageCollect)
-		{
-			bShouldDelayGarbageCollect = false;
-		}
-		// Perform incremental purge update if it's pending or in progress.
-		else if( !IsIncrementalPurgePending() 
-		// Purge reference to pending kill objects every now and so often.
-		&&	(TimeSinceLastPendingKillPurge > TimeBetweenPurgingPendingKillObjects) && TimeBetweenPurgingPendingKillObjects > 0 )
-		{
-			SCOPE_CYCLE_COUNTER(STAT_GCMarkTime);
-			PerformGarbageCollectionAndCleanupActors();
-		}
-		else
-		{
-			SCOPE_CYCLE_COUNTER(STAT_GCSweepTime);
-			IncrementalPurgeGarbage( true );
-		}
-	}
-
-	if (CVarCollectGarbageEveryFrame.GetValueOnGameThread() > 0)
-	{
-		ForceGarbageCollection(true);
-	}
+	GEngine->ConditionalCollectGarbage();
 
 	// players only request from last frame
 	if (bPlayersOnlyPending)
@@ -1723,9 +1725,9 @@ void UWorld::Tick( ELevelTick TickType, float DeltaSeconds )
 	// Dump the viewpoints with which we were rendered last frame. They will be updated when the world is next rendered.
 	ViewLocationsRenderedLastFrame.Reset();
 
-	if (GEngine->HMDDevice.IsValid())
+	if (GEngine->XRSystem.IsValid())
 	{
-		GEngine->HMDDevice->OnEndGameFrame( GEngine->GetWorldContextFromWorldChecked( this ) );
+		GEngine->XRSystem->OnEndGameFrame( GEngine->GetWorldContextFromWorldChecked( this ) );
 	}
 
 	ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
@@ -1748,23 +1750,22 @@ void UWorld::Tick( ELevelTick TickType, float DeltaSeconds )
  */
 void UWorld::DelayGarbageCollection()
 {
-	bShouldDelayGarbageCollect = true;
+	GEngine->DelayGarbageCollection();
 }
 
-void UWorld::SetTimeUntilNextGarbageCollection(float MinTimeUntilNextPass)
+void UWorld::ForceGarbageCollection( bool bFullPurge)
 {
-	const float TimeBetweenPurgingPendingKillObjects = GetTimeBetweenGarbageCollectionPasses();
+	GEngine->ForceGarbageCollection(bFullPurge);
+}
 
-	// This can make it go negative if the desired interval is longer than the typical interval, but it's only ever compared against TimeBetweenPurgingPendingKillObjects
-	TimeSinceLastPendingKillPurge = TimeBetweenPurgingPendingKillObjects - MinTimeUntilNextPass;
+void UWorld::SetTimeUntilNextGarbageCollection(const float MinTimeUntilNextPass)
+{
+	GEngine->SetTimeUntilNextGarbageCollection(MinTimeUntilNextPass);
 }
 
 float UWorld::GetTimeBetweenGarbageCollectionPasses() const
 {
-	const bool bAtLeastOnePlayerConnected = NetDriver && NetDriver->ClientConnections.Num() > 0;
-	const bool bShouldUseLowFrequencyGC = IsRunningDedicatedServer() && !bAtLeastOnePlayerConnected;
-
-	return bShouldUseLowFrequencyGC ? (GTimeBetweenPurgingPendingKillObjects * 10) : GTimeBetweenPurgingPendingKillObjects;
+	return GEngine->GetTimeBetweenGarbageCollectionPasses();
 }
 
 /**
@@ -1772,50 +1773,42 @@ float UWorld::GetTimeBetweenGarbageCollectionPasses() const
  */
 void UWorld::PerformGarbageCollectionAndCleanupActors()
 {
-	// We don't collect garbage while there are outstanding async load requests as we would need
-	// to block on loading the remaining data.
-	if( !IsAsyncLoading() )
-	{
-		// Perform housekeeping.
-		if (TryCollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, false))
-		{
-			CleanupActors();
-
-			// Reset counter.
-			TimeSinceLastPendingKillPurge = 0.0f;
-		}
-	}
+	GEngine->PerformGarbageCollectionAndCleanupActors();
 }
-
 
 void UWorld::CleanupActors()
 {
 	// Remove NULL entries from actor list. Only does so for dynamic actors to avoid resorting; in theory static 
 	// actors shouldn't be deleted during gameplay.
-	for( int32 LevelIndex=0; LevelIndex<Levels.Num(); LevelIndex++ )
+	for (ULevel* Level : Levels)
 	{
-		ULevel* Level = Levels[LevelIndex];
 		// Don't compact actors array for levels that are currently in the process of being made visible as the
 		// code that spreads this work across several frames relies on the actor count not changing as it keeps
 		// an index into the array.
 		if( CurrentLevelPendingVisibility != Level )
 		{
 			// Actor 0 (world info) and 1 (default brush) are special and should never be removed from the actor array even if NULL
-			int32 FirstDynamicIndex = 2;
+			const int32 FirstDynamicIndex = 2;
+			int32 NumActorsToRemove = 0;
 			// Remove NULL entries from array, we're iterating backwards to avoid unnecessary memcpys during removal.
 			for( int32 ActorIndex=Level->Actors.Num()-1; ActorIndex>=FirstDynamicIndex; ActorIndex-- )
 			{
-				if( Level->Actors[ActorIndex] == NULL )
+				// To avoid shuffling things down repeatedly when not necessary count nulls and then remove in bunches
+				if (Level->Actors[ActorIndex] == nullptr)
 				{
-					Level->Actors.RemoveAt( ActorIndex );
+					++NumActorsToRemove;
 				}
+				else if (NumActorsToRemove > 0)
+				{
+					Level->Actors.RemoveAt(ActorIndex+1, NumActorsToRemove, false);
+					NumActorsToRemove = 0;
+				}
+			}
+			if (NumActorsToRemove > 0)
+			{
+				// If our FirstDynamicIndex (and any immediately following it) were null it won't get caught in the loop, so do a cleanup pass here
+				Level->Actors.RemoveAt(FirstDynamicIndex, NumActorsToRemove, false);
 			}
 		}
 	}
-}
-
-void UWorld::ForceGarbageCollection( bool bForcePurge/*=false*/ )
-{
-	TimeSinceLastPendingKillPurge = 1.0f + GetTimeBetweenGarbageCollectionPasses();
-	FullPurgeTriggered = FullPurgeTriggered || bForcePurge;
 }

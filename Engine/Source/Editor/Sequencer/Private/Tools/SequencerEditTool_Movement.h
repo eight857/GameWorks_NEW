@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -46,6 +46,7 @@ private:
 	TSharedPtr<ISequencerEditToolDragOperation> CreateDrag(const FPointerEvent& MouseEvent);
 
 	bool GetHotspotTime(float& HotspotTime) const;
+	float GetHotspotOffsetTime(float CurrentTime) const;
 
 	struct FDelayedDrag_Hotspot : FDelayedDrag
 	{

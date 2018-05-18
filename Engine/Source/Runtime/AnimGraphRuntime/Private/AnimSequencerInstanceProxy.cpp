@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimSequencerInstanceProxy.h"
 #include "AnimSequencerInstance.h"
@@ -7,6 +7,8 @@ void FAnimSequencerInstanceProxy::Initialize(UAnimInstance* InAnimInstance)
 {
 	FAnimInstanceProxy::Initialize(InAnimInstance);
 	ConstructNodes();
+
+	UpdateCounter.Reset();
 }
 
 bool FAnimSequencerInstanceProxy::Evaluate(FPoseContext& Output)
@@ -18,6 +20,8 @@ bool FAnimSequencerInstanceProxy::Evaluate(FPoseContext& Output)
 
 void FAnimSequencerInstanceProxy::UpdateAnimationNode(float DeltaSeconds)
 {
+	UpdateCounter.Increment();
+
 	SequencerRootNode.Update_AnyThread(FAnimationUpdateContext(this, DeltaSeconds));
 }
 
@@ -146,5 +150,9 @@ void FAnimSequencerInstanceProxy::EnsureAnimTrack(UAnimSequenceBase* InAnimSeque
 	if (!PlayerState)
 	{
 		InitAnimTrack(InAnimSequence, SequenceId);
+	}
+	else if (PlayerState->PlayerNode.Sequence != InAnimSequence)
+	{
+		PlayerState->PlayerNode.OverrideAsset(InAnimSequence);
 	}
 }

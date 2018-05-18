@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HTML5NetworkingPrivate.h"
 
@@ -93,7 +93,13 @@ void UWebSocketConnection::LowLevelSend(void* Data, int32 CountBytes, int32 Coun
 		UE_LOG( LogNet, Warning, TEXT( "UWebSocketConnection::LowLevelSend: CountBytes > MaxPacketSize! Count: %i, MaxPacket: %i %s" ), CountBytes, MaxPacket, *Describe() );
 	}
 
-	if (CountBytes > 0)
+	bool bBlockSend = false;
+
+#if !UE_BUILD_SHIPPING
+	LowLevelSendDel.ExecuteIfBound((void*)DataToSend, CountBytes, bBlockSend);
+#endif
+
+	if (!bBlockSend && CountBytes > 0)
 	{
 		WebSocket->Send((uint8*)DataToSend, CountBytes);
 	}

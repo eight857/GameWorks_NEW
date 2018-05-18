@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreTypes.h"
@@ -13,7 +13,6 @@
 #include "Apple/ApplePlatformString.h"
 #elif PLATFORM_IOS
 #include "Apple/ApplePlatformString.h"
-#import "IOS/IOSPlatformString.h"
 #elif PLATFORM_ANDROID
 #include "Android/AndroidString.h"
 #elif PLATFORM_HTML5

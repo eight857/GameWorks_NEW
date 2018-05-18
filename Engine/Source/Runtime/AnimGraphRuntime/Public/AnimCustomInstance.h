@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  *
@@ -50,6 +50,7 @@ class ANIMGRAPHRUNTIME_API UAnimCustomInstance : public UAnimInstance
 				InstanceClassType* SequencerInstance = NewObject<InstanceClassType>(InSkeletalMeshComponent, InstanceClassType::StaticClass());
 				InSkeletalMeshComponent->AnimScriptInstance = SequencerInstance;
 				InSkeletalMeshComponent->AnimScriptInstance->InitializeAnimation();
+				SequencerInstance->bNeedsUpdate = true;
 				return SequencerInstance;
 			}
 			else

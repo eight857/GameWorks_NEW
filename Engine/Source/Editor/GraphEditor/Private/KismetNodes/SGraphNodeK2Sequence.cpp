@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "KismetNodes/SGraphNodeK2Sequence.h"
 #include "EdGraph/EdGraph.h"
@@ -43,7 +43,7 @@ FReply SGraphNodeK2Sequence::OnAddPin()
 	ensure(AddPinNode);
 	if (AddPinNode && AddPinNode->CanAddPin())
 	{
-		FScopedTransaction Transaction(NSLOCTEXT("SequencerNode", "AddPinTransaction", "AddPin"));
+		FScopedTransaction Transaction(NSLOCTEXT("SequencerNode", "AddPinTransaction", "Add Pin"));
 
 		AddPinNode->AddInputPin();
 		UpdateGraphNode();

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	LazyObjectPtr.h: Lazy, guid-based weak pointer to a UObject, mostly useful for actors
@@ -119,7 +119,7 @@ template<> struct TIsPODType<FUniqueObjectGuid> { enum { Value = true }; };
  *
  * This is useful for cross level references or places where you need to point to an object whose name changes often.
  */
-class FLazyObjectPtr : public TPersistentObjectPtr<FUniqueObjectGuid>
+struct FLazyObjectPtr : public TPersistentObjectPtr<FUniqueObjectGuid>
 {
 public:	
 	/** Default constructor, sets to null */
@@ -172,34 +172,15 @@ template <> struct THasGetTypeHash<FLazyObjectPtr> { enum { Value = THasGetTypeH
  * TLazyObjectPtr is templatized version of the generic FLazyObjectPtr
  */
 template<class T=UObject>
-class TLazyObjectPtr : private FLazyObjectPtr
+struct TLazyObjectPtr : private FLazyObjectPtr
 {
 public:
-#if PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
-	FORCEINLINE TLazyObjectPtr() = default;
-	FORCEINLINE TLazyObjectPtr(const TLazyObjectPtr<T>& Other) = default;
-	FORCEINLINE TLazyObjectPtr(TLazyObjectPtr<T>&& Other) = default;
-	FORCEINLINE TLazyObjectPtr<T>& operator=(const TLazyObjectPtr<T>& Other) = default;
-	FORCEINLINE TLazyObjectPtr<T>& operator=(TLazyObjectPtr<T>&& Other) = default;
-#else
-	/** Default constructor **/
-	FORCEINLINE TLazyObjectPtr()
-	{
-	}
-	
-	/** Construct from another lazy pointer */
-	FORCEINLINE TLazyObjectPtr(const TLazyObjectPtr<T>& Other) :
-		FLazyObjectPtr(Other)
-	{
-	}
+	TLazyObjectPtr() = default;
 
-	/** Copy from another lazy pointer */
-	FORCEINLINE TLazyObjectPtr<T>& operator=(const TLazyObjectPtr<T>& Other)
-	{
-		FLazyObjectPtr::operator=(Other);
-		return *this;
-	}
-#endif
+	TLazyObjectPtr(TLazyObjectPtr<T>&&) = default;
+	TLazyObjectPtr(const TLazyObjectPtr<T>&) = default;
+	TLazyObjectPtr<T>& operator=(TLazyObjectPtr<T>&&) = default;
+	TLazyObjectPtr<T>& operator=(const TLazyObjectPtr<T>&) = default;
 
 	/** Construct from another lazy pointer with implicit upcasting allowed */
 	template<typename U, typename = typename TEnableIf<TPointerIsConvertibleFromTo<U, T>::Value>::Type>

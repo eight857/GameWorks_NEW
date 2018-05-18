@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SActorDetails.h"
 #include "Widgets/SBoxPanel.h"
@@ -28,6 +28,7 @@
 #include "LevelEditorGenericDetails.h"
 #include "ScopedTransaction.h"
 #include "SourceCodeNavigation.h"
+#include "SDockTab.h"
 
 class SActorDetailsUneditableComponentWarning : public SCompoundWidget
 {
@@ -100,7 +101,7 @@ void SActorDetails::Construct(const FArguments& InArgs, const FName TabIdentifie
 	DetailsViewArgs.ViewIdentifier = TabIdentifier;
 	DetailsViewArgs.bCustomNameAreaLocation = true;
 	DetailsViewArgs.bCustomFilterAreaLocation = true;
-	DetailsViewArgs.DefaultsOnlyVisibility = FDetailsViewArgs::EEditDefaultsOnlyNodeVisibility::Hide;
+	DetailsViewArgs.DefaultsOnlyVisibility = EEditDefaultsOnlyNodeVisibility::Hide;
 	DetailsViewArgs.HostCommandList = InCommandList;
 	DetailsViewArgs.HostTabManager = InTabManager;
 	DetailsView = PropPlugin.CreateDetailView(DetailsViewArgs);
@@ -204,7 +205,10 @@ void SActorDetails::Construct(const FArguments& InArgs, const FName TabIdentifie
 
 SActorDetails::~SActorDetails()
 {
-	GEditor->UnregisterForUndo(this);
+	if (GEditor)
+	{
+		GEditor->UnregisterForUndo(this);
+	}
 	USelection::SelectionChangedEvent.RemoveAll(this);
 	RemoveBPComponentCompileEventDelegate();
 
@@ -242,6 +246,15 @@ void SActorDetails::SetObjects(const TArray<UObject*>& InObjects, bool bForceRef
 		}
 
 		ComponentsBox->SetVisibility(bShowingComponents ? EVisibility::Visible : EVisibility::Collapsed);
+
+		if(DetailsView->GetHostTabManager().IsValid())
+		{
+			TSharedPtr<SDockTab> Tab = DetailsView->GetHostTabManager()->FindExistingLiveTab(DetailsView->GetIdentifier());
+			if (Tab.IsValid() && !Tab->IsForeground() )
+			{
+				Tab->FlashTab();
+			}
+		}
 	}
 }
 

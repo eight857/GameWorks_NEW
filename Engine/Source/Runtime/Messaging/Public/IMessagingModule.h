@@ -1,15 +1,18 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
-#include "IMessageBus.h"
-#include "IMessageTransport.h"
+#include "Templates/SharedPointer.h"
 
 class IAuthorizeMessageRecipients;
 class IMessageBridge;
+class IMessageBus;
+class IMessageTransport;
+
+struct FMessageAddress;
+
 
 /**
  * Interface for messaging modules.

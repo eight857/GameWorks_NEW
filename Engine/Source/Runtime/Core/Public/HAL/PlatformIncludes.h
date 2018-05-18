@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,11 +16,7 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "HAL/PlatformTime.h"
 #include "HAL/PlatformProcess.h"
 #include "HAL/CriticalSection.h"
-#include "HAL/PlatformOutputDevices.h"
 #include "HAL/PlatformAtomics.h"
 #include "HAL/PlatformTLS.h"
-#include "HAL/PlatformSplash.h"
 #include "HAL/PlatformFile.h"
-#include "HAL/PlatformSurvey.h"
 #include "HAL/PlatformAffinity.h"
-#include "HAL/PlatformFramePacer.h"

@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreTypes.h"
 #include "Misc/OutputDeviceError.h"
 
-class FOutputDeviceAnsiError : public FOutputDeviceError
+class CORE_API FOutputDeviceAnsiError : public FOutputDeviceError
 {
 public:
 	/** Constructor, initializing member variables */

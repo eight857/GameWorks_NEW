@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UObject/ReferenceChainSearch.h"
 #include "HAL/PlatformStackWalk.h"
@@ -681,8 +681,7 @@ void FReferenceChainSearch::ProcessObject( UObject* CurrentObject )
 				UMapProperty* MapProperty = (UMapProperty*)TokenStream->ReadPointer( TokenStreamIndex );
 				TokenReturnCount = ReferenceInfo.ReturnCount;
 				FFindReferencerCollector ReferenceCollector(this, EReferenceType::MapProperty, (void*)MapProperty, CurrentObject);
-				FSimpleObjectReferenceCollectorArchive CollectorArchive(CurrentObject, ReferenceCollector);
-				MapProperty->SerializeItem(CollectorArchive, StackEntryPtr, nullptr);
+				MapProperty->SerializeItem(ReferenceCollector.GetVerySlowReferenceCollectorArchive(), StackEntryPtr, nullptr);
 
 				for (const FReferenceChainLink& Ref : ReferenceCollector.References)
 				{
@@ -696,8 +695,7 @@ void FReferenceChainSearch::ProcessObject( UObject* CurrentObject )
 				USetProperty* SetProperty = (USetProperty*)TokenStream->ReadPointer( TokenStreamIndex );
 				TokenReturnCount = ReferenceInfo.ReturnCount;
 				FFindReferencerCollector ReferenceCollector(this, EReferenceType::SetProperty, (void*)SetProperty, CurrentObject);
-				FSimpleObjectReferenceCollectorArchive CollectorArchive(CurrentObject, ReferenceCollector);
-				SetProperty->SerializeItem(CollectorArchive, StackEntryPtr, nullptr);
+				SetProperty->SerializeItem(ReferenceCollector.GetVerySlowReferenceCollectorArchive(), StackEntryPtr, nullptr);
 
 				for (const FReferenceChainLink& Ref : ReferenceCollector.References)
 				{

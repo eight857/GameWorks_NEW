@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CameraRig_Crane.h"
 #include "UObject/ConstructorHelpers.h"
@@ -193,12 +193,12 @@ void ACameraRig_Crane::PostEditUndo()
 
 	UpdateCraneComponents();
 }
+#endif // WITH_EDITOR
 
 USceneComponent* ACameraRig_Crane::GetDefaultAttachComponent() const
 {
 	return CraneCameraMount;
 }
-#endif // WITH_EDITOR
 
 bool ACameraRig_Crane::ShouldTickIfViewportsOnly() const
 {

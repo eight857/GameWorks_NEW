@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SAnimMontagePanel.h"
 #include "Widgets/Layout/SBorder.h"
@@ -18,6 +18,7 @@
 #include "SAnimTimingPanel.h"
 #include "TabSpawners.h"
 #include "SNumericEntryBox.h"
+#include "Styling/CoreStyle.h"
 
 #define LOCTEXT_NAMESPACE "AnimMontagePanel"
 
@@ -124,7 +125,7 @@ void SAnimMontagePanel::Update()
 						.HAlign(HAlign_Center)
 						[
 							SAssignNew(StatusBarTextBlock, STextBlock)
-							.Font(FSlateFontInfo(FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 12))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 12))
 							.ColorAndOpacity(FLinearColor(1, 1, 1, 0.5))
 						]
 					]
@@ -376,6 +377,7 @@ void SAnimMontagePanel::SummonTrackContextMenu( FMenuBuilder& MenuBuilder, float
 						.MinValue(0.0f)
 						.MaxValue(Montage->SequenceLength)
 						.Value(Section.GetTime())
+						.AllowSpin(true)
 						.OnValueCommitted_Lambda([this, SectionIndex](float InValue, ETextCommit::Type InCommitType)
 						{
 							if (Montage->CompositeSections.IsValidIndex(SectionIndex))
@@ -405,6 +407,7 @@ void SAnimMontagePanel::SummonTrackContextMenu( FMenuBuilder& MenuBuilder, float
 						.MinValue(0)
 						.MaxValue(Montage->GetNumberOfFrames())
 						.Value(Montage->GetFrameAtTime(Section.GetTime()))
+						.AllowSpin(true)						
 						.OnValueCommitted_Lambda([this, SectionIndex](int32 InValue, ETextCommit::Type InCommitType)
 						{
 							if (Montage->CompositeSections.IsValidIndex(SectionIndex))

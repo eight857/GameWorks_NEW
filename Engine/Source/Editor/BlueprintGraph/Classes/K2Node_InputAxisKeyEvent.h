@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,8 +15,8 @@ class FBlueprintActionDatabaseRegistrar;
 class UDynamicBlueprintBinding;
 class UEdGraph;
 
-UCLASS(MinimalAPI)
-class UK2Node_InputAxisKeyEvent : public UK2Node_Event
+UCLASS()
+class BLUEPRINTGRAPH_API UK2Node_InputAxisKeyEvent : public UK2Node_Event
 {
 	GENERATED_UCLASS_BODY()
 

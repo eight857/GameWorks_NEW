@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnitTests/FTextCrash.h"
 
 
+#include "MinimalClient.h"
 #include "NUTActor.h"
 
 #include "UnitTestEnvironment.h"
@@ -35,9 +36,9 @@ UFTextCrash::UFTextCrash(const FObjectInitializer& ObjectInitializer)
 	UnitTestTimeout = 60;
 
 
-	UnitTestFlags |= (EUnitTestFlags::LaunchServer | EUnitTestFlags::AcceptActors | EUnitTestFlags::AcceptPlayerController |
-						EUnitTestFlags::SendRPCs | EUnitTestFlags::NotifyNetActors | EUnitTestFlags::RequireNUTActor |
-						EUnitTestFlags::ExpectServerCrash | EUnitTestFlags::ExpectDisconnect);
+	SetFlags<EUnitTestFlags::LaunchServer | EUnitTestFlags::AcceptPlayerController | EUnitTestFlags::RequireNUTActor |
+				EUnitTestFlags::ExpectServerCrash | EUnitTestFlags::ExpectDisconnect,
+				EMinClientFlags::AcceptActors | EMinClientFlags::SendRPCs | EMinClientFlags::NotifyNetActors>();
 }
 
 void UFTextCrash::InitializeEnvironmentSettings()

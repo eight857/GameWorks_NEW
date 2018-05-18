@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -164,7 +164,6 @@
 #include "Math/Float16.h"
 #include "Math/Float16Color.h"
 #include "Math/Vector2DHalf.h"
-#include "Math/AlphaBlendType.h"
 #include "Math/Transform.h"
 #include "Math/ConvexHull2d.h"
 #include "Math/UnrealMath.h"

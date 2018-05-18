@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -43,7 +43,7 @@ namespace UnrealBuildTool.Rules
 				}
 				);
 
-			if (UEBuildConfiguration.bBuildEditor == true)
+			if (Target.bBuildEditor == true)
 			{
 				PrivateDependencyModuleNames.Add("UnrealEd");
 
@@ -51,27 +51,27 @@ namespace UnrealBuildTool.Rules
                 CircularlyReferencedDependentModules.Add("AITestSuite");
 			}
 
-            if (UEBuildConfiguration.bCompileRecast)
+            if (Target.bCompileRecast)
             {
                 PrivateDependencyModuleNames.Add("Navmesh");
-                Definitions.Add("WITH_RECAST=1");
+                PublicDefinitions.Add("WITH_RECAST=1");
             }
             else
             {
                 // Because we test WITH_RECAST in public Engine header files, we need to make sure that modules
                 // that import us also have this definition set appropriately.  Recast is a private dependency
                 // module, so it's definitions won't propagate to modules that import Engine.
-                Definitions.Add("WITH_RECAST=0");
+                PublicDefinitions.Add("WITH_RECAST=0");
             }
 
-			if (UEBuildConfiguration.bBuildDeveloperTools || (Target.Configuration != UnrealTargetConfiguration.Shipping && Target.Configuration != UnrealTargetConfiguration.Test))
+			if (Target.bBuildDeveloperTools || (Target.Configuration != UnrealTargetConfiguration.Shipping && Target.Configuration != UnrealTargetConfiguration.Test))
 			{
 				PrivateDependencyModuleNames.Add("GameplayDebugger");
-				Definitions.Add("WITH_GAMEPLAY_DEBUGGER=1");
+				PublicDefinitions.Add("WITH_GAMEPLAY_DEBUGGER=1");
 			}
 			else
 			{
-				Definitions.Add("WITH_GAMEPLAY_DEBUGGER=0");
+				PublicDefinitions.Add("WITH_GAMEPLAY_DEBUGGER=0");
 			}
 		}
     }

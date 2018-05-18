@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	GameEngine.cpp: Unreal game engine.
 =============================================================================*/
 
 #include "Engine/GameEngine.h"
+#include "TabManager.h"
 #include "GenericPlatform/GenericPlatformSurvey.h"
 #include "Misc/CommandLine.h"
 #include "Misc/TimeGuard.h"
@@ -29,6 +30,7 @@
 #include "EngineModule.h"
 #include "GeneralProjectSettings.h"
 #include "Misc/PackageName.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #include "Slate/SceneViewport.h"
 
@@ -37,7 +39,7 @@
 
 #include "SynthBenchmark.h"
 
-#include "Misc/HotReloadInterface.h"
+#include "SceneViewExtension.h"
 #include "Engine/LocalPlayer.h"
 #include "Slate/SGameLayerManager.h"
 #include "Components/SkyLightComponent.h"
@@ -50,6 +52,13 @@
 
 #include "Tickable.h"
 #include "AssetRegistryModule.h"
+#include "DynamicResolutionProxy.h"
+#include "DynamicResolutionState.h"
+
+#if WITH_EDITOR
+#include "PIEPreviewDeviceProfileSelectorModule.h"
+#include "IPIEPreviewDeviceModule.h"
+#endif
 
 ENGINE_API bool GDisallowNetworkTravel = false;
 
@@ -85,7 +94,64 @@ static void RunSynthBenchmark(const TArray<FString>& Args)
 	ISynthBenchmark::Get().Run(Result, true, WorkScale);
 }
 
-static FAutoConsoleCommand GDumpDrawListStatsCmd(
+/** Helper function to generate a set of windowed resolutions which are convenient for the current primary display size */
+void GenerateConvenientWindowedResolutions(const struct FDisplayMetrics& InDisplayMetrics, TArray<FIntPoint>& OutResolutions)
+{
+	bool bInPortraitMode = InDisplayMetrics.PrimaryDisplayWidth < InDisplayMetrics.PrimaryDisplayHeight;
+
+	// Generate windowed resolutions as scaled versions of primary monitor size
+	static const float Scales[] = { 3.0f / 6.0f, 4.0f / 6.0f, 4.5f / 6.0f, 5.0f / 6.0f };
+	static const float Ratios[] = { 9.0f, 10.0f, 12.0f };
+	static const float MinWidth = 1280.0f;
+	static const float MinHeight = 720.0f; // UI layout doesn't work well below this, as the accept/cancel buttons go off the bottom of the screen
+
+	static const uint32 NumScales = sizeof(Scales) / sizeof(float);
+	static const uint32 NumRatios = sizeof(Ratios) / sizeof(float);
+
+	for (uint32 ScaleIndex = 0; ScaleIndex < NumScales; ++ScaleIndex)
+	{
+		for (uint32 AspectIndex = 0; AspectIndex < NumRatios; ++AspectIndex)
+		{
+			float TargetWidth, TargetHeight;
+			float Aspect = Ratios[AspectIndex] / 16.0f;
+
+			if (bInPortraitMode)
+			{
+				TargetHeight = FMath::RoundToFloat(InDisplayMetrics.PrimaryDisplayHeight * Scales[ScaleIndex]);
+				TargetWidth = TargetHeight * Aspect;
+			}
+			else
+			{
+				TargetWidth = FMath::RoundToFloat(InDisplayMetrics.PrimaryDisplayWidth * Scales[ScaleIndex]);
+				TargetHeight = TargetWidth * Aspect;
+			}
+
+			if (TargetWidth < InDisplayMetrics.PrimaryDisplayWidth && TargetHeight < InDisplayMetrics.PrimaryDisplayHeight && TargetWidth >= MinWidth && TargetHeight >= MinHeight)
+			{
+				OutResolutions.Add(FIntPoint(TargetWidth, TargetHeight));
+			}
+		}
+	}
+	
+	// if no convenient resolutions have been found, add a minimum one
+	if (OutResolutions.Num() == 0)
+	{
+		if (InDisplayMetrics.PrimaryDisplayHeight > MinHeight && InDisplayMetrics.PrimaryDisplayWidth > MinWidth)
+		{
+			//Add the minimum size if it fit
+			OutResolutions.Add(FIntPoint(MinWidth, MinHeight));
+		}
+		else
+		{
+			//Force a resolution even if its smaller then the minimum height and width to avoid a bigger window then the desktop
+			float TargetWidth = FMath::RoundToFloat(InDisplayMetrics.PrimaryDisplayWidth) * Scales[NumScales - 1];
+			float TargetHeight = FMath::RoundToFloat(InDisplayMetrics.PrimaryDisplayHeight) * Scales[NumScales - 1];
+			OutResolutions.Add(FIntPoint(TargetWidth, TargetHeight));
+		}
+	}
+}
+
+static FAutoConsoleCommand GSynthBenchmarkCmd(
 	TEXT("SynthBenchmark"),
 	TEXT("Run simple benchmark to get some metrics to find reasonable game settings automatically\n")
 	TEXT("Optional (float) parameter allows to scale with work amount to trade time or precision (default: 10)."),
@@ -309,17 +375,27 @@ void UGameEngine::DetermineGameWindowResolution( int32& ResolutionX, int32& Reso
 
 TSharedRef<SWindow> UGameEngine::CreateGameWindow()
 {
+	FString DeviceLocalizedName;
 	int32 ResX = GSystemResolution.ResX;
 	int32 ResY = GSystemResolution.ResY;
 	EWindowMode::Type WindowMode = GSystemResolution.WindowMode;
-
-	ConditionallyOverrideSettings(ResX, ResY, WindowMode);
-
-	// If the current settings have been overridden, apply them back into the system
-	if (ResX != GSystemResolution.ResX || ResY != GSystemResolution.ResY || WindowMode != GSystemResolution.WindowMode)
+	
+#if WITH_EDITOR
+	/**************************************************************/
+	/*****PIE Window Gets its Size from SETRES console variable****/
+	/**************************************************************/
+	if (!FPIEPreviewDeviceModule::IsRequestingPreviewDevice())
+#endif
+	
 	{
-		FSystemResolution::RequestResolutionChange(ResX, ResY, WindowMode);
-		IConsoleManager::Get().CallAllConsoleVariableSinks();
+		ConditionallyOverrideSettings(ResX, ResY, WindowMode);
+
+		// If the current settings have been overridden, apply them back into the system
+		if (ResX != GSystemResolution.ResX || ResY != GSystemResolution.ResY || WindowMode != GSystemResolution.WindowMode)
+		{
+			FSystemResolution::RequestResolutionChange(ResX, ResY, WindowMode);
+			IConsoleManager::Get().CallAllConsoleVariableSinks();
+		}
 	}
 
 	const FText WindowTitleOverride = GetDefault<UGeneralProjectSettings>()->ProjectDisplayedTitle;
@@ -340,11 +416,13 @@ TSharedRef<SWindow> UGameEngine::CreateGameWindow()
 
 	// Note: If these parameters are updated or renamed, please update the tooltip on the ProjectDisplayedTitle and ProjectDebugTitleInfo properties
 	FFormatNamedArguments Args;
-	Args.Add( TEXT("GameName"), FText::FromString( FApp::GetGameName() ) );
+	Args.Add( TEXT("GameName"), FText::FromString( FApp::GetProjectName() ) );
 	Args.Add( TEXT("PlatformArchitecture"), PlatformBits );
 	Args.Add( TEXT("RHIName"), FText::FromName( LegacyShaderPlatformToShaderFormat( GMaxRHIShaderPlatform ) ) );
-
-	const FText WindowTitleVar = FText::Format(FText::FromString(TEXT("{0} {1}")), WindowTitleComponent, WindowDebugInfoComponent);
+	/************************************************************************/
+	/************************ Add device name to window title****************/
+	/************************************************************************/
+	const FText WindowTitleVar = FText::Format( FText::FromString(TEXT("{0} {1} {2}")), WindowTitleComponent, WindowDebugInfoComponent, FGlobalTabmanager::Get()->GetApplicationTitle() );
 	const FText WindowTitle = FText::Format(WindowTitleVar, Args);
 	const bool bShouldPreserveAspectRatio = GetDefault<UGeneralProjectSettings>()->bShouldWindowPreserveAspectRatio;
 	const bool bUseBorderlessWindow = GetDefault<UGeneralProjectSettings>()->bUseBorderlessWindow;
@@ -413,7 +491,14 @@ TSharedRef<SWindow> UGameEngine::CreateGameWindow()
 	.HasCloseButton(bAllowClose)
 	.SupportsMinimize(bAllowMinimize)
 	.SupportsMaximize(bAllowMaximize);
-
+#if WITH_EDITOR
+	auto PIEPreviewDeviceModule = FModuleManager::LoadModulePtr<IPIEPreviewDeviceModule>("PIEPreviewDeviceProfileSelector");
+	if (PIEPreviewDeviceModule && FPIEPreviewDeviceModule::IsRequestingPreviewDevice())
+	{
+		Window = PIEPreviewDeviceModule->CreatePIEPreviewDeviceWindow(FVector2D(ResX, ResY), WindowTitle, AutoCenterType, FVector2D(WinX, WinY), MaxWindowWidth, MaxWindowHeight);
+	}
+#endif
+			
 	const bool bShowImmediately = false;
 
 	FSlateApplication::Get().AddWindow( Window, bShowImmediately );
@@ -503,6 +588,7 @@ void UGameEngine::RedrawViewports( bool bShouldPresent /*= true*/ )
 -----------------------------------------------------------------------------*/
 UEngine::UEngine(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
+	, ViewExtensions( new FSceneViewExtensions() )
 {
 	C_WorldBox = FColor(0, 0, 40, 255);
 	C_BrushWire = FColor(192, 0, 0, 255);
@@ -545,6 +631,21 @@ UEngine::UEngine(const FObjectInitializer& ObjectInitializer)
 	bIsVanillaProduct = false;
 
 	GameScreenshotSaveDirectory.Path = FPaths::ScreenShotDir();
+
+	LastGCFrame = TNumericLimits<uint64>::Max();
+
+	#if !UE_SERVER
+	{
+		bIsDynamicResolutionPaused = false;
+		bDynamicResolutionEnableUserSetting = false;
+		LastDynamicResolutionEvent = EDynamicResolutionStateEvent::EndFrame;
+
+		if (!IsRunningDedicatedServer() && !IsRunningCommandlet())
+		{
+			DynamicResolutionState = NextDynamicResolutionState = FDynamicResolutionHeuristicProxy::CreateDefaultState();
+		}
+	}
+	#endif
 }
 
 void UGameEngine::Init(IEngineLoop* InEngineLoop)
@@ -568,7 +669,7 @@ void UGameEngine::Init(IEngineLoop* InEngineLoop)
 
 	// Create game instance.  For GameEngine, this should be the only GameInstance that ever gets created.
 	{
-		FStringClassReference GameInstanceClassName = GetDefault<UGameMapsSettings>()->GameInstanceClass;
+		FSoftClassPath GameInstanceClassName = GetDefault<UGameMapsSettings>()->GameInstanceClass;
 		UClass* GameInstanceClass = (GameInstanceClassName.IsValid() ? LoadObject<UClass>(NULL, *GameInstanceClassName.ToString()) : UGameInstance::StaticClass());
 		
 		if (GameInstanceClass == nullptr)
@@ -708,6 +809,11 @@ bool UGameEngine::NetworkRemapPath(UNetDriver* Driver, FString& Str, bool bReadi
 
 	UWorld* const World = Driver->GetWorld();
 
+	if (World == nullptr)
+	{
+		return false;
+	}
+
 	// If the driver is using a duplicate level ID, find the level collection using the driver
 	// and see if any of its levels match the prefixed name. If so, remap Str to that level's
 	// prefixed name.
@@ -732,11 +838,29 @@ bool UGameEngine::NetworkRemapPath(UNetDriver* Driver, FString& Str, bool bReadi
 		}
 	}
 
+	if (!bReading)
+	{
+		return false;
+	}
+
+	// Try to find the level script objects and remap them for when demos are being replayed.
+	if (World->DemoNetDriver == Driver && World->RemapCompiledScriptActor(Str))
+	{
+		return true;
+	}
+
 	// If the game has created multiple worlds, some of them may have prefixed package names,
 	// so we need to remap the world package and streaming levels for replay playback to work correctly.
 	FWorldContext& Context = GetWorldContextFromWorldChecked(World);
-	if (Context.PIEInstance == INDEX_NONE || !bReading)
+	if (Context.PIEInstance == INDEX_NONE)
 	{
+		// If this is not a PIE instance but sender is PIE, we need to strip the PIE prefix
+		const FString Stripped = UWorld::RemovePIEPrefix(Str);
+		if (!Stripped.Equals(Str, ESearchCase::CaseSensitive))
+		{
+			Str = Stripped;
+			return true;
+		}
 		return false;
 	}
 
@@ -755,7 +879,7 @@ bool UGameEngine::NetworkRemapPath(UNetDriver* Driver, FString& Str, bool bReadi
 		return true;
 	}
 
-	for( ULevelStreaming* StreamingLevel : World->StreamingLevels)
+	for (ULevelStreaming* StreamingLevel : World->StreamingLevels)
 	{
 		if (StreamingLevel != nullptr)
 		{
@@ -773,7 +897,7 @@ bool UGameEngine::NetworkRemapPath(UNetDriver* Driver, FString& Str, bool bReadi
 
 bool UGameEngine::ShouldDoAsyncEndOfFrameTasks() const
 {
-	return FApp::ShouldUseThreadingForPerformance() && ENamedThreads::RenderThread != ENamedThreads::GameThread && !!GDoAsyncEndOfFrameTasks;
+	return FApp::ShouldUseThreadingForPerformance() && ENamedThreads::GetRenderThread() != ENamedThreads::GameThread && !!GDoAsyncEndOfFrameTasks;
 }
 
 /*-----------------------------------------------------------------------------
@@ -936,7 +1060,7 @@ bool UGameEngine::HandleExitCommand( const TCHAR* Cmd, FOutputDevice& Ar )
 bool UGameEngine::HandleMinimizeCommand( const TCHAR *Cmd, FOutputDevice &Ar )
 {
 	Ar.Log( TEXT("Minimize by request") );
-	FPlatformMisc::RequestMinimize();
+	FPlatformApplicationMisc::RequestMinimize();
 
 	return true;
 }
@@ -1051,13 +1175,6 @@ void UGameEngine::Tick( float DeltaSeconds, bool bIdleMode )
 	if ((GSlowFrameLoggingThreshold > 0.0f) && (DeltaSeconds > GSlowFrameLoggingThreshold))
 	{
 		UE_LOG(LogEngine, Log, TEXT("Slow GT frame detected (GT frame %u, delta time %f s)"), GFrameCounter - 1, DeltaSeconds);
-	}
-
-	// Tick the module manager
-	IHotReloadInterface* HotReload = IHotReloadInterface::GetPtr();
-	if(HotReload != nullptr)
-	{
-		HotReload->Tick();
 	}
 
 	if (IsRunningDedicatedServer())

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -13,6 +13,7 @@ public class DetailCustomizations : ModuleRules
                 "AppFramework",
 				"Core",
 				"CoreUObject",
+				"ApplicationCore",
 				"DesktopWidgets",
 				"Engine",
 				"Landscape",
@@ -30,6 +31,7 @@ public class DetailCustomizations : ModuleRules
 				"SharedSettingsWidgets",
                 "ContentBrowser",
 				"BlueprintGraph",
+                "GraphEditor",
 				"AnimGraph",
                 "PropertyEditor",
                 "LevelEditor",
@@ -51,6 +53,8 @@ public class DetailCustomizations : ModuleRules
                 "SkeletonEditor",
                 "LevelSequence",
                 "AdvancedPreviewScene",
+                "AudioSettingsEditor",
+				"HeadMountedDisplay",
             }
 		);
 

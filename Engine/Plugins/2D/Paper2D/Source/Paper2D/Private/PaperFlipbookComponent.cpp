@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PaperFlipbookComponent.h"
 #include "RenderingThread.h"
@@ -406,11 +406,6 @@ bool UPaperFlipbookComponent::SetFlipbook(class UPaperFlipbook* NewFlipbook)
 UPaperFlipbook* UPaperFlipbookComponent::GetFlipbook()
 {
 	return SourceFlipbook;
-}
-
-UMaterialInterface* UPaperFlipbookComponent::GetSpriteMaterial() const
-{
-	return GetMaterial(0);
 }
 
 void UPaperFlipbookComponent::SetSpriteColor(FLinearColor NewColor)

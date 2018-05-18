@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "ObjectPropertyNode.h"
@@ -438,7 +438,7 @@ void FObjectPropertyNode::InternalInitChildNodes( FName SinglePropertyName )
 
 		bool bMetaDataAllowVisible = true;
 		static const FName Name_bShowOnlyWhenTrue("bShowOnlyWhenTrue");
-		FString MetaDataVisibilityCheckString = It->GetMetaData(Name_bShowOnlyWhenTrue);
+		const FString& MetaDataVisibilityCheckString = It->GetMetaData(Name_bShowOnlyWhenTrue);
 		if (MetaDataVisibilityCheckString.Len())
 		{
 			//ensure that the metadata visibility string is actually set to true in order to show this property

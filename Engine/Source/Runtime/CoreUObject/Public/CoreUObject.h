@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -36,8 +36,7 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "Templates/Casts.h"
 #include "UObject/PersistentObjectPtr.h"
 #include "UObject/LazyObjectPtr.h"
-#include "Misc/StringAssetReference.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 #include "UObject/Interface.h"
 #include "UObject/LevelGuids.h"
 #include "UObject/Package.h"
@@ -89,9 +88,7 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "UObject/GCObject.h"
 #include "Serialization/AsyncPackage.h"
 #include "Serialization/AsyncLoading.h"
-#include "Misc/StartupPackages.h"
 #include "Misc/NotifyHook.h"
 #include "Misc/RedirectCollector.h"
 #include "UObject/ScriptStackTracker.h"
 #include "Misc/WorldCompositionUtility.h"
-#include "Misc/StringClassReference.h"

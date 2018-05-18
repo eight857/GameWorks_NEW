@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -109,7 +109,9 @@ enum TProgressionState
 	PROGSTATE_ImportingResults,
 	PROGSTATE_Finished,
 	PROGSTATE_RemoteDisconnected,
-	PROGSTATE_InstigatorDisconnected
+	PROGSTATE_InstigatorDisconnected,
+	PROGSTATE_Preparing4,
+	PROGSTATE_Num
 };
 
 /**

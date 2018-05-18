@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ComponentInstanceDataCache.h"
 #include "Serialization/ObjectWriter.h"
@@ -102,7 +102,7 @@ public:
 	virtual FArchive& operator<<(UObject*& Object) override
 	{
 		UObject* SerializedObject = Object;
-		if (Object && Object->IsIn(Component))
+		if (Object && Component && Object->IsIn(Component))
 		{
 			SerializedObject = GetDuplicatedObject(Object);
 		}
@@ -136,7 +136,7 @@ public:
 		InComponent->GetUCSModifiedProperties(PropertiesToSkip);
 
 		UClass* Class = InComponent->GetClass();
-		Class->SerializeTaggedProperties(*this, (uint8*)InComponent, Class, nullptr);
+		Class->SerializeTaggedProperties(*this, (uint8*)InComponent, Class, (uint8*)InComponent->GetArchetype());
 	}
 
 	virtual bool ShouldSkipProperty(const UProperty* InProperty) const override
@@ -268,7 +268,10 @@ void FActorComponentInstanceData::ApplyToComponent(UActorComponent* Component, c
 
 		for (UObject* InstancedObject : InstancedObjects)
 		{
-			InstancedObject->Rename(nullptr, Component);
+			if (InstancedObject)
+			{
+				InstancedObject->Rename(nullptr, Component);
+			}
 		}
 
 		FComponentPropertyReader ComponentPropertyReader(Component, SavedProperties);
@@ -348,7 +351,66 @@ void FComponentInstanceDataCache::ApplyToActor(AActor* Actor, const ECacheApplyP
 	{
 		const bool bIsChildActor = Actor->IsChildActor();
 
-		TInlineComponentArray<UActorComponent*> Components(Actor);
+		// We want to apply instance data from the root node down to ensure changes such as transforms 
+		// propagate correctly so we will build the components list in a breadth-first manner.
+		TInlineComponentArray<UActorComponent*> Components;
+		Components.Reserve(Actor->GetComponents().Num());
+
+		auto AddComponentHierarchy = [&Components](USceneComponent* Component)
+		{
+			int32 FirstProcessIndex = Components.Num();
+
+			// Add this to our list and make it our starting node
+			Components.Add(Component);
+
+			int32 CompsToProcess = 1;
+
+			while (CompsToProcess)
+			{
+				// track how many elements were here
+				const int32 StartingProcessedCount = Components.Num();
+
+				// process the currently unprocessed elements
+				for (int32 ProcessIndex = 0; ProcessIndex < CompsToProcess; ++ProcessIndex)
+				{
+					USceneComponent* SceneComponent = CastChecked<USceneComponent>(Components[FirstProcessIndex + ProcessIndex]);
+
+					// add all children to the end of the array
+					for (int32 ChildIndex = 0; ChildIndex < SceneComponent->GetNumChildrenComponents(); ++ChildIndex)
+					{
+						if (USceneComponent* ChildComponent = SceneComponent->GetChildComponent(ChildIndex))
+						{
+							Components.Add(ChildComponent);
+						}
+					}
+				}
+
+				// next loop start with the nodes we just added
+				FirstProcessIndex = StartingProcessedCount;
+				CompsToProcess = Components.Num() - StartingProcessedCount;
+			}
+		};
+
+		if (USceneComponent* RootComponent = Actor->GetRootComponent())
+		{
+			AddComponentHierarchy(RootComponent);
+		}
+
+		for (UActorComponent* Component : Actor->GetComponents())
+		{
+			if (USceneComponent* SceneComponent = Cast<USceneComponent>(Component))
+			{
+				USceneComponent* ParentComponent = SceneComponent->GetAttachParent();
+				if ((ParentComponent == nullptr && SceneComponent != Actor->GetRootComponent()) || (ParentComponent && ParentComponent->GetOwner() != Actor))
+				{
+					AddComponentHierarchy(SceneComponent);
+				}
+			}
+			else if (Component)
+			{
+				Components.Add(Component);
+			}
+		}
 
 		// Cache all archetype objects
 		TMap<UActorComponent*, const UObject*> ComponentToArchetypeMap;
@@ -428,10 +490,7 @@ void FComponentInstanceDataCache::FindAndReplaceInstances(const TMap<UObject*, U
 
 void FComponentInstanceDataCache::AddReferencedObjects(FReferenceCollector& Collector)
 {
-	TArray<USceneComponent*> SceneComponents;
-	InstanceComponentTransformToRootMap.GenerateKeyArray(SceneComponents);
-
-	Collector.AddReferencedObjects(SceneComponents);
+	Collector.AddReferencedObjects(InstanceComponentTransformToRootMap);
 
 	for (FActorComponentInstanceData* ComponentInstanceData : ComponentsInstanceData)
 	{

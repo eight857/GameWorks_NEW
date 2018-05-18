@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -13,18 +13,18 @@ public class QualcommTextureConverter : ModuleRules
 			(Target.Platform == UnrealTargetPlatform.Mac) ||
 			(Target.Platform == UnrealTargetPlatform.Linux && Target.Architecture.StartsWith("x86_64")))
 		{
-			PublicIncludePaths.Add(UEBuildConfiguration.UEThirdPartySourceDirectory + "Qualcomm/TextureConverter/Include");
+			PublicIncludePaths.Add(Target.UEThirdPartySourceDirectory + "Qualcomm/TextureConverter/Include");
 
-			string LibraryPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "Qualcomm/TextureConverter/Lib/";
+			string LibraryPath = Target.UEThirdPartySourceDirectory + "Qualcomm/TextureConverter/Lib/";
 			string LibraryName = "TextureConverter";
 			string LibraryExtension = ".lib";
 
 			if (Target.Platform == UnrealTargetPlatform.Win64)
 			{
-				LibraryPath += "vs" + WindowsPlatform.GetVisualStudioCompilerVersionName() + "/x64";
+				LibraryPath += "vs" + Target.WindowsPlatform.GetVisualStudioCompilerVersionName() + "/x64";
 				PublicDelayLoadDLLs.Add("TextureConverter.dll");
 
-				RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Binaries/ThirdParty/Qualcomm/Win64/TextureConverter.dll"));
+				RuntimeDependencies.Add("$(EngineDir)/Binaries/ThirdParty/Qualcomm/Win64/TextureConverter.dll");
             }
 			else if (Target.Platform == UnrealTargetPlatform.Mac)
 			{
@@ -38,7 +38,7 @@ public class QualcommTextureConverter : ModuleRules
 				LibraryExtension = ".so";
 				LibraryName = LibraryPath + "/lib" + LibraryName;
 
-				RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Binaries/ThirdParty/Qualcomm/Linux/libTextureConverter.so"));
+				RuntimeDependencies.Add("$(EngineDir)/Binaries/ThirdParty/Qualcomm/Linux/libTextureConverter.so");
 			}
 
 			PublicLibraryPaths.Add(LibraryPath);

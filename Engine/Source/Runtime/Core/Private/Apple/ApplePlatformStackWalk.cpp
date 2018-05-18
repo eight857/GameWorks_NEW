@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ApplePlatformStackWalk.mm: Apple implementations of stack walk functions
@@ -152,28 +152,40 @@ static void AsyncSafeProgramCounterToSymbolInfo( uint64 ProgramCounter, FProgram
 	FCStringAnsi::Strcpy(out_SymbolInfo.ModuleName, DylibName);
 }
 
-void FApplePlatformStackWalk::CaptureStackBackTrace( uint64* BackTrace, uint32 MaxDepth, void* Context )
+uint32 FApplePlatformStackWalk::CaptureStackBackTrace( uint64* BackTrace, uint32 MaxDepth, void* Context )
 {
 	// Make sure we have place to store the information before we go through the process of raising
 	// an exception and handling it.
 	if( BackTrace == NULL || MaxDepth == 0 )
 	{
-		return;
+		return 0;
 	}
 
 #if PLATFORM_MAC
 	if(Context)
 	{
-		int i = plcrashreporter_backtrace((void**)BackTrace, MaxDepth);
-		
-		return;
+		return plcrashreporter_backtrace((void**)BackTrace, MaxDepth);
 	}
 #endif
-	backtrace((void**)BackTrace, MaxDepth);
+	return backtrace((void**)BackTrace, MaxDepth);
 }
 
 bool FApplePlatformStackWalk::ProgramCounterToHumanReadableString( int32 CurrentCallDepth, uint64 ProgramCounter, ANSICHAR* HumanReadableString, SIZE_T HumanReadableStringSize, FGenericCrashContext* Context )
 {
+	
+	//
+	// Callstack lines should be written in this standard format
+	//
+	//	0xaddress module!func [file]
+	// 
+	// E.g. 0x045C8D01 OrionClient.self!UEngine::PerformError() [D:\Epic\Orion\Engine\Source\Runtime\Engine\Private\UnrealEngine.cpp:6481]
+	//
+	// Module may be omitted, everything else should be present, or substituted with a string that conforms to the expected type
+	//
+	// E.g 0x00000000 UnknownFunction []
+	//
+	// 
+
 	Dl_info DylibInfo;
 	int32 Result = dladdr((const void*)ProgramCounter, &DylibInfo);
 	if (Result == 0)
@@ -190,9 +202,13 @@ bool FApplePlatformStackWalk::ProgramCounterToHumanReadableString( int32 Current
 	{
 		AsyncSafeProgramCounterToSymbolInfo(ProgramCounter, SymbolInfo);
 	}
+
+	ANSICHAR TempArray[MAX_SPRINTF];
+
+	// Write out prefix, address, module, and function na,e
+	FCStringAnsi::Sprintf(TempArray, "0x%08x %s!%s ", (uint32)ProgramCounter, SymbolInfo.ModuleName, SymbolInfo.FunctionName);
 	
-	// Write out function name.
-	FCStringAnsi::Strcat(HumanReadableString, HumanReadableStringSize, SymbolInfo.FunctionName);
+	FCStringAnsi::Strcat(HumanReadableString, HumanReadableStringSize, TempArray);
 
 	// Get filename.
 	{
@@ -201,25 +217,17 @@ bool FApplePlatformStackWalk::ProgramCounterToHumanReadableString( int32 Current
 		if(SymbolInfo.LineNumber == 0)
 		{
 			// No line number. Print out the logical address instead.
-			FCStringAnsi::Sprintf(FileNameLine, "Address = 0x%-8x (filename not found) ", ProgramCounter);
+			FCStringAnsi::Sprintf(FileNameLine, " [UnknownFile]) ", ProgramCounter);
 		}
 		else
 		{
 			// try to add source file and line number, too
-			FCStringAnsi::Sprintf(FileNameLine, "[%s, line %d] ", SymbolInfo.Filename, SymbolInfo.LineNumber);
+			FCStringAnsi::Sprintf(FileNameLine, " [%s:%d] ", SymbolInfo.Filename, SymbolInfo.LineNumber);
 		}
 		
 		FCStringAnsi::Strcat(HumanReadableString, HumanReadableStringSize, FileNameLine);
 	}
 
-	// Get module name.
-	{
-		ANSICHAR ModuleName[MAX_SPRINTF];
-		// Write out Module information if there is sufficient space.
-		FCStringAnsi::Sprintf(ModuleName, "[in %s]", SymbolInfo.ModuleName);
-		FCStringAnsi::Strcat(HumanReadableString, HumanReadableStringSize, ModuleName);
-	}
-	
 	// For the crash reporting code this needs a Windows line ending, the caller is responsible for the '\n'
 	FCStringAnsi::Strcat(HumanReadableString, HumanReadableStringSize, "\r");
 

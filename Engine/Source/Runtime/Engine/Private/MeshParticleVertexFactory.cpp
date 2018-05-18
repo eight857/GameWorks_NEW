@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MeshParticleVertexFactory.cpp: Mesh particle vertex factory implementation
@@ -127,15 +127,15 @@ void FMeshParticleVertexFactory::InitRHI()
 				Streams.Add(VertexStream);
 	
 				// @todo metal: this will need a valid stride when we get to instanced meshes!
-				Elements.Add(FVertexElement(0, Data.TransformComponent[0].Offset, Data.TransformComponent[0].Type, 8, DynamicVertexStride, Data.TransformComponent[0].bUseInstanceIndex));
-				Elements.Add(FVertexElement(0, Data.TransformComponent[1].Offset, Data.TransformComponent[1].Type, 9, DynamicVertexStride, Data.TransformComponent[1].bUseInstanceIndex));
-				Elements.Add(FVertexElement(0, Data.TransformComponent[2].Offset, Data.TransformComponent[2].Type, 10, DynamicVertexStride, Data.TransformComponent[2].bUseInstanceIndex));
+				Elements.Add(FVertexElement(0, Data.TransformComponent[0].Offset, Data.TransformComponent[0].Type, 8, DynamicVertexStride, EnumHasAnyFlags(EVertexStreamUsage::Instancing, Data.TransformComponent[0].VertexStreamUsage)));
+				Elements.Add(FVertexElement(0, Data.TransformComponent[1].Offset, Data.TransformComponent[1].Type, 9, DynamicVertexStride, EnumHasAnyFlags(EVertexStreamUsage::Instancing, Data.TransformComponent[1].VertexStreamUsage)));
+				Elements.Add(FVertexElement(0, Data.TransformComponent[2].Offset, Data.TransformComponent[2].Type, 10, DynamicVertexStride, EnumHasAnyFlags(EVertexStreamUsage::Instancing, Data.TransformComponent[2].VertexStreamUsage)));
 	
-				Elements.Add(FVertexElement(0, Data.SubUVs.Offset, Data.SubUVs.Type, 11, DynamicVertexStride, Data.SubUVs.bUseInstanceIndex));
-				Elements.Add(FVertexElement(0, Data.SubUVLerpAndRelTime.Offset, Data.SubUVLerpAndRelTime.Type, 12, DynamicVertexStride, Data.SubUVLerpAndRelTime.bUseInstanceIndex));
+				Elements.Add(FVertexElement(0, Data.SubUVs.Offset, Data.SubUVs.Type, 11, DynamicVertexStride, EnumHasAnyFlags(EVertexStreamUsage::Instancing, Data.SubUVs.VertexStreamUsage)));
+				Elements.Add(FVertexElement(0, Data.SubUVLerpAndRelTime.Offset, Data.SubUVLerpAndRelTime.Type, 12, DynamicVertexStride, EnumHasAnyFlags(EVertexStreamUsage::Instancing, Data.SubUVLerpAndRelTime.VertexStreamUsage)));
 	
-				Elements.Add(FVertexElement(0, Data.ParticleColorComponent.Offset, Data.ParticleColorComponent.Type, 14, DynamicVertexStride, Data.ParticleColorComponent.bUseInstanceIndex));
-				Elements.Add(FVertexElement(0, Data.VelocityComponent.Offset, Data.VelocityComponent.Type, 15, DynamicVertexStride, Data.VelocityComponent.bUseInstanceIndex));
+				Elements.Add(FVertexElement(0, Data.ParticleColorComponent.Offset, Data.ParticleColorComponent.Type, 14, DynamicVertexStride, EnumHasAnyFlags(EVertexStreamUsage::Instancing, Data.ParticleColorComponent.VertexStreamUsage)));
+				Elements.Add(FVertexElement(0, Data.VelocityComponent.Offset, Data.VelocityComponent.Type, 15, DynamicVertexStride, EnumHasAnyFlags(EVertexStreamUsage::Instancing, Data.VelocityComponent.VertexStreamUsage)));
 			}
 
 			// Stream 1 - Dynamic parameter
@@ -173,17 +173,23 @@ void FMeshParticleVertexFactory::InitRHI()
 			}
 		}
 
-		// Vertex color
-		if(Data.VertexColorComponent.VertexBuffer != NULL)
+		if (Data.ColorComponentsSRV == nullptr)
 		{
-			Elements.Add(AccessStreamComponent(Data.VertexColorComponent,3));
+			Data.ColorComponentsSRV = GNullColorVertexBuffer.VertexBufferSRV;
+			Data.ColorIndexMask = 0;
+		}
+
+		// Vertex color
+		if(Data.ColorComponent.VertexBuffer != NULL)
+		{
+			Elements.Add(AccessStreamComponent(Data.ColorComponent,3));
 		}
 		else
 		{
 			//If the mesh has no color component, set the null color buffer on a new stream with a stride of 0.
 			//This wastes 4 bytes of bandwidth per vertex, but prevents having to compile out twice the number of vertex factories.
-			FVertexStreamComponent NullColorComponent(&GNullColorVertexBuffer, 0, 0, VET_Color);
-			Elements.Add(AccessStreamComponent(NullColorComponent,3));
+			FVertexStreamComponent NullColorComponent(&GNullColorVertexBuffer, 0, 0, VET_Color, EVertexStreamUsage::ManualFetch);
+			Elements.Add(AccessStreamComponent(NullColorComponent, 3));
 		}
 		
 		if(Data.TextureCoordinates.Num())
@@ -216,6 +222,7 @@ void FMeshParticleVertexFactory::InitRHI()
 
 void FMeshParticleVertexFactory::SetInstanceBuffer(const FVertexBuffer* InstanceBuffer, uint32 StreamOffset, uint32 Stride)
 {
+	ensure(Stride == DynamicVertexStride);
 	Streams[0].VertexBuffer = InstanceBuffer;
 	Streams[0].Offset = StreamOffset;
 	Streams[0].Stride = Stride;
@@ -226,14 +233,16 @@ void FMeshParticleVertexFactory::SetDynamicParameterBuffer(const FVertexBuffer* 
 	if (InDynamicParameterBuffer)
 	{
 		Streams[1].VertexBuffer = InDynamicParameterBuffer;
+		ensure(Stride == DynamicParameterVertexStride);
+		Streams[1].Stride = DynamicParameterVertexStride;
 		Streams[1].Offset = StreamOffset;
-		Streams[1].Stride = Stride;
 	}
 	else
 	{
 		Streams[1].VertexBuffer = &GNullDynamicParameterVertexBuffer;
-		Streams[1].Offset = 0;
+		ensure(DynamicParameterVertexStride == 0);
 		Streams[1].Stride = 0;
+		Streams[1].Offset = 0;
 	}
 }
 
@@ -268,7 +277,7 @@ FShaderResourceViewRHIParamRef FMeshParticleVertexFactory::GetPreviousTransformB
 	return PrevTransformBuffer.SRV;
 }
 
-bool FMeshParticleVertexFactory::ShouldCache(EShaderPlatform Platform, const class FMaterial* Material, const class FShaderType* ShaderType)
+bool FMeshParticleVertexFactory::ShouldCompilePermutation(EShaderPlatform Platform, const class FMaterial* Material, const class FShaderType* ShaderType)
 {
 	return (Material->IsUsedWithMeshParticles() || Material->IsSpecialEngineMaterial());
 }

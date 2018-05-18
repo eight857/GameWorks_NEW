@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -9,7 +9,7 @@ public class coremod: ModuleRules
 		Type = ModuleType.External;
 
 		string CoreModVersion = "4.2.6";
-		string LibraryPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "coremod/coremod-" + CoreModVersion + "/";
+		string LibraryPath = Target.UEThirdPartySourceDirectory + "coremod/coremod-" + CoreModVersion + "/";
 
 		PublicIncludePaths.Add(LibraryPath + "include/coremod");
 

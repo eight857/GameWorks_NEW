@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SNewClassDialog.h"
@@ -40,6 +40,9 @@
 #include "FeaturedClasses.inl"
 
 #define LOCTEXT_NAMESPACE "GameProjectGeneration"
+
+/** The last selected module name. Meant to keep the same module selected after first selection */
+FString SNewClassDialog::LastSelectedModuleName;
 
 
 struct FParentClassItem
@@ -134,26 +137,50 @@ void SNewClassDialog::Construct( const FArguments& InArgs )
 	// Otherwise, set out default target module as the first runtime module in the list
 	if(ClassDomain == EClassDomain::Native && !SelectedModuleInfo.IsValid())
 	{
-		const FString ProjectName = FApp::GetGameName();
-		for(const auto& AvailableModule : AvailableModules)
+		const FString ProjectName = FApp::GetProjectName();
+
+		// Find initially selected module based on simple fallback in this order..
+		// Previously selected module, main project module, a  runtime module
+		TSharedPtr<FModuleContextInfo> ProjectModule;
+		TSharedPtr<FModuleContextInfo> RuntimeModule;
+
+		for (const auto& AvailableModule : AvailableModules)
 		{
-			if(AvailableModule->ModuleName == ProjectName)
+			// Check if this module matches our last used
+			if (AvailableModule->ModuleName == LastSelectedModuleName)
 			{
 				SelectedModuleInfo = AvailableModule;
 				break;
 			}
-			
-			if(AvailableModule->ModuleType == EHostType::Runtime)
+
+			if (AvailableModule->ModuleName == ProjectName)
 			{
-				SelectedModuleInfo = AvailableModule;
-				// keep going in case we find a better match
+				ProjectModule = AvailableModule;
+			}
+
+			if (AvailableModule->ModuleType == EHostType::Runtime)
+			{
+				RuntimeModule = AvailableModule;
 			}
 		}
 
 		if (!SelectedModuleInfo.IsValid())
 		{
-			// No runtime modules? Just take the first available module then
-			SelectedModuleInfo = AvailableModules[0];
+			if (ProjectModule.IsValid())
+			{
+				// use the project module we found
+				SelectedModuleInfo = ProjectModule;
+			}
+			else if (RuntimeModule.IsValid())
+			{
+				// use the first runtime module we found
+				SelectedModuleInfo = RuntimeModule;
+			}
+			else
+			{
+				// default to just the first module
+				SelectedModuleInfo = AvailableModules[0];
+			}
 		}
 
 		NewClassPath = SelectedModuleInfo->ModuleSourcePath;
@@ -469,7 +496,7 @@ void SNewClassDialog::Construct( const FArguments& InArgs )
 								.Style(FEditorStyle::Get(), "Common.GotoNativeCodeHyperlink")
 								.OnNavigate(this, &SNewClassDialog::OnEditCodeClicked)
 								.Text(this, &SNewClassDialog::GetSelectedParentClassFilename)
-								.ToolTipText(FText::Format(LOCTEXT("GoToCode_ToolTip", "Click to open this source file in {0}"), FSourceCodeNavigation::GetSuggestedSourceCodeIDE()))
+								.ToolTipText(FText::Format(LOCTEXT("GoToCode_ToolTip", "Click to open this source file in {0}"), FSourceCodeNavigation::GetSelectedSourceCodeIDE()))
 								.Visibility(this, &SNewClassDialog::GetSourceHyperlinkVisibility)
 							]
 						]
@@ -1174,6 +1201,9 @@ void SNewClassDialog::FinishClicked()
 
 		FString HeaderFilePath;
 		FString CppFilePath;
+
+		// Track the selected module name so we can default to this next time
+		LastSelectedModuleName = SelectedModuleInfo->ModuleName;
 
 		FText FailReason;
 		const TSet<FString>& DisallowedHeaderNames = FSourceCodeNavigation::GetSourceFileDatabase().GetDisallowedHeaderNames();

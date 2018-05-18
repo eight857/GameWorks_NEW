@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Perception/AISense_Sight.h"
 #include "EngineDefines.h"
@@ -268,7 +268,8 @@ float UAISense_Sight::Update()
 						}
 					}
 				}
-				else
+				// communicate failure only if we've seen give actor before
+				else if (SightQuery->bLastResult)
 				{
 					SIGHT_LOG_SEGMENT(Listener.Listener.Get()->GetOwner(), Listener.CachedLocation, TargetLocation, FColor::Red, TEXT("%s"), *(Target.TargetId.ToString()));
 					Listener.RegisterStimulus(TargetActor, FAIStimulus(*this, 0.f, TargetLocation, Listener.CachedLocation, FAIStimulus::SensingFailed));
@@ -353,11 +354,12 @@ void UAISense_Sight::RegisterSource(AActor& SourceActor)
 void UAISense_Sight::UnregisterSource(AActor& SourceActor)
 {
 	const FAISightTarget::FTargetId AsTargetId = SourceActor.GetUniqueID();
-	FAISightTarget* AsTarget = ObservedTargets.Find(AsTargetId);
+	FAISightTarget AsTarget;
 	
-	if (AsTarget != nullptr && SightQueryQueue.Num() > 0)
+	if (ObservedTargets.RemoveAndCopyValue(AsTargetId, AsTarget)
+		&& SightQueryQueue.Num() > 0)
 	{
-		AActor* TargetActor = AsTarget->Target.Get();
+		AActor* TargetActor = AsTarget.Target.Get();
 
 		if (TargetActor)
 		{

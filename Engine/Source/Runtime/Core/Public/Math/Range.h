@@ -1,12 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreTypes.h"
-#include "Misc/AssertionMacros.h"
 #include "Containers/Array.h"
+#include "Misc/AssertionMacros.h"
 #include "Misc/DateTime.h"
 #include "Math/RangeBound.h"
+#include "Serialization/Archive.h"
+
 
 /**
  * Template for ranges.
@@ -40,10 +42,8 @@
  * recommended to limit all operations to canonical ranges of the form [A, B) in
  * which the lower bound is included and the upper bound is excluded from the range.
  *
- * @param ElementType - The type of elements represented by the range
- *
- * @see RangeBound
- * @see TInterval
+ * @param ElementType The type of elements represented by the range
+ * @see RangeBound, TInterval
  */
 template<typename ElementType> class TRange
 {
@@ -51,36 +51,39 @@ public:
 
 	typedef TRangeBound<ElementType> BoundsType;
 
+	/*~ Typedef used to pass/return small element types by value rather than const& */
+	typedef typename TCallTraits<ElementType>::ParamType ElementValueOrConstRef;
+
 	/** Default constructor (no initialization). */
 	TRange() { }
 
 	/**
-	 * Creates a range with a single element.
+	 * Create a range with a single element.
 	 *
 	 * The created range is of the form [A, A].
 	 *
 	 * @param A The element in the range.
 	 */
-	explicit TRange(const ElementType& A)
+	explicit TRange(ElementValueOrConstRef A)
 		: LowerBound(BoundsType::Inclusive(A))
 		, UpperBound(BoundsType::Inclusive(A))
 	{ }
 	
 	/**
-	 * Creates and initializes a new range with the given lower and upper bounds.
+	 * Create and initializes a new range with the given lower and upper bounds.
 	 *
 	 * The created range is of the form [A, B).
 	 *
 	 * @param A The range's lower bound value (inclusive).
 	 * @param B The range's upper bound value (exclusive).
 	 */
-	explicit TRange(const ElementType& A, const ElementType& B)
+	explicit TRange(ElementValueOrConstRef A, ElementValueOrConstRef B)
 		: LowerBound(BoundsType::Inclusive(A))
 		, UpperBound(BoundsType::Exclusive(B))
 	{ }
 
 	/**
-	 * Creates and initializes a new range with the given lower and upper bounds.
+	 * Create and initializes a new range with the given lower and upper bounds.
 	 *
 	 * @param InLowerBound The range's lower bound.
 	 * @param InUpperBound The range's upper bound.
@@ -93,7 +96,7 @@ public:
 public:
 
 	/**
-	 * Compares this range with the specified range for equality.
+	 * Compare this range with the specified range for equality.
 	 *
 	 * @param Other The range to compare with.
 	 * @return true if the ranges are equal, false otherwise.
@@ -109,7 +112,7 @@ public:
 	}
 
 	/**
-	 * Compares this range with the specified range for inequality.
+	 * Compare this range with the specified range for inequality.
 	 *
 	 * @param Other The range to compare with.
 	 * @return true if the ranges are not equal, false otherwise.
@@ -127,10 +130,10 @@ public:
 public:
 
 	/**
-	 * Checks whether this range adjoins to another.
+	 * Check whether this range adjoins to another.
 	 *
 	 * Two ranges are adjoint if they are next to each other without overlapping, i.e.
-	 *		[A, B) and [C, C) or
+	 *		[A, B) and [B, C) or
 	 *		[A, B] and (B, C)
 	 *
 	 * @param Other The other range.
@@ -159,7 +162,7 @@ public:
 	}
 
 	/**
-	 * Checks whether this range conjoins the two given ranges.
+	 * Check whether this range conjoins the two given ranges.
 	 *
 	 * A range conjoins two non-overlapping ranges if it adjoins both of them, i.e.
 	 *		[B, C) conjoins the two ranges [A, B) and [C, D).
@@ -179,19 +182,19 @@ public:
 	}
 	
 	/**
-	 * Checks whether this range contains the specified element.
+	 * Check whether this range contains the specified element.
 	 *
 	 * @param Element The element to check.
 	 * @return true if the range contains the element, false otherwise.
 	 */
-	bool Contains(const ElementType& Element) const
+	bool Contains(ElementValueOrConstRef Element) const
 	{
 		return ((BoundsType::MinLower(LowerBound, Element) == LowerBound) &&
 				(BoundsType::MaxUpper(UpperBound, Element) == UpperBound));
 	}
 	
 	/**
-	 * Checks whether this range contains another range.
+	 * Check whether this range contains another range.
 	 *
 	 * @param Other The range to check.
 	 * @return true if the range contains the other range, false otherwise.
@@ -203,7 +206,7 @@ public:
 	}
 
 	/**
-	 * Checks if this range is contiguous with another range.
+	 * Check if this range is contiguous with another range.
 	 *
 	 * Two ranges are contiguous if they are adjoint or overlapping.
 	 *
@@ -216,9 +219,10 @@ public:
 	}
 	
 	/**
-	 * Gets the range's lower bound.
+	 * Get the range's lower bound.
 	 *
 	 * @return Lower bound.
+	 * @see GetLowerBoundValue, GetUpperBound, HasLowerBound
 	 */
 	BoundsType GetLowerBound() const
 	{
@@ -226,22 +230,23 @@ public:
 	}
 
 	/**
-	 * Gets the value of the lower bound.
+	 * Get the value of the lower bound.
 	 *
 	 * Use HasLowerBound() to ensure that this range actually has a lower bound.
 	 *
 	 * @return Bound value.
-	 * @see GetUpperBoundValue, HasLowerBound
+	 * @see GetLowerBound, GetUpperBoundValue, HasLowerBound
 	 */
-	const ElementType& GetLowerBoundValue() const
+	ElementValueOrConstRef GetLowerBoundValue() const
 	{
 		return LowerBound.GetValue();
 	}
 
 	/**
-	 * Gets the range's upper bound.
+	 * Get the range's upper bound.
 	 *
 	 * @return Upper bound.
+	 * @see GetLowerBound, GetUpperBoundValue, HasUpperBound
 	 */
 	BoundsType GetUpperBound() const
 	{
@@ -249,22 +254,23 @@ public:
 	}
 
 	/**
-	 * Gets the value of the upper bound.
+	 * Get the value of the upper bound.
 	 *
 	 * Use HasUpperBound() to ensure that this range actually has an upper bound.
 	 *
 	 * @return Bound value.
-	 * @see GetLowerBoundValue, HasUpperBound
+	 * @see GetLowerBoundValue, GetUpperBound, HasUpperBound
 	 */
-	const ElementType& GetUpperBoundValue() const
+	ElementValueOrConstRef GetUpperBoundValue() const
 	{
 		return UpperBound.GetValue();
 	}
 
 	/**
-	 * Checks whether the range has a lower bound.
+	 * Check whether the range has a lower bound.
 	 *
 	 * @return true if the range has a lower bound, false otherwise.
+	 * @see GetLowerBound, GetLowerBoundValue, HasUpperBound
 	 */
 	bool HasLowerBound() const
 	{
@@ -272,9 +278,10 @@ public:
 	}
 	
 	/**
-	 * Checks whether the range has an upper bound.
+	 * Check whether the range has an upper bound.
 	 *
 	 * @return true if the range has an upper bound, false otherwise.
+	 * @see GetUpperBound, GetUpperBoundValue, HasLowerBound
 	 */
 	bool HasUpperBound() const
 	{
@@ -282,12 +289,13 @@ public:
 	}
 
 	/**
-	 * Checks whether this range is degenerate.
+	 * Check whether this range is degenerate.
 	 *
 	 * A range is degenerate if it contains only a single element, i.e. has the following form:
 	 *		[A, A]
 	 *
 	 * @return true if the range is degenerate, false otherwise.
+	 * @see IsEmpty
 	 */
 	bool IsDegenerate() const
 	{
@@ -295,7 +303,7 @@ public:
 	}
 	
 	/**
-	 * Checks whether this range is empty.
+	 * Check whether this range is empty.
 	 *
 	 * A range is empty if it contains no elements, i.e.
 	 *		(A, A)
@@ -303,6 +311,7 @@ public:
 	 *		[A, A)
 	 *
 	 * @return true if the range is empty, false otherwise.
+	 * @see IsDegenerate
 	 */
 	bool IsEmpty() const
 	{
@@ -320,7 +329,7 @@ public:
 	}
 
 	/**
-	 * Checks whether this range overlaps with another.
+	 * Check whether this range overlaps with another.
 	 *
 	 * @param Other The other range.
 	 * @return true if the ranges overlap, false otherwise.
@@ -361,7 +370,7 @@ public:
 	}
 
 	/**
-	 * Computes the size (diameter, length, width) of this range.
+	 * Compute the size (diameter, length, width) of this range.
 	 *
 	 * The size of a closed range is the difference between its upper and lower bound values.
 	 * Use IsClosed() on the lower and upper bounds before calling this method in order to
@@ -377,14 +386,14 @@ public:
 	}
 	
 	/**
-	 * Splits the range into two ranges at the specified element.
+	 * Split the range into two ranges at the specified element.
 	 *
-	 * If a range [A, C) does not contain the element B, the original range is returned.
-	 * Otherwise the range is split into two ranges [A, B) and [B, C), each of which may be empty.
+	 * If a range [A, C) does not contain the element X, the original range is returned.
+	 * Otherwise the range is split into two ranges [A, X) and [X, C), each of which may be empty.
 	 *
 	 * @param Element The element at which to split the range.
 	 */
-	TArray<TRange> Split(const ElementType& Element) const
+	TArray<TRange> Split(ElementValueOrConstRef Element) const
 	{
 		TArray<TRange> Result;
 		
@@ -404,7 +413,7 @@ public:
 public:
 
 	/**
-	 * Calculates the difference between two ranges, i.e. X - Y.
+	 * Calculate the difference between two ranges, i.e. X - Y.
 	 *
 	 * @param X The first range to subtract from.
 	 * @param Y The second range to subtract with.
@@ -439,17 +448,7 @@ public:
 	}
 
 	/**
-	 * Returns an empty range.
-	 *
-	 * @return Empty range.
-	 */
-	static FORCEINLINE TRange Empty()
-	{
-		return TRange(BoundsType::Exclusive(ElementType()), BoundsType::Exclusive(ElementType()));
-	}
-
-	/**
-	 * Computes the hull of two ranges.
+	 * Compute the hull of two ranges.
 	 *
 	 * The hull is the smallest range that contains both ranges.
 	 *
@@ -474,7 +473,7 @@ public:
 	}
 	
 	/**
-	 * Computes the hull of many ranges.
+	 * Compute the hull of many ranges.
 	 *
 	 * @param Ranges The ranges to hull.
 	 * @return The hull.
@@ -498,7 +497,7 @@ public:
 	}
 
 	/**
-	 * Computes the intersection of two ranges.
+	 * Compute the intersection of two ranges.
 	 *
 	 * The intersection of two ranges is the largest range that is contained by both ranges.
 	 *
@@ -523,7 +522,7 @@ public:
 	}
 	
 	/**
-	 * Computes the intersection of many ranges.
+	 * Compute the intersection of many ranges.
 	 *
 	 * @param Ranges The ranges to intersect.
 	 * @return The intersection.
@@ -547,7 +546,7 @@ public:
 	}
 
 	/**
-	 * Returns the union of two contiguous ranges.
+	 * Return the union of two contiguous ranges.
 	 *
 	 * A union is a range or series of ranges that contains both ranges.
 	 *
@@ -583,9 +582,10 @@ public:
 public:
 
 	/**
-	 * Creates an unbounded (open) range that contains all elements of the domain.
+	 * Create an unbounded (open) range that contains all elements of the domain.
 	 *
 	 * @return A new range.
+	 * @see AtLeast, AtMost, Empty, Exclusive, GreaterThan, Inclusive, LessThan
 	 */
 	static FORCEINLINE TRange All()
 	{
@@ -593,45 +593,86 @@ public:
 	}
 
 	/**
-	 * Creates a left-bounded range that contains all elements greater than or equal to the specified value.
+	 * Create a left-bounded range that contains all elements greater than or equal to the specified value.
 	 *
 	 * @param Value The value.
 	 * @return A new range.
+	 * @see All, AtMost, Empty, Exclusive, GreaterThan, Inclusive, LessThan
 	 */
-	static FORCEINLINE TRange AtLeast(const ElementType& Value)
+	static FORCEINLINE TRange AtLeast(ElementValueOrConstRef Value)
 	{
 		return TRange(BoundsType::Inclusive(Value), BoundsType::Open());
 	}
 
 	/**
-	 * Creates a right-bounded range that contains all elements less than or equal to the specified value.
+	 * Create a right-bounded range that contains all elements less than or equal to the specified value.
 	 *
 	 * @param Value The value.
 	 * @return A new range.
+	 * @see All, AtLeast, Empty, Exclusive, GreaterThan, Inclusive, LessThan
 	 */
-	static FORCEINLINE TRange AtMost(const ElementType& Value)
+	static FORCEINLINE TRange AtMost(ElementValueOrConstRef Value)
 	{
 		return TRange(BoundsType::Open(), BoundsType::Inclusive(Value));
 	}
 
 	/**
-	 * Creates a left-bounded range that contains all elements greater than the specified value.
+	 * Return an empty range.
+	 *
+	 * @return Empty range.
+	 * @see All, AtLeast, AtMost, Exclusive, GreaterThan, Inclusive, LessThan
+	 */
+	static FORCEINLINE TRange Empty()
+	{
+		return TRange(BoundsType::Exclusive(ElementType()), BoundsType::Exclusive(ElementType()));
+	}
+
+	/**
+	 * Create a range that excludes the given minimum and maximum values.
+	 *
+	 * @param MinThe minimum value to be included.
+	 * @param Max The maximum value to be included.
+	 * @return A new range.
+	 * @see All, AtLeast, AtMost, Empty, Exclusive, GreaterThan, Inclusive, LessThan
+	 */
+	static FORCEINLINE TRange Exclusive(ElementValueOrConstRef Min, ElementValueOrConstRef Max)
+	{
+		return TRange(BoundsType::Exclusive(Min), BoundsType::Exclusive(Max));
+	}
+
+	/**
+	 * Create a left-bounded range that contains all elements greater than the specified value.
 	 *
 	 * @param Value The value.
 	 * @return A new range.
+	 * @see All, AtLeast, AtMost, Empty, Exclusive, Inclusive, LessThan
 	 */
-	static FORCEINLINE TRange GreaterThan(const ElementType& Value)
+	static FORCEINLINE TRange GreaterThan(ElementValueOrConstRef Value)
 	{
 		return TRange(BoundsType::Exclusive(Value), BoundsType::Open());
 	}
 	
 	/**
-	 * Creates a right-bounded range that contains all elements less than the specified value.
+	 * Create a range that includes the given minimum and maximum values.
+	 *
+	 * @param Min The minimum value to be included.
+	 * @param Max The maximum value to be included.
+	 * @return A new range.
+	 * @see All, AtLeast, AtMost, Empty, Exclusive, GreaterThan, LessThan
+	 */
+	static FORCEINLINE TRange Inclusive(ElementValueOrConstRef Min, ElementValueOrConstRef Max)
+	{
+		return TRange(BoundsType::Inclusive(Min), BoundsType::Inclusive(Max));
+	}
+
+	/**
+	 * Create a right-bounded range that contains all elements less than the specified value.
 	 *
 	 * @param Value The value.
 	 * @return A new range.
+	 * @see All, AtLeast, AtMost, Empty, Exclusive, GreaterThan, Inclusive
 	 */
-	static FORCEINLINE TRange LessThan(const ElementType& Value)
+	static FORCEINLINE TRange LessThan(ElementValueOrConstRef Value)
 	{
 		return TRange(BoundsType::Open(), BoundsType::Exclusive(Value));
 	}
@@ -691,12 +732,12 @@ private:
 		{ \
 		} \
 		 \
-		explicit Name(const ElementType& A) \
+		explicit Name(ElementValueOrConstRef A) \
 			: Super(A) \
 		{ \
 		} \
 		 \
-		explicit Name(const ElementType& A, const ElementType& B) \
+		explicit Name(ElementValueOrConstRef A, ElementValueOrConstRef B) \
 			: Super(A, B) \
 		{ \
 		} \
@@ -706,7 +747,7 @@ private:
 		{ \
 		} \
 		 \
-		TArray<Name> Split(const ElementType& Element) const \
+		TArray<Name> Split(ElementValueOrConstRef Element) const \
 		{ \
 			return TArray<Name>(Super::Split(Element)); \
 		} \
@@ -751,22 +792,22 @@ private:
 			return Super::All(); \
 		} \
 		 \
-		static FORCEINLINE Name AtLeast(const ElementType& Value) \
+		static FORCEINLINE Name AtLeast(ElementValueOrConstRef Value) \
 		{ \
 			return Super::AtLeast(Value); \
 		} \
 		 \
-		static FORCEINLINE Name AtMost(const ElementType& Value) \
+		static FORCEINLINE Name AtMost(ElementValueOrConstRef Value) \
 		{ \
 			return Super::AtMost(Value); \
 		} \
 		 \
-		static FORCEINLINE TRange GreaterThan(const ElementType& Value) \
+		static FORCEINLINE TRange GreaterThan(ElementValueOrConstRef Value) \
 		{ \
 			return Super::GreaterThan(Value); \
 		} \
 		 \
-		static FORCEINLINE TRange LessThan(const ElementType& Value) \
+		static FORCEINLINE TRange LessThan(ElementValueOrConstRef Value) \
 		{ \
 			return Super::LessThan(Value); \
 		} \

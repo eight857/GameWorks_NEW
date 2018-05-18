@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -54,6 +54,10 @@ public:
 	/** Font color and opacity (overrides style) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Display")
 	FSlateFontInfo Font;
+
+	/** The justification the value text should appear as. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Display")
+	TEnumAsByte<ETextJustify::Type> Justification;
 
 	/** The minimum width of the spin box */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Display", AdvancedDisplay, DisplayName = "Minimum Desired Width")

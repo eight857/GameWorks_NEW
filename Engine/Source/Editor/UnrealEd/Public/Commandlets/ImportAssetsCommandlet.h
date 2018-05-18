@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -38,6 +38,9 @@ private:
 	 * @param AssetImportList	List of import data to import.  Each element in the list represents a list of assets using the same import settings
 	 */
 	bool ImportAndSave(const TArray<UAutomatedAssetImportData*>& AssetImportList);
+
+	/** Loads a level to be used for spawning actors from import factories */
+	bool LoadLevel(const FString& LevelToLoad);
 
 	/**
 	 * Clears dirty flag from all packages

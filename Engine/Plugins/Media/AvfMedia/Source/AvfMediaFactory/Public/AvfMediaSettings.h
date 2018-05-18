@@ -1,13 +1,16 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
+
 #include "AvfMediaSettings.generated.h"
 
 
+/**
+ * Settings for the AvfMedia plug-in.
+ */
 UCLASS(config=Engine)
 class AVFMEDIAFACTORY_API UAvfMediaSettings
 	: public UObject

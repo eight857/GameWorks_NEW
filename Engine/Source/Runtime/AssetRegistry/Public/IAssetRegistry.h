@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -250,6 +250,9 @@ public:
 	/** If assets are currently being asynchronously scanned in the specified path, this will cause them to be scanned before other assets. */
 	virtual void PrioritizeSearchPath(const FString& PathToPrioritize) = 0;
 
+	/** Forces a rescan of specific filenames, call this when you need to refresh from disk */
+	virtual void ScanModifiedAssetFiles(const TArray<FString>& InFilePaths) = 0;
+
 	/** Event for when paths are added to the registry */
 	DECLARE_EVENT_OneParam( IAssetRegistry, FPathAddedEvent, const FString& /*Path*/ );
 	virtual FPathAddedEvent& OnPathAdded() = 0;
@@ -344,6 +347,9 @@ public:
 	 * @param OverrideData		Map of ObjectPath to AssetData. If non empty, it will use this map of AssetData, and will filter Platform/Dependency data to only include this set
 	 */
 	virtual void InitializeTemporaryAssetRegistryState(FAssetRegistryState& OutState, const FAssetRegistrySerializationOptions& Options, bool bRefreshExisting = false, const TMap<FName, FAssetData*>& OverrideData = TMap<FName, FAssetData*>()) const = 0;
+
+	/** Returns read only reference to the current asset registry state. The contents of this may change at any time so do not save internal pointers */
+	virtual const FAssetRegistryState* GetAssetRegistryState() const = 0;
 
 	/** Fills in FAssetRegistrySerializationOptions from ini, optionally using a target platform ini name */
 	virtual void InitializeSerializationOptions(FAssetRegistrySerializationOptions& Options, const FString& PlatformIniName = FString()) const = 0;

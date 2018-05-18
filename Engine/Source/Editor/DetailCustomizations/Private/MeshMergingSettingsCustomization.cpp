@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MeshMergingSettingsCustomization.h"
 #include "Engine/MeshMerging.h"
@@ -30,7 +30,7 @@ void FMeshMergingSettingsObjectCustomization::CustomizeDetails(IDetailLayoutBuil
 	FName CategoryMetaData("Category");
 	for (TSharedRef<IPropertyHandle> Property: SimpleDefaultProperties)
 	{
-		const FString CategoryName = Property->GetMetaData(CategoryMetaData);
+		const FString& CategoryName = Property->GetMetaData(CategoryMetaData);
 
 		IDetailCategoryBuilder& CategoryBuilder = LayoutBuilder.EditCategory(*CategoryName);
 		IDetailPropertyRow& PropertyRow = CategoryBuilder.AddProperty(Property);
@@ -59,7 +59,7 @@ void FMeshMergingSettingsObjectCustomization::CustomizeDetails(IDetailLayoutBuil
 
 	for (TSharedRef<IPropertyHandle> Property : SimpleDefaultProperties)
 	{
-		const FString CategoryName = Property->GetMetaData(CategoryMetaData);
+		const FString& CategoryName = Property->GetMetaData(CategoryMetaData);
 
 		IDetailCategoryBuilder& CategoryBuilder = LayoutBuilder.EditCategory(*CategoryName);
 		IDetailPropertyRow& PropertyRow = CategoryBuilder.AddProperty(Property);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "XmppStrophe/XmppConnectionStrophe.h"
 #include "XmppStrophe/XmppMessagesStrophe.h"
@@ -30,6 +30,7 @@ FXmppConnectionStrophe::FXmppConnectionStrophe()
 void FXmppConnectionStrophe::SetServer(const FXmppServer& NewServerConfiguration)
 {
 	ServerConfiguration = NewServerConfiguration;
+	ServerConfiguration.ClientResource = FXmppUserJid::CreateResource(ServerConfiguration.AppId, ServerConfiguration.Platform, ServerConfiguration.PlatformUserId);
 }
 
 const FXmppServer& FXmppConnectionStrophe::GetServer() const
@@ -39,7 +40,7 @@ const FXmppServer& FXmppConnectionStrophe::GetServer() const
 
 void FXmppConnectionStrophe::Login(const FString& UserId, const FString& Auth)
 {
-	FXmppUserJid NewJid(UserId, ServerConfiguration.Domain, FXmppUserJid::CreateResource(ServerConfiguration.AppId, ServerConfiguration.Platform));
+	FXmppUserJid NewJid(UserId, ServerConfiguration.Domain, ServerConfiguration.ClientResource);
 	if (!NewJid.IsValid())
 	{
 		UE_LOG(LogXmpp, Error, TEXT("Invalid Jid %s"), *UserJid.GetFullPath());
@@ -201,7 +202,17 @@ bool FXmppConnectionStrophe::SendStanza(FStropheStanza&& Stanza)
 		return false;
 	}
 
-	return StropheThread->SendStanza(MoveTemp(Stanza));
+	const bool bQueuedStanzaToBeSent = StropheThread->SendStanza(MoveTemp(Stanza));
+	if (bQueuedStanzaToBeSent)
+	{
+		// Reset our ping timer now that we're queuing a different message to be sent
+		if (PingStrophe.IsValid())
+		{
+			PingStrophe->ResetPingTimer();
+		}
+	}
+
+	return bQueuedStanzaToBeSent;
 }
 
 void FXmppConnectionStrophe::StartXmppThread(const FXmppUserJid& ConnectionUser, const FString& ConnectionAuth)
@@ -248,8 +259,13 @@ void FXmppConnectionStrophe::ReceiveStanza(const FStropheStanza& Stanza)
 {
 	UE_LOG(LogXmpp, Verbose, TEXT("Received Strophe XMPP Stanza %s"), *Stanza.GetName());
 
-	// If ReceiveStanza returns true, the stanza has been consumed and we need to return
+	// Reset our ping timer now that we've received traffic
+	if (PingStrophe.IsValid())
+	{
+		PingStrophe->ResetPingTimer();
+	}
 
+	// If ReceiveStanza returns true, the stanza has been consumed and we need to return
 	if (MessagesStrophe.IsValid())
 	{
 		if (MessagesStrophe->ReceiveStanza(Stanza))

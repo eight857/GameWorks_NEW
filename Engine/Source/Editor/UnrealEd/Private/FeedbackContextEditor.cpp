@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "FeedbackContextEditor.h"
@@ -11,10 +11,12 @@
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Input/SButton.h"
+#include "Styling/CoreStyle.h"
 #include "EditorStyleSet.h"
 #include "Editor.h"
 #include "Dialogs/SBuildProgress.h"
 #include "Interfaces/IMainFrameModule.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 /** Called to cancel the slow task activity */
 DECLARE_DELEGATE( FOnCancelClickedDelegate );
@@ -86,7 +88,7 @@ public:
 							SNew( STextBlock )
 							.Text( this, &SSlowTaskWidget::GetPercentageText )
 							// The main font size dynamically changes depending on the content
-							.Font( FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Light.ttf"), 14, EFontHinting::AutoLight ) )
+							.Font( FCoreStyle::GetDefaultFontStyle("Light", 14) )
 						]
 					]
 				]
@@ -215,7 +217,7 @@ private:
 			[
 				SNew( STextBlock )
 				.Text( this, &SSlowTaskWidget::GetProgressText, Index )
-				.Font( FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 9, EFontHinting::AutoLight ) )
+				.Font( FCoreStyle::GetDefaultFontStyle("Regular", 9) )
 				.ColorAndOpacity( FSlateColor::UseSubduedForeground() )
 			]
 
@@ -261,7 +263,7 @@ private:
 		TSharedRef<FSlateFontMeasure> MeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 
 		const int32 MaxFontSize = 14;
-		FSlateFontInfo FontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Light.ttf"), MaxFontSize, EFontHinting::AutoLight );
+		FSlateFontInfo FontInfo = FCoreStyle::GetDefaultFontStyle("Light", MaxFontSize);
 
 		const FText MainText = GetProgressText(0);
 		const int32 MaxTextWidth = FixedWidth - FixedPaddingH*2;
@@ -401,7 +403,7 @@ void FFeedbackContextEditor::StartSlowTask( const FText& Task, bool bShowCancelB
 
 		if( bHaveOpenMenu )
 		{
-			UE_LOG(LogSlate, Warning, TEXT("Prevented a slow task dialog from being summoned while a context menu was open") );
+			UE_LOG(LogSlate, Log, TEXT("Prevented a slow task dialog from being summoned while a context menu was open") );
 		}
 
 		// reset the cancellation flag
@@ -416,7 +418,7 @@ void FFeedbackContextEditor::StartSlowTask( const FText& Task, bool bShowCancelB
 				OnCancelClicked = FOnCancelClickedDelegate::CreateRaw(this, &FFeedbackContextEditor::OnUserCancel);
 			}
 
-			const bool bFocusAndActivate = FPlatformProcess::IsThisApplicationForeground();
+			const bool bFocusAndActivate = FPlatformApplicationMisc::IsThisApplicationForeground();
 
 			TSharedRef<SWindow> SlowTaskWindowRef = SNew(SWindow)
 				.SizingRule(ESizingRule::Autosized)
@@ -461,6 +463,11 @@ void FFeedbackContextEditor::FinalizeSlowTask()
 
 void FFeedbackContextEditor::ProgressReported( const float TotalProgressInterp, FText DisplayMessage )
 {
+	if (!(FPlatformSplash::IsShown() || BuildProgressWidget.IsValid() || SlowTaskWindow.IsValid()))
+	{
+		return;
+	}
+
 	// Clean up deferred cleanup objects from rendering thread every once in a while.
 	static double LastTimePendingCleanupObjectsWhereDeleted;
 	if( FPlatformTime::Seconds() - LastTimePendingCleanupObjectsWhereDeleted > 1 )
@@ -472,11 +479,17 @@ void FFeedbackContextEditor::ProgressReported( const float TotalProgressInterp, 
 		// It is now safe to delete the pending clean objects.
 		delete PendingCleanupObjects;
 		// Keep track of time this operation was performed so we don't do it too often.
-		LastTimePendingCleanupObjectsWhereDeleted = FPlatformTime::Seconds();		
+		LastTimePendingCleanupObjectsWhereDeleted = FPlatformTime::Seconds();
 	}
 
-	if (FSlateApplication::Get().CanDisplayWindows())
+	if (BuildProgressWidget.IsValid() || SlowTaskWindow.IsValid())
 	{
+		// CanDisplayWindows can be slow when called repeatedly, so we only call it if a window is open
+		if (!FSlateApplication::Get().CanDisplayWindows())
+		{
+			return;
+		}
+
 		if (BuildProgressWidget.IsValid())
 		{
 			if (!DisplayMessage.IsEmpty())
@@ -492,7 +505,7 @@ void FFeedbackContextEditor::ProgressReported( const float TotalProgressInterp, 
 			TickSlate(SlowTaskWindow.Pin());
 		}
 	}
-	else
+	else if (FPlatformSplash::IsShown())
 	{
 		// Always show the top-most message
 		for (auto& Scope : *ScopeStack)
@@ -504,10 +517,7 @@ void FFeedbackContextEditor::ProgressReported( const float TotalProgressInterp, 
 				break;
 			}
 		}
-	}
 
-	if (FPlatformSplash::IsShown())
-	{
 		if (!DisplayMessage.IsEmpty())
 		{
 			const int32 DotCount = 4;

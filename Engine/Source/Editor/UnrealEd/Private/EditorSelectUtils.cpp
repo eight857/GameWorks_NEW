@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CoreMinimal.h"
@@ -340,14 +340,11 @@ void UUnrealEdEngine::UpdatePivotLocationForSelection( bool bOnChange )
 			AActor* Actor = static_cast<AActor*>(*It);
 			checkSlow(Actor->IsA(AActor::StaticClass()));
 
-			if (Actor->GetWorld() == GWorld)
-			{
-				const bool IsTemplate = Actor->IsTemplate();
-				const bool LevelLocked = !FLevelUtils::IsLevelLocked(Actor->GetLevel());
-				check(IsTemplate || LevelLocked);
+			const bool IsTemplate = Actor->IsTemplate();
+			const bool LevelLocked = !FLevelUtils::IsLevelLocked(Actor->GetLevel());
+			check(IsTemplate || LevelLocked);
 
-				SingleActor = Actor;
-			}
+			SingleActor = Actor;
 		}
 	}
 	

@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
-#include "Misc/StringClassReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "Engine/DeveloperSettings.h"
 #include "UMGEditorProjectSettings.generated.h"
 
@@ -66,5 +66,5 @@ public:
 	TArray<FString> CategoriesToHide;
 
 	UPROPERTY(EditAnywhere, config, Category = "Class Filtering", meta = (MetaClass = "Widget"))
-	TArray<FStringClassReference> WidgetClassesToHide;
+	TArray<FSoftClassPath> WidgetClassesToHide;
 };

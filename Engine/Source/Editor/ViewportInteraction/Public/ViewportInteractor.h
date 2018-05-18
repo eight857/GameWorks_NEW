@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -221,6 +221,9 @@ protected:
 
 	/** Store end of the laser pointer. This will be returned when calling GetLaserPointer multiple times a tick */
 	TOptional<FVector> SavedLaserPointerEnd;
+
+	/** Store the last hitresult from the laser, to use that when calling GetHitResultFromLaserPointer multiple times in a tick. */
+	TOptional<FHitResult> SavedHitResult;
 
 private:
 

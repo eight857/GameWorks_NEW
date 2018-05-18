@@ -15,10 +15,7 @@ Topic-image:Utility_topic.png
 [/EXCERPT:TOC]
 
 
-In this page, you'll find the available Utility Expressions that enable you to input values to affect Material's output value, like for example, using the GIReplace node will Replace an objects
-indirect bounce color with a given value you input, or LinearInterpolate will blend between two inputs using an alpha value to control how much.
-
-There are many others that enable you to control your Materials that you can look at the examples below to learn more about. 
+**Utility Expressions** nodes are nodes that can affect Materials in a number of different ways than one might be used to. For example the GIReplace node will Replace an objects indirect bounce color with a given value you input while the Linear Interpolate node will help blend between two Textures based on an Alpha input. On the following page you will find detailed descriptions for all of the Utility Expressions nodes that are available in the UE4 Material Editor.
 
 
 ## A - H
@@ -27,7 +24,7 @@ There are many others that enable you to control your Materials that you can loo
 [EXCERPT:AntialiasedTextureMask]
 ### AntialiasedTextureMask
 
-The **AntialiasedTextureMask** expression allows you to create a material using a soft (anti-aliased) transition mask. The mask can be used to blend between two complex material properties or to fade out an alpha blended material (works well with SoftMasked). Simply specify a texture with the mask specified in one channel (red, green, blue, or alpha), set the used channel in the expression and specify the comparison value. Assuming the channel stores a grayscale value in the range 0=black to 1=white the comparison function defines if the resulting mask should be 0 or 1. This expression is a parameter, allowing the **Texture** property to be overridden by child MaterialInstances.
+The **AntialiasedTextureMask** expression allows you to create a material using a soft (anti-aliased) transition mask. The mask can be used to blend between two complex material properties or to fade out an alpha blended material (works well with SoftMasked). Simply specify a texture with the mask specified in one channel (red, green, blue, or alpha), set the used channel in the expression and specify the comparison value. Assuming the channel stores a grayscale value in the range 0 = black to 1 = white the comparison function defines if the resulting mask should be 0 or 1. This expression is a parameter, allowing the **Texture** property to be overridden by child MaterialInstances.
 
 | Item | Description |
 | -------- | ----------- |
@@ -59,7 +56,9 @@ The technique works best in magnification and with blurred input content. Compre
 [/EXCERPT:AntialiasedTextureMask]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### BlackBody
@@ -71,7 +70,9 @@ The **BlackBody** expression simulates the effects of [black body radiation](htt
 [/REGION]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 ### BumpOffset
 
@@ -95,7 +96,9 @@ The **BlackBody** expression simulates the effects of [black body radiation](htt
 [/REGION]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### ConstantBiasScale
@@ -112,7 +115,9 @@ The **ConstantBiasScale** expression takes an input value, adds a bias value to 
 ![ConstantBiasScaleExample.png](ConstantBiasScaleExample.png)
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### DDX
@@ -120,7 +125,9 @@ The **ConstantBiasScale** expression takes an input value, adds a bias value to 
 The **DDX** expression exposes DDX derivative calculation, a GPU hardware feature used in pixel shader calculation.
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### DDY
@@ -128,7 +135,9 @@ The **DDX** expression exposes DDX derivative calculation, a GPU hardware featur
 The **DDY** expression exposes DDX derivative calculation, a GPU hardware feature used in pixel shader calculation.
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### DepthFade
@@ -160,7 +169,9 @@ Click image for full size view.
 [/REGION]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### DepthOfFieldFunction
@@ -184,7 +195,9 @@ Click image for full size view.
 [/REGION]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 [EXCERPT:Desaturation]
@@ -203,12 +216,14 @@ The **Desaturation** expression desaturates its input, or converts the colors of
 ![DesaturationExample.png](DesaturationExample.png)
 
 [REGION:note]
-**Programmers:** Define desaturated color `D`, input color `I` and luminance factor `L`.  The output will be `O = (1-Percent)*(D.dot(I)) + Percent*I`
+**Programmers:** Define desaturated color `D`, input color `I` and luminance factor `L`.  The output will be `O = (1 - Percent)*( D.dot( I )) + Percent * I`
 [/REGION]
 [/EXCERPT:Desaturation]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 [EXCERPT:Distance]
@@ -228,16 +243,18 @@ The **Distance** expression computes the (Euclidian) distance between two points
 
 **Pseudo code:**
 
-	Result = length(A - B)
+	Result = length (A - B)
 
 **Low level HLSL code:**
 	
-	float Result = sqrt(dot(A-B, A-B))
+	float Result = sqrt (dot (A-B, A-B))
 	
 [/EXCERPT:Distance]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### DistanceFieldGradient
@@ -275,9 +292,11 @@ The image below shows what data the DistanceFieldGradient will use when the vari
 Click image for full size view. 
 [/REGION]
 
-<!---
+[COMMENT:none]
+-
 ![](DistanceFieldGradient_Example.png)
---->
+-
+[/COMMENT]
 
 | Number | Description |
 | -------- | ----------- |
@@ -286,7 +305,9 @@ Click image for full size view.
 | **3**  | Enabling the B channel and disabling all other channels. |
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### DistanceToNearestSurface
@@ -318,7 +339,9 @@ In this example the Distance To Nearest Surface was fed into the Opacity input o
 What the Distance To Nearest Surface is doing is telling the Material to only color areas red were the Static Meshes plane will start to intersect other Static Meshes placed in the scene.
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 [EXCERPT:FeatureLevelSwitch]
@@ -340,7 +363,9 @@ The **Feature Level Switch** node allows you to make simplified materials for lo
 [/EXCERPT:FeatureLevelSwitch]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### Fresnel
@@ -361,7 +386,9 @@ The **Fresnel** expression calculates a falloff based on the dot product of the 
 ![FresnelExample.png](FresnelExample.png)
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 [EXCERPT:GIReplace]
@@ -384,13 +411,17 @@ The **Fresnel** expression calculates a falloff based on the dot product of the 
 [/EXCERPT:GIReplace]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ## I - P
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### LightmassReplace
@@ -404,7 +435,9 @@ The **LightmassReplace** expression simply passes through the Realtime input whe
 | **Lightmass** | Takes in the value(s) to pass through when exporting the material to Lightmass. |
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 [EXCERPT:LinearInterpolate]
@@ -430,7 +463,9 @@ The **LinearInterpolate** expression blends between two input value(s) based on 
 [/EXCERPT:LinearInterpolate]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### Noise
@@ -443,11 +478,11 @@ The **Noise** expression creates a procedural noise field, giving you control ov
 | **Scale** | Changes the overall size of the noise cells. Lower numbers make the noise bigger. |
 | **Quality** | A look/performance setting. Lower values are faster but may look worse, higher values are slower but may look better. |
 | **Function** | [INCLUDE:#NoiseFunctions] |
-| **Turbulence** | Whether to use an absolute value when combining noise levels, results in a veined or billowy look. |
+| **Turbulence** | With Turbulence on, each noise octave will add only absolute values to the result. Changes the visual characteristics and can great shapes resembling sharp mountain ridges |
 | **Levels** | How many different levels of noise at different scales to combine, multiplies the computational cost by the number of levels. |
 | **Output Min** | The lowest value output by the noise calculation. |
 | **Output Max** | The highest value output by the noise calculation. |
-| **Level Scale** | Controls the scale of individual levels when using multiple levels of noise. This defaults to 2 so each level is twice the frequency at half the magnitude. |
+| **Level Scale** |  Level scale is always active and determines how much the scale changes for each new octave. |
 | **Tiling** | For noise functions that support it, allows noise to tile. This is more expensive, but useful when baking noise into a seamless wrapping texture. |
 | **Repeat Size** | When tiling, how often should the noise repeat. |
 || [REGION:tablesection]Inputs[/REGION] ||
@@ -456,7 +491,8 @@ The **Noise** expression creates a procedural noise field, giving you control ov
 
 ![NoiseExample.png](NoiseExample.png)
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:NoiseFunctions]
 
 | Function |     | Description|
@@ -466,12 +502,15 @@ The **Noise** expression creates a procedural noise field, giving you control ov
 |Fast Gradient | 3D Texture | High quality for direct use, **BAD** for bumps. about 16 instructions per level, 1 Texture lookup. Always tiles with a repeat of 16, "Tiling" mode is not an option for Fast Gradient noise.|
 | Gradient | Computational | High quality for direct use and bumps. Non-tiled: about 80 instructions per level, no Textures. Tiling: about 143 instructions per level, no Textures. |
 | Value | Computational | Low quality, but pure computation. Non-tiled: about 53 instructions per level, no Textures. Tiling: about 118 instructions per level, no Textures. Formerly mislabeled as Gradient noise. |
-| Voronoi | | Also know as Worley or Cellular noise. Quality=1 searches 8 cells, Quality=2 searches 16 cells, Quality=3 searches 27 cells, Quality=4 searches 32 cells. All are about about 20 instructions per cell searched. |
+| Voronoi | | Also know as Worley or Cellular noise. Quality = 1 searches 8 cells, Quality = 2 searches 16 cells, Quality = 3 searches 27 cells, Quality = 4 searches 32 cells. All are about about 20 instructions per cell searched. |
 [/EXCERPT]
--->
+
+[/COMMENT]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### Previous Frame Switch
@@ -500,7 +539,7 @@ In this example, the Previous Frame Switch is using a constant value to control 
 	YbjqiNZr4K4
 	[/PARAMLITERAL]
 	[PARAMLITERAL:width]
-	50
+	100
 	[/PARAMLITERAL]
 	[PARAMLITERAL:height]
 	56.25
@@ -517,13 +556,17 @@ In this example, you can see how this is being used in Epic's own games, like Fo
 The animation on the right is using Previous Frame Switch to add some motion blur, while the animation on the left is not.
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ## Q - Z
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### QualitySwitch
@@ -538,7 +581,9 @@ The **QualitySwitch** expression allows for the use of different expression netw
 | High | This input is used for networks designed for higher visual quality. |
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 [EXCERPT:RotateAboutAxis]
@@ -563,7 +608,9 @@ In the above example, the preview plane would appear to spin on its vertical axi
 [/EXCERPT:RotateAboutAxis]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### SphereMask
@@ -585,7 +632,9 @@ The **SphereMask** expression outputs a mask value based on a distance calculati
 [REGION:caption] In this example, the preview object will smoothly fade to black as the camera exceeds 256 units away from it. [/REGION]
 
 
-<!--------------------------------------------------------->
+[COMMENT:none]
+-----------------------------------------------------
+[/COMMENT]
 
 
 ### Vector Noise
@@ -593,7 +642,8 @@ The **SphereMask** expression outputs a mask value based on a distance calculati
 [INCLUDE:Engine\Rendering\Materials\ExpressionReference\Vector#VectorNoiseTest]
 
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:VectorNoiseFunctions]
 
 |Function| Description|
@@ -604,7 +654,8 @@ The **SphereMask** expression outputs a mask value based on a distance calculati
 | Perlin Curl | Computes a 3D curl noise. Output is the mathematical curl of Perlin 3D Noise. About 162 instructions. |
 | Voronoi | The same algorithm and instruction counts as the Voronoi function in the *Noise* expression, but RGB is the location of the closest seed point in each Voronoi cell, and A is the distance to that seed point. |
 [/EXCERPT]
--->
+
+[/COMMENT]
 
 
 

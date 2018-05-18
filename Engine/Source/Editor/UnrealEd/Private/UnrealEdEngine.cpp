@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Editor/UnrealEdEngine.h"
 #include "HAL/PlatformFilemanager.h"
@@ -50,6 +50,7 @@
 #include "StatsViewerModule.h"
 #include "SnappingUtils.h"
 #include "PackageAutoSaver.h"
+#include "DDCNotifications.h"
 #include "PerformanceMonitor.h"
 #include "BSPOps.h"
 #include "SourceCodeNavigation.h"
@@ -73,7 +74,7 @@ void UUnrealEdEngine::Init(IEngineLoop* InEngineLoop)
 	FSourceCodeNavigation::Initialize();
 
 	PackageAutoSaver.Reset(new FPackageAutoSaver);
-	PackageAutoSaver->LoadRestoreFile();
+	PackageAutoSaver->LoadRestoreFile();	
 
 #if !UE_BUILD_DEBUG
 	if( !GEditorSettingsIni.IsEmpty() )
@@ -88,7 +89,7 @@ void UUnrealEdEngine::Init(IEngineLoop* InEngineLoop)
 	
 	// Register to the PostGarbageCollect delegate, as we want to use this to trigger the RefreshAllBroweser delegate from 
 	// here rather then from Core
-	FCoreUObjectDelegates::PostGarbageCollect.AddUObject(this, &UUnrealEdEngine::OnPostGarbageCollect);
+	FCoreUObjectDelegates::GetPostGarbageCollect().AddUObject(this, &UUnrealEdEngine::OnPostGarbageCollect);
 
 	// register to color picker changed event and trigger RedrawAllViewports when that happens */
 	FCoreDelegates::ColorPickerChanged.AddUObject(this, &UUnrealEdEngine::OnColorPickerChanged);
@@ -111,6 +112,8 @@ void UUnrealEdEngine::Init(IEngineLoop* InEngineLoop)
 	// Iterate over all always fully loaded packages and load them.
 	if (!IsRunningCommandlet())
 	{
+		DDCNotifications.Reset(new FDDCNotifications);
+
 		for( int32 PackageNameIndex=0; PackageNameIndex<PackagesToBeFullyLoadedAtStartup.Num(); PackageNameIndex++ )
 		{
 			const FString& PackageName = PackagesToBeFullyLoadedAtStartup[PackageNameIndex];
@@ -382,13 +385,15 @@ void UUnrealEdEngine::FinishDestroy()
 		PackageAutoSaver.Reset();
 	}
 
+	DDCNotifications.Reset();
+
 	if( PerformanceMonitor )
 	{
 		delete PerformanceMonitor;
 	}
 
 	UPackage::PackageDirtyStateChangedEvent.RemoveAll(this);
-	FCoreUObjectDelegates::PostGarbageCollect.RemoveAll(this);
+	FCoreUObjectDelegates::GetPostGarbageCollect().RemoveAll(this);
 	FCoreDelegates::ColorPickerChanged.RemoveAll(this);
 	Super::FinishDestroy();
 }
@@ -1283,9 +1288,11 @@ void UUnrealEdEngine::RegisterComponentVisualizer(FName ComponentClassName, TSha
 	}
 }
 
-
 void UUnrealEdEngine::UnregisterComponentVisualizer(FName ComponentClassName)
 {
+	TSharedPtr<FComponentVisualizer> Visualizer = FindComponentVisualizer(ComponentClassName);
+	VisualizersForSelection.RemoveAll([&Visualizer](const auto& CachedComponentVisualizer) { return CachedComponentVisualizer.Visualizer == Visualizer; });
+
 	ComponentVisualizerMap.Remove(ComponentClassName);
 }
 

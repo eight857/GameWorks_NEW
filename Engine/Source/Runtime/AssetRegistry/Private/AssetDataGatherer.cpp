@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AssetDataGatherer.h"
 #include "HAL/PlatformProcess.h"
@@ -13,7 +13,7 @@
 
 namespace AssetDataGathererConstants
 {
-	static const int32 CacheSerializationVersion = 11;
+	static const int32 CacheSerializationVersion = 12;
 	static const int32 MaxFilesToDiscoverBeforeFlush = 2500;
 	static const int32 MaxFilesToGatherBeforeFlush = 250;
 	static const int32 MaxFilesToProcessBeforeCacheWrite = 50000;
@@ -397,7 +397,7 @@ FAssetDataGatherer::FAssetDataGatherer(const TArray<FString>& InPaths, const TAr
 		if (AssetDataCacheMode == EAssetDataCacheMode::UseMonolithicCache)
 		{
 			bLoadAndSaveCache = true;
-			CacheFilename = FPaths::GameIntermediateDir() / TEXT("CachedAssetRegistry.bin");
+			CacheFilename = FPaths::ProjectIntermediateDir() / TEXT("CachedAssetRegistry.bin");
 		}
 		else if (InPaths.Num() > 0)
 		{
@@ -409,7 +409,7 @@ FAssetDataGatherer::FAssetDataGatherer(const TArray<FString>& InPaths, const TAr
 			}
 
 			bLoadAndSaveCache = true;
-			CacheFilename = FPaths::GameIntermediateDir() / TEXT("AssetRegistryCache") / FString::Printf(TEXT("%08x.bin"), CacheHash);
+			CacheFilename = FPaths::ProjectIntermediateDir() / TEXT("AssetRegistryCache") / FString::Printf(TEXT("%08x.bin"), CacheHash);
 		}
 	}
 

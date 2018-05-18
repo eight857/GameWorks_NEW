@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -30,7 +30,7 @@ struct FDiffSingleResult;
   * a structure, rather than implicitly defining names for containers.
   */
 USTRUCT()
-struct FEdGraphTerminalType
+struct ENGINE_API FEdGraphTerminalType
 {
 	GENERATED_USTRUCT_BODY()
 
@@ -45,11 +45,11 @@ struct FEdGraphTerminalType
 
 	/** Category */
 	UPROPERTY()
-	FString TerminalCategory;
+	FName TerminalCategory;
 
 	/** Sub-category */
 	UPROPERTY()
-	FString TerminalSubCategory;
+	FName TerminalSubCategory;
 
 	/** Sub-category object */
 	UPROPERTY()
@@ -63,7 +63,10 @@ struct FEdGraphTerminalType
 	UPROPERTY()
 	bool bTerminalIsWeakPointer;
 
-	ENGINE_API friend FArchive& operator<<(FArchive& Ar, FEdGraphTerminalType& P);
+	/** Creates a TerminalType from the primary portion of the PinType */
+	static FEdGraphTerminalType FromPinType(const FEdGraphPinType& PinType);
+
+	friend FArchive& operator<<(FArchive& Ar, FEdGraphTerminalType& P);
 };
 
 /** Enum used to define which way data flows into or out of this pin. */
@@ -172,6 +175,7 @@ class ENGINE_API UEdGraphNode : public UObject
 {
 	GENERATED_UCLASS_BODY()
 
+public:
 	TArray<UEdGraphPin*> Pins;
 
 	/** List of connector pins */
@@ -198,13 +202,16 @@ class ENGINE_API UEdGraphNode : public UObject
 	UPROPERTY()
 	TEnumAsByte<ENodeAdvancedPins::Type> AdvancedPinDisplay;
 
+private:
 	/** Indicates in what state the node is enabled, which may eliminate it from being compiled */
 	UPROPERTY()
 	ENodeEnabledState EnabledState;
 
+public:
 	/** When reconstructing a node should the orphaned pins be retained and transfered to the new pin list. */
 	ESaveOrphanPinMode OrphanedPinSaveMode;
 
+private:
 	/** Indicates whether or not the user explicitly set the enabled state */
 	UPROPERTY()
 	uint8 bUserSetEnabledState:1;
@@ -275,28 +282,39 @@ public:
 	FGuid NodeGuid;
 
 public:
-	/** Enables this node. */
-	FORCEINLINE void EnableNode()
-	{
-		bUserSetEnabledState = false;
-		EnabledState = ENodeEnabledState::Enabled;
-	}
-
-	/** Disables this node. */
-	FORCEINLINE void DisableNode()
-	{
-		bUserSetEnabledState = false;
-		EnabledState = ENodeEnabledState::Disabled;
-	}
-
 	/** Determines whether or not the node is enabled. */
-	FORCEINLINE bool IsNodeEnabled() const
+	bool IsNodeEnabled() const
 	{
-		return (EnabledState == ENodeEnabledState::Enabled) || (EnabledState == ENodeEnabledState::DevelopmentOnly && IsInDevelopmentMode());
+		return (EnabledState == ENodeEnabledState::Enabled) || ((EnabledState == ENodeEnabledState::DevelopmentOnly) && IsInDevelopmentMode());
+	}
+
+	/** Returns the specific sort of enable state this node wants */
+	ENodeEnabledState GetDesiredEnabledState() const
+	{
+		return EnabledState;
+	}
+
+	/** Set the enabled state of the node to a new value */
+	void SetEnabledState(ENodeEnabledState NewState, bool bUserAction = true)
+	{
+		EnabledState = NewState;
+		bUserSetEnabledState = bUserAction;
+	}
+
+	/** Has the user set the enabled state or is it still using the automatic settings? */
+	bool HasUserSetTheEnabledState() const
+	{
+		return bUserSetEnabledState;
 	}
 
 	/** Determines whether or not the node will compile in development mode. */
 	virtual bool IsInDevelopmentMode() const;
+
+	/** Returns true if this is a disabled automatically placed ghost node (see the DefaultEventNodes ini section) */
+	bool IsAutomaticallyPlacedGhostNode() const;
+
+	/** Marks this node as an automatically placed ghost node (see the DefaultEventNodes ini section) */
+	void MakeAutomaticallyPlacedGhostNode();
 
 #if WITH_EDITOR
 
@@ -322,15 +340,28 @@ public:
 	/** Get all pins this node owns */
 	TArray<UEdGraphPin*> GetAllPins() { return Pins; }
 
+	struct FNameParameterHelper
+	{
+		FNameParameterHelper(const FName InNameParameter) : NameParameter(InNameParameter) { }
+		FNameParameterHelper(const FString& InNameParameter) : NameParameter(*InNameParameter) { }
+		FNameParameterHelper(const TCHAR* InNameParameter) : NameParameter(InNameParameter) { }
+
+		FName operator*() const { return NameParameter; }
+
+	private:
+		FName NameParameter;
+	};
+
 	/** Create a new pin on this node using the supplied info, and return the new pin */
+	DEPRECATED(4.19, "Use version that supplies Pin Category, SubCategory, and Name as an FName and uses PinContainerType instead of separate booleans for array, set, and map.")
 	UEdGraphPin* CreatePin(
 		EEdGraphPinDirection Dir, 
-		const FString& PinCategory, 
-		const FString& PinSubCategory, 
+		const FNameParameterHelper PinCategory, 
+		const FNameParameterHelper PinSubCategory, 
 		UObject* PinSubCategoryObject, 
 		bool bIsArray, 
 		bool bIsReference, 
-		const FString& PinName, 
+		const FNameParameterHelper PinName, 
 		bool bIsConst = false, 
 		int32 Index = INDEX_NONE, 
 		bool bIsSet = false, 
@@ -338,30 +369,111 @@ public:
 		const FEdGraphTerminalType& ValueTerminalType = FEdGraphTerminalType());
 
 	/** Create a new pin on this node using the supplied info, and return the new pin */
+	DEPRECATED(4.19, "Use version that supplies Pin Category, SubCategory, and Name as an FName and uses a parameter structure for optional paramaters.")
 	UEdGraphPin* CreatePin(
-		EEdGraphPinDirection Dir, 
-		const FString& PinCategory, 
-		const FString& PinSubCategory, 
-		UObject* PinSubCategoryObject, 
-		const FString& PinName, 
+		EEdGraphPinDirection Dir,
+		const FNameParameterHelper PinCategory,
+		const FNameParameterHelper PinSubCategory,
+		UObject* PinSubCategoryObject,
+		const FNameParameterHelper PinName,
 		EPinContainerType PinContainerType = EPinContainerType::None,
-		bool bIsReference = false, 
-		bool bIsConst = false, 
-		int32 Index = INDEX_NONE, 
+		bool bIsReference = false,
+		bool bIsConst = false,
+		int32 Index = INDEX_NONE,
 		const FEdGraphTerminalType& ValueTerminalType = FEdGraphTerminalType());
 
+	/** Parameter struct of less common options for CreatePin */
+	struct ENGINE_API FCreatePinParams
+	{
+		FCreatePinParams()
+			: ContainerType(EPinContainerType::None)
+			, bIsReference(false)
+			, bIsConst(false)
+			, Index(INDEX_NONE)
+		{
+		}
+
+		FCreatePinParams(const FEdGraphPinType& PinType);
+
+		EPinContainerType ContainerType;
+		bool bIsReference;
+		bool bIsConst;
+		int32 Index;
+		FEdGraphTerminalType ValueTerminalType;
+	};
+
+	/** Create a new pin on this node using the supplied info, and return the new pin */
+	UEdGraphPin* CreatePin(EEdGraphPinDirection Dir, const FName PinCategory, const FName PinName, const FCreatePinParams& PinParams = FCreatePinParams())
+	{
+		return CreatePin(Dir, PinCategory, NAME_None, nullptr, PinName, PinParams);
+	}
+
+	UEdGraphPin* CreatePin(EEdGraphPinDirection Dir, const FName PinCategory, const FName PinSubCategory, const FName PinName, const FCreatePinParams& PinParams = FCreatePinParams())
+	{
+		return CreatePin(Dir, PinCategory, PinSubCategory, nullptr, PinName, PinParams);
+	}
+
+	UEdGraphPin* CreatePin(EEdGraphPinDirection Dir, const FName PinCategory, UObject* PinSubCategoryObject, const FName PinName, const FCreatePinParams& PinParams = FCreatePinParams())
+	{
+		return CreatePin(Dir, PinCategory, NAME_None, PinSubCategoryObject, PinName, PinParams);
+	}
+
+	UEdGraphPin* CreatePin(EEdGraphPinDirection Dir, const FName PinCategory, const FName PinSubCategory, UObject* PinSubCategoryObject, const FName PinName, const FCreatePinParams& PinParams = FCreatePinParams());
+
 	/** Create a new pin on this node using the supplied pin type, and return the new pin */
-	UEdGraphPin* CreatePin(EEdGraphPinDirection Dir, const FEdGraphPinType& InPinType, const FString& PinName, int32 Index = INDEX_NONE);
+	UEdGraphPin* CreatePin(EEdGraphPinDirection Dir, const FEdGraphPinType& InPinType, const FName PinName, int32 Index = INDEX_NONE);
+
+	/** Create a new pin on this node using the supplied pin type, and return the new pin */
+	DEPRECATED(4.19, "Use version that passes PinName as FName instead.")
+	UEdGraphPin* CreatePin(EEdGraphPinDirection Dir, const FEdGraphPinType& InPinType, const FString& PinName, int32 Index = INDEX_NONE)
+	{
+		return CreatePin(Dir, InPinType, FName(*PinName), Index);
+	}
+
+	/** Create a new pin on this node using the supplied pin type, and return the new pin */
+	//DEPRECATED(4.19, "Remove when removing FString version. Exists just to resolve ambiguity")
+	UEdGraphPin* CreatePin(EEdGraphPinDirection Dir, const FEdGraphPinType& InPinType, const TCHAR* PinName, int32 Index = INDEX_NONE)
+	{
+		return CreatePin(Dir, InPinType, FName(PinName), Index);
+	}
 
 	/** Destroys the specified pin, does not modify its owning pin's Pins list */
 	static void DestroyPin(UEdGraphPin* Pin);
 
 	/** Find a pin on this node with the supplied name and optional direction */
-	UEdGraphPin* FindPin(const FString& PinName, const EEdGraphPinDirection Direction = EGPD_MAX) const;
+	UEdGraphPin* FindPin(const FName PinName, const EEdGraphPinDirection Direction = EGPD_MAX) const;
 
 	/** Find a pin on this node with the supplied name and optional direction and assert if it is not present */
-	UEdGraphPin* FindPinChecked(const FString& PinName, const EEdGraphPinDirection Direction = EGPD_MAX) const;
-	
+	UEdGraphPin* FindPinChecked(const FName PinName, const EEdGraphPinDirection Direction = EGPD_MAX) const
+	{
+		UEdGraphPin* Result = FindPin(PinName, Direction);
+		check(Result);
+		return Result;
+	}
+
+	/** Find a pin on this node with the supplied name and optional direction */
+	UEdGraphPin* FindPin(const FString& PinName, const EEdGraphPinDirection Direction = EGPD_MAX) const
+	{
+		return FindPin(*PinName, Direction);
+	}
+
+	/** Find a pin on this node with the supplied name and optional direction and assert if it is not present */
+	UEdGraphPin* FindPinChecked(const FString& PinName, const EEdGraphPinDirection Direction = EGPD_MAX) const
+	{
+		return FindPinChecked(*PinName, Direction);
+	}
+
+	/** Find a pin on this node with the supplied name and optional direction */
+	UEdGraphPin* FindPin(const TCHAR* PinName, const EEdGraphPinDirection Direction = EGPD_MAX) const;
+
+	/** Find a pin on this node with the supplied name and optional direction and assert if it is not present */
+	UEdGraphPin* FindPinChecked(const TCHAR* PinName, const EEdGraphPinDirection Direction = EGPD_MAX) const
+	{
+		UEdGraphPin* Result = FindPin(PinName, Direction);
+		check(Result);
+		return Result;
+	}
+
 	/** Find the pin on this node with the supplied guid */
 	UEdGraphPin* FindPinById(const FGuid PinId) const;
 
@@ -425,15 +537,15 @@ public:
 	}
 
 	/** Generate a unique pin name, trying to stick close to a passed in name */
-	virtual FString CreateUniquePinName(FString SourcePinName) const
+	virtual FName CreateUniquePinName(FName SourcePinName) const
 	{
-		FString PinName(SourcePinName);
+		FName PinName(SourcePinName);
 		
 		int32 Index = 1;
-		while (FindPin(PinName) != NULL)
+		while (FindPin(PinName) != nullptr)
 		{
 			++Index;
-			PinName = SourcePinName + FString::FromInt(Index);
+			PinName = *FString::Printf(TEXT("%s%d"),*SourcePinName.ToString(),Index);
 		}
 
 		return PinName;
@@ -472,9 +584,6 @@ public:
 	 */
 	virtual bool CanPasteHere(const UEdGraph* TargetGraph) const { return IsCompatibleWithGraph(TargetGraph); }
 
-	DEPRECATED(4.5, "The UEdGraphNode::CanPasteHere() that takes a UEdGraphSchema parameter is deprecated, instead use the CanPasteHere() that only takes a single UEdGraph param.")
-	virtual bool CanPasteHere(const UEdGraph* TargetGraph, const UEdGraphSchema* Schema) const { return CanPasteHere(TargetGraph); }
-
 	/**
 	 * Determine if this node can be created under the specified schema
      */
@@ -510,9 +619,6 @@ public:
 	 * Gets the tooltip to display when over the node
 	 */
 	virtual FText GetTooltipText() const;
-
-	DEPRECATED(4.5, "UEdGraphNode::GetTooltip() is deprecated, instead use GetTooltipText(), which returns localized text.")
-	virtual FString GetTooltip() const { return GetTooltipText().ToString(); }
 
 	/**
 	 * Returns the keywords that should be used when searching for this node
@@ -601,6 +707,12 @@ public:
 	// (the object can be an actor, which selects it in the world, or a node/graph/pin)
 	virtual UObject* GetJumpTargetForDoubleClick() const;
 
+	// Returns true if it is possible to jump to the definition of this node (e.g., if it's a variable get or a function call)
+	virtual bool CanJumpToDefinition() const;
+
+	// Jump to the definition of this node (should only be called if CanJumpToDefinition() return true)
+	virtual void JumpToDefinition() const;
+
 	/** Create a new unique Guid for this node */
 	void CreateNewGuid();
 
@@ -631,9 +743,6 @@ public:
 	// called when a pin is removed
 	virtual void OnPinRemoved( UEdGraphPin* InRemovedPin ) {}
 
-	/** Return whether to draw this node as a comment node */
-	virtual bool ShouldDrawNodeAsComment() const { return false; }
-
 	/** 
 	* Returns whether to draw this node as a control point only (knot/reroute node). Note that this means that the node should only have on input and output pin.
 	* @param OutInputPinIndex The index in the pins array associated with the control point input pin.
@@ -650,7 +759,7 @@ public:
 	virtual void AddSearchMetaDataInfo(TArray<struct FSearchTagDataPair>& OutTaggedMetaData) const;
 
 	/** Return the requested metadata for the pin if there is any */
-	virtual FString GetPinMetaData(FString InPinName, FName InKey) { return FString(); }
+	virtual FString GetPinMetaData(FName InPinName, FName InKey) { return FString(); }
 
 	/** Return false if the node and any expansion will isolate itself during compile */
 	virtual bool IsCompilerRelevant() const { return true; }

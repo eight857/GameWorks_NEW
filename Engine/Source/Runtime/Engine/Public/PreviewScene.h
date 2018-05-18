@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PreviewScene.h: Preview scene definitions.
@@ -87,6 +87,9 @@ public:
 
 	void SetSkyBrightness(float SkyBrightness);
 	void SetSkyCubemap(class UTextureCube* Cubemap);
+
+	/** Get the background color we use by default */
+	virtual FLinearColor GetBackgroundColor() const;
 
 	/** Load/Save settings to the config, specifying the key */
 	void LoadSettings(const TCHAR* Section);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.IO;
 using System.Runtime.Serialization;
 using System.Linq;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -207,7 +208,7 @@ namespace UnrealBuildTool
 				int SearchAttempts = 0;
 				if (Path.IsPathRooted(RelativeIncludePath))
 				{
-					FileReference Reference = new FileReference(RelativeIncludePath);
+					FileReference Reference = FileReference.Combine(UnrealBuildTool.EngineSourceDirectory, RelativeIncludePath);
 					if (DirectoryLookupCache.FileExists(Reference))
 					{
 						Result = FileItem.GetItemByFileReference(Reference);
@@ -233,7 +234,7 @@ namespace UnrealBuildTool
 						FileReference FullFilePath = null;
 						try
 						{
-							FullFilePath = new FileReference(RelativeFilePath);
+							FullFilePath = FileReference.Combine(UnrealBuildTool.EngineSourceDirectory, RelativeFilePath);
 						}
 						catch (Exception)
 						{

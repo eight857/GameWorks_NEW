@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UserInterface/PropertyDetails/PropertyDetailsUtilities.h"
 #include "Presentation/PropertyEditor/PropertyEditor.h"
@@ -63,4 +63,14 @@ void FPropertyDetailsUtilities::NotifyFinishedChangingProperties(const FProperty
 bool FPropertyDetailsUtilities::DontUpdateValueWhileEditing() const
 {
 	return DetailsView.DontUpdateValueWhileEditing();
+}
+
+const TArray<TWeakObjectPtr<UObject>>& FPropertyDetailsUtilities::GetSelectedObjects() const
+{
+	return DetailsView.GetSelectedObjects();
+}
+
+bool FPropertyDetailsUtilities::HasClassDefaultObject() const
+{
+	return DetailsView.HasClassDefaultObject();
 }

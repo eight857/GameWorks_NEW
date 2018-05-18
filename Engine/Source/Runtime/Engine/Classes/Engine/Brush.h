@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -234,14 +234,6 @@ public:
 	virtual bool IsBrushShape() const { return false; }
 
 	// ABrush interface.
-
-	/** Returns the prepivot FVector of the RootComponent of this actor */
-	DEPRECATED(4.9, "This method has been superseded by AActor::GetPivotOffset.")
-	FVector GetPrePivot() const;
-
-	/** Set the PrePivot of the root component */
-	DEPRECATED(4.9, "This method has been superseded by AActor::SetPivotOffset.")
-	void SetPrePivot(const FVector& InPrePivot);
 
 	/** Figures out the best color to use for this brushes wireframe drawing.	*/
 	virtual FColor GetWireColor() const;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using UnrealBuildTool;
 
 public class nvTessLib : ModuleRules
@@ -8,6 +8,6 @@ public class nvTessLib : ModuleRules
 		Type = ModuleType.External;
 
 		// The header file also contains the source, so we don't actually need to link anything in.
-		PublicIncludePaths.Add(UEBuildConfiguration.UEThirdPartySourceDirectory + "nvtesslib/inc");
+		PublicIncludePaths.Add(Target.UEThirdPartySourceDirectory + "nvtesslib/inc");
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Interaction.cpp: See .UC for for info
@@ -28,6 +28,7 @@
 #include "GameFramework/InputSettings.h"
 #include "Stats/StatsData.h"
 #include "Misc/TextFilter.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 static const uint32 MAX_AUTOCOMPLETION_LINES = 20;
 
@@ -56,12 +57,12 @@ public:
 	// @param CVar must not be 0
 	static void OnConsoleVariable(const TCHAR *Name, IConsoleObject* CVar,TArray<struct FAutoCompleteCommand>& Sink)
 	{
-#if (UE_BUILD_SHIPPING || UE_BUILD_TEST)
+#if DISABLE_CHEAT_CVARS
 		if(CVar->TestFlags(ECVF_Cheat))
 		{
 			return;
 		}
-#endif // (UE_BUILD_SHIPPING || UE_BUILD_TEST)
+#endif // DISABLE_CHEAT_CVARS
 		if(CVar->TestFlags(ECVF_Unregistered))
 		{
 			return;
@@ -235,7 +236,7 @@ void UConsole::BuildRuntimeAutoCompleteList(bool bForce)
 		TArray<FString> Packages;
 		for (int32 PathIdx = 0; PathIdx < ConsoleSettings->AutoCompleteMapPaths.Num(); ++PathIdx)
 		{
-			FPackageName::FindPackagesInDirectory(Packages, FString::Printf(TEXT("%s%s"), *FPaths::GameDir(), *ConsoleSettings->AutoCompleteMapPaths[PathIdx]));
+			FPackageName::FindPackagesInDirectory(Packages, FString::Printf(TEXT("%s%s"), *FPaths::ProjectDir(), *ConsoleSettings->AutoCompleteMapPaths[PathIdx]));
 		}
 	
 		// also include maps in this user's developer dir
@@ -656,14 +657,14 @@ bool UConsole::ProcessControlKey(FKey Key, EInputEvent Event)
 		{
 			// paste
 			FString ClipboardContent;
-			FPlatformMisc::ClipboardPaste(ClipboardContent);
+			FPlatformApplicationMisc::ClipboardPaste(ClipboardContent);
 			AppendInputText(ClipboardContent);
 			return true;
 		}
 		else if (Key == EKeys::C)
 		{
 			// copy
-			FPlatformMisc::ClipboardCopy(*TypedStr);
+			FPlatformApplicationMisc::ClipboardCopy(*TypedStr);
 			return true;
 		}
 		else if (Key == EKeys::X)
@@ -671,7 +672,7 @@ bool UConsole::ProcessControlKey(FKey Key, EInputEvent Event)
 			// cut
 			if (!TypedStr.IsEmpty())
 			{
-				FPlatformMisc::ClipboardCopy(*TypedStr);
+				FPlatformApplicationMisc::ClipboardCopy(*TypedStr);
 				SetInputText(TEXT(""));
 				SetCursorPos(0);
 			}
@@ -1175,7 +1176,6 @@ void UConsole::PostRender_Console_Open(UCanvas* Canvas)
 	// determine the height of the text
 	float xl, yl;
 	Canvas->StrLen(Font, TEXT("M"),xl,yl);
-
 	// Background
 	FLinearColor BackgroundColor = ConsoleDefs::AutocompleteBackgroundColor.ReinterpretAsLinear();
 	BackgroundColor.A = ConsoleSettings->BackgroundOpacityPercentage / 100.0f;
@@ -1193,8 +1193,7 @@ void UConsole::PostRender_Console_Open(UCanvas* Canvas)
 
 	if(Scrollback.Num())
 	{
-		FCanvasTextItem ConsoleText( FVector2D( LeftPos,TopPos+Height-5-yl ), FText::FromString(TEXT("")), GEngine->GetSmallFont(), ConsoleSettings->InputColor );
-
+		FCanvasTextItem ConsoleText( FVector2D( LeftPos,TopPos+Height-5-yl ), FText::FromString(TEXT("")), GEngine->GetLargeFont(), ConsoleSettings->InputColor );
 		// change the text color to white
 		ConsoleText.SetColor( FLinearColor::White );
 
@@ -1338,7 +1337,7 @@ void UConsole::PostRender_InputLine(UCanvas* Canvas, FIntPoint UserInputLinePos)
 
 	// Currently typed string
 	FText Str = FText::FromString( TypedInputText );
-	FCanvasTextItem ConsoleText( FVector2D( UserInputLinePos.X,UserInputLinePos.Y-3-yl ), Str , GEngine->GetSmallFont(), ConsoleSettings->InputColor );
+	FCanvasTextItem ConsoleText( FVector2D( UserInputLinePos.X,UserInputLinePos.Y-3-yl ), Str , GEngine->GetLargeFont(), ConsoleSettings->InputColor );
 	ConsoleText.EnableShadow(FLinearColor::Black);
 	Canvas->DrawItem( ConsoleText );
 
@@ -1360,7 +1359,6 @@ void UConsole::PostRender_InputLine(UCanvas* Canvas, FIntPoint UserInputLinePos)
 		}
 
 		Canvas->StrLen(Font, *ConsoleDefs::LeadingInputText, xl, yl);
-		
 		float y = UserInputLinePos.Y - 6.0f - (yl * 2.0f);
 
 		// Set the background color/texture of the auto-complete section
@@ -1404,7 +1402,7 @@ void UConsole::PostRender_InputLine(UCanvas* Canvas, FIntPoint UserInputLinePos)
 		}
 
 		// background rectangle behind auto completion
-		float MaxWidth = MaxLeftWidth + MaxRightWidth;
+		float MaxWidth = (MaxLeftWidth + MaxRightWidth);
 		float Height = AutoCompleteElements.Num() * yl;
 		int32 Border = 4;
 
@@ -1502,7 +1500,6 @@ void UConsole::PostRender_InputLine(UCanvas* Canvas, FIntPoint UserInputLinePos)
 	// determine the cursor position
 	const FString TypedInputTextUpToCursor = FString::Printf(TEXT("%s%s"), *ConsoleDefs::LeadingInputText, *TypedStr.Left(TypedStrPos));
 	Canvas->StrLen(Font, TypedInputTextUpToCursor,xl,yl);
-
 	// draw the cursor
 	ConsoleText.SetColor( ConsoleDefs::CursorColor );
 	ConsoleText.Text = FText::FromString( FString(TEXT("_")) );

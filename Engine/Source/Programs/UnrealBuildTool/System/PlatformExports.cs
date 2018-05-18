@@ -1,8 +1,11 @@
-﻿using System;
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -14,7 +17,7 @@ namespace UnrealBuildTool
 		/// <summary>
 		/// Returns a list of restricted folder names
 		/// </summary>
-		public static string[] RestrictedFolderNames
+		public static FileSystemName[] RestrictedFolderNames
 		{
 			get { return UEBuildPlatform.RestrictedFolderNames; }
 		}

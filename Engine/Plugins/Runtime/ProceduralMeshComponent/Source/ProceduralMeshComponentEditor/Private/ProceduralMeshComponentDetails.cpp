@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ProceduralMeshComponentDetails.h"
 #include "Modules/ModuleManager.h"
@@ -35,7 +35,7 @@ void FProceduralMeshComponentDetails::CustomizeDetails( IDetailLayoutBuilder& De
 	const FText ConvertToStaticMeshText = LOCTEXT("ConvertToStaticMesh", "Create StaticMesh");
 
 	// Cache set of selected things
-	SelectedObjectsList = DetailBuilder.GetDetailsView().GetSelectedObjects();
+	SelectedObjectsList = DetailBuilder.GetSelectedObjects();
 
 	ProcMeshCategory.AddCustomRow(ConvertToStaticMeshText, false)
 	.NameContent()

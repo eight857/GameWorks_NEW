@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tiles/WorldTileThumbnails.h"
 #include "Misc/ObjectThumbnail.h"
@@ -76,7 +76,7 @@ FSlateTextureDataPtr FTileThumbnail::UpdateThumbnail()
 				&NewThumbnail
 				);
 
-			UPackage* MyOutermostPackage = CastChecked<UPackage>(TargetLevel->GetOutermost());
+			UPackage* MyOutermostPackage = TargetLevel->GetOutermost();
 			ThumbnailTools::CacheThumbnail(TileModel.GetAssetName().ToString(), &NewThumbnail, MyOutermostPackage);
 			return ToSlateTextureData(&NewThumbnail);
 		}

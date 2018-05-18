@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -25,6 +25,9 @@ struct ANIMGRAPHRUNTIME_API FAnimationCustomVersion
 
 		// Renamed Stretch Limits to better names
 		RenamedStretchLimits = 4,
+
+		// Convert IK to support FBoneSocketTarget
+		ConvertIKToSupportBoneSocketTarget = 5,
 
 		// -----<new versions can be added above this line>-------------------------------------------------
 		VersionPlusOne,

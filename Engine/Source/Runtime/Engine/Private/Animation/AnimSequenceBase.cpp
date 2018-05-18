@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Animation/AnimSequenceBase.h"
 #include "AnimationUtils.h"
@@ -48,21 +48,10 @@ void UAnimSequenceBase::PostLoad()
 
 	if(USkeleton* MySkeleton = GetSkeleton())
 	{
-		// Fix up the existing curves to work with smartnames
-		if(GetLinkerUE4Version() < VER_UE4_SKELETON_ADD_SMARTNAMES)
-		{
-			for(FFloatCurve& Curve : RawCurveData.FloatCurves)
-			{
-				MySkeleton->VerifySmartName(USkeleton::AnimCurveMappingName, Curve.Name);
-			}
-		}
-		else
-		{
-			VerifyCurveNames<FFloatCurve>(MySkeleton, USkeleton::AnimCurveMappingName, RawCurveData.FloatCurves);
-		}
+		VerifyCurveNames<FFloatCurve>(*MySkeleton, USkeleton::AnimCurveMappingName, RawCurveData.FloatCurves);
 
 #if WITH_EDITOR
-		VerifyCurveNames<FTransformCurve>(MySkeleton, USkeleton::AnimTrackCurveMappingName, RawCurveData.TransformCurves);
+		VerifyCurveNames<FTransformCurve>(*MySkeleton, USkeleton::AnimTrackCurveMappingName, RawCurveData.TransformCurves);
 #endif
 
 		// this should continue to add if skeleton hasn't been saved either 
@@ -149,13 +138,22 @@ void UAnimSequenceBase::UnregisterOnAnimTrackCurvesChanged(void* Unregister)
 }
 #endif 
 
-/** 
- * Retrieves AnimNotifies given a StartTime and a DeltaTime.
- * Time will be advanced and support looping if bAllowLooping is true.
- * Supports playing backwards (DeltaTime<0).
- * Returns notifies between StartTime (exclusive) and StartTime+DeltaTime (inclusive)
- */
 void UAnimSequenceBase::GetAnimNotifies(const float& StartTime, const float& DeltaTime, const bool bAllowLooping, TArray<const FAnimNotifyEvent *> & OutActiveNotifies) const
+{
+	TArray<FAnimNotifyEventReference> NotifyRefs;
+	GetAnimNotifies(StartTime, DeltaTime, bAllowLooping, NotifyRefs);
+
+	OutActiveNotifies.Reset(NotifyRefs.Num());
+	for (FAnimNotifyEventReference& NotifyRef : NotifyRefs)
+	{
+		if (const FAnimNotifyEvent* Notify = NotifyRef.GetNotify())
+		{
+			OutActiveNotifies.Add(Notify);
+		}
+	}
+}
+
+void UAnimSequenceBase::GetAnimNotifies(const float& StartTime, const float& DeltaTime, const bool bAllowLooping, TArray<FAnimNotifyEventReference> & OutActiveNotifies) const
 {
 	if(DeltaTime == 0.f)
 	{
@@ -201,13 +199,22 @@ void UAnimSequenceBase::GetAnimNotifies(const float& StartTime, const float& Del
 	while( true );
 }
 
-/** 
- * Retrieves AnimNotifies between two time positions. ]PreviousPosition, CurrentPosition]
- * Between PreviousPosition (exclusive) and CurrentPosition (inclusive).
- * Supports playing backwards (CurrentPosition<PreviousPosition).
- * Only supports contiguous range, does NOT support looping and wrapping over.
- */
 void UAnimSequenceBase::GetAnimNotifiesFromDeltaPositions(const float& PreviousPosition, const float& CurrentPosition, TArray<const FAnimNotifyEvent *> & OutActiveNotifies) const
+{
+	TArray<FAnimNotifyEventReference> NotifyRefs;
+	GetAnimNotifiesFromDeltaPositions(PreviousPosition, CurrentPosition, NotifyRefs);
+
+	OutActiveNotifies.Reset(NotifyRefs.Num());
+	for (FAnimNotifyEventReference NotifyRef : NotifyRefs)
+	{
+		if (const FAnimNotifyEvent* Notify = NotifyRef.GetNotify())
+		{
+			OutActiveNotifies.Add(Notify);
+		}
+	}
+}
+
+void UAnimSequenceBase::GetAnimNotifiesFromDeltaPositions(const float& PreviousPosition, const float& CurrentPosition, TArray<FAnimNotifyEventReference> & OutActiveNotifies) const
 {
 	// Early out if we have no notifies
 	if( (Notifies.Num() == 0) || (PreviousPosition == CurrentPosition) )
@@ -228,7 +235,7 @@ void UAnimSequenceBase::GetAnimNotifiesFromDeltaPositions(const float& PreviousP
 
 			if( (NotifyStartTime < PreviousPosition) && (NotifyEndTime >= CurrentPosition) )
 			{
-				OutActiveNotifies.Add(&AnimNotifyEvent);
+				OutActiveNotifies.Emplace(&AnimNotifyEvent, this);
 			}
 		}
 	}
@@ -242,7 +249,7 @@ void UAnimSequenceBase::GetAnimNotifiesFromDeltaPositions(const float& PreviousP
 
 			if( (NotifyStartTime <= CurrentPosition) && (NotifyEndTime > PreviousPosition) )
 			{
-				OutActiveNotifies.Add(&AnimNotifyEvent);
+				OutActiveNotifies.Emplace(&AnimNotifyEvent, this);
 			}
 		}
 	}
@@ -291,8 +298,10 @@ void UAnimSequenceBase::TickAssetPlayer(FAnimTickRecord& Instance, struct FAnimN
 			}
 			else
 			{
+				const float DeltaTime = Context.GetDeltaTime();
+				const float MyMoveDelta = PlayRate * DeltaTime;
 				// If leader is not valid, advance time as normal, do not jump position and pop.
-				FAnimationRuntime::AdvanceTime(Instance.bLooping, MoveDelta, CurrentTime, SequenceLength);
+				FAnimationRuntime::AdvanceTime(Instance.bLooping, MyMoveDelta, CurrentTime, SequenceLength);
 				UE_LOG(LogAnimMarkerSync, Log, TEXT("Follower (%s) (normal advance)  - PreviousTime (%0.2f), CurrentTime (%0.2f), MoveDelta (%0.2f), Looping (%d) "), *GetName(), PreviousTime, CurrentTime, MoveDelta, Instance.bLooping ? 1 : 0);
 			}
 		}
@@ -337,7 +346,15 @@ void UAnimSequenceBase::TickByMarkerAsLeader(FMarkerTickRecord& Instance, FMarke
 {
 	if (!Instance.IsValid())
 	{
-		GetMarkerIndicesForTime(CurrentTime, bLooping, MarkerContext.GetValidMarkerNames(), Instance.PreviousMarker, Instance.NextMarker);
+		if (MarkerContext.IsMarkerSyncStartValid())
+		{
+			GetMarkerIndicesForPosition(MarkerContext.GetMarkerSyncStartPosition(), bLooping, Instance.PreviousMarker, Instance.NextMarker, CurrentTime);
+		}
+		else
+		{
+			GetMarkerIndicesForTime(CurrentTime, bLooping, MarkerContext.GetValidMarkerNames(), Instance.PreviousMarker, Instance.NextMarker);
+		}
+		
 	}
 
 	MarkerContext.SetMarkerSyncStartPosition(GetMarkerSyncPositionfromMarkerIndicies(Instance.PreviousMarker.MarkerIndex, Instance.NextMarker.MarkerIndex, CurrentTime));
@@ -489,14 +506,14 @@ int32 UAnimSequenceBase::GetNumberOfFrames() const
 
 int32 UAnimSequenceBase::GetFrameAtTime(const float Time) const
 {
-	const float Frac = Time / SequenceLength;
-	return FMath::FloorToInt(Frac * GetNumberOfFrames());
+	const float FrameTime = GetNumberOfFrames() > 1 ? SequenceLength / (float)(GetNumberOfFrames() - 1) : 0.0f;
+	return FMath::Clamp(FMath::RoundToInt(Time / FrameTime), 0, GetNumberOfFrames() - 1);
 }
 
 float UAnimSequenceBase::GetTimeAtFrame(const int32 Frame) const
 {
-	const float FrameTime = SequenceLength / GetNumberOfFrames();
-	return FrameTime * Frame;
+	const float FrameTime = GetNumberOfFrames() > 1 ? SequenceLength / (float)(GetNumberOfFrames() - 1) : 0.0f;
+	return FMath::Clamp(FrameTime * Frame, 0.0f, SequenceLength);
 }
 
 void UAnimSequenceBase::RegisterOnNotifyChanged(const FOnNotifyChanged& Delegate)
@@ -561,13 +578,13 @@ void UAnimSequenceBase::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags)
 	// The blank list is necessary when we attempt to delete a curve so
 	// an old asset can be detected from its asset data so we load as few
 	// as possible.
-	FString CurveIdList;
+	FString CurveNameList;
 
 	for(const FFloatCurve& Curve : RawCurveData.FloatCurves)
 	{
-		CurveIdList += FString::Printf(TEXT("%u%s"), Curve.Name.UID, *USkeleton::CurveTagDelimiter);
+		CurveNameList += FString::Printf(TEXT("%s%s"), *Curve.Name.DisplayName.ToString(), *USkeleton::CurveTagDelimiter);
 	}
-	OutTags.Add(FAssetRegistryTag(USkeleton::CurveTag, CurveIdList, FAssetRegistryTag::TT_Hidden));
+	OutTags.Add(FAssetRegistryTag(USkeleton::CurveNameTag, CurveNameList, FAssetRegistryTag::TT_Hidden));
 }
 
 uint8* UAnimSequenceBase::FindNotifyPropertyData(int32 NotifyIndex, UArrayProperty*& ArrayProperty)
@@ -683,12 +700,9 @@ void UAnimSequenceBase::Serialize(FArchive& Ar)
 
 void UAnimSequenceBase::HandleAssetPlayerTickedInternal(FAnimAssetTickContext &Context, const float PreviousTime, const float MoveDelta, const FAnimTickRecord &Instance, struct FAnimNotifyQueue& NotifyQueue) const
 {
-	if (Context.ShouldGenerateNotifies())
-	{
-		// Harvest and record notifies
-		TArray<const FAnimNotifyEvent*> AnimNotifies;
-		GetAnimNotifies(PreviousTime, MoveDelta, Instance.bLooping, AnimNotifies);
-		NotifyQueue.AddAnimNotifies(AnimNotifies, Instance.EffectiveBlendWeight);
-	}
+	// Harvest and record notifies
+	TArray<FAnimNotifyEventReference> AnimNotifies;
+	GetAnimNotifies(PreviousTime, MoveDelta, Instance.bLooping, AnimNotifies);
+	NotifyQueue.AddAnimNotifies(Context.ShouldGenerateNotifies(),AnimNotifies, Instance.EffectiveBlendWeight);
 }
 #undef LOCTEXT_NAMESPACE 

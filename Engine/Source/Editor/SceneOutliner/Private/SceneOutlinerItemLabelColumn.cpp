@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SceneOutlinerItemLabelColumn.h"
 #include "Widgets/Text/STextBlock.h"
@@ -218,7 +218,7 @@ private:
 	{
 		if (const AActor* Actor = ActorPtr.Get())
 		{
-			return FClassIconFinder::FindIconForActor(Actor);
+			return FClassIconFinder::FindIconForActor(const_cast<AActor*>(Actor));
 		}
 		else
 		{
@@ -322,7 +322,7 @@ private:
 		if (Actor && Actor->IsActorLabelEditable() && !InLabel.ToString().Equals(Actor->GetActorLabel(), ESearchCase::CaseSensitive))
 		{
 			const FScopedTransaction Transaction( LOCTEXT( "SceneOutlinerRenameActorTransaction", "Rename Actor" ) );
-			Actor->SetActorLabel( InLabel.ToString() );
+			FActorLabelUtilities::RenameExistingActor(Actor, InLabel.ToString());
 
 			auto Outliner = WeakSceneOutliner.Pin();
 			if (Outliner.IsValid())

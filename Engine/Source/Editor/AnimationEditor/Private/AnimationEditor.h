@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,6 +10,7 @@
 #include "IAnimationEditor.h"
 #include "TickableEditorObject.h"
 #include "EditorUndoClient.h"
+#include "ArrayView.h"
 
 struct FAssetData;
 class FMenuBuilder;
@@ -21,6 +22,7 @@ class ISkeletonTree;
 class UAnimationAsset;
 class USkeletalMeshComponent;
 class UAnimSequence;
+class ISkeletonTreeItem;
 
 namespace AnimationEditorModes
 {
@@ -69,7 +71,7 @@ public:
 	/** FTickableEditorObject Interface */
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
-	virtual bool IsTickable() const override { return true; }
+	virtual ETickableTickType GetTickableTickType() const override { return ETickableTickType::Always; }
 	
 	/** FEditorUndoClient interface */
 	virtual void PostUndo(bool bSuccess) override;
@@ -94,6 +96,8 @@ public:
 	void HandleOpenNewAsset(UObject* InNewAsset);
 
 	void HandleAnimationSequenceBrowserCreated(const TSharedRef<class IAnimationSequenceBrowser>& InSequenceBrowser);
+
+	void HandleSelectionChanged(const TArrayView<TSharedPtr<ISkeletonTreeItem>>& InSelectedItems, ESelectInfo::Type InSelectInfo);
 
 	void HandleObjectSelected(UObject* InObject);
 
@@ -129,9 +133,11 @@ private:
 	void OnApplyCompression();
 
 	void OnExportToFBX(const EPoseSourceOption Option);
-	void ExportToFBX(const TArray<UObject*> NewAssets, bool bRecordAnimation);
+	//Return true mean the asset was exported, false it was cancel or it fail
+	bool ExportToFBX(const TArray<UObject*> NewAssets, bool bRecordAnimation);
 
 	void OnAddLoopingInterpolation();
+	void OnRemoveBoneTrack();
 
 	TSharedRef< SWidget > GenerateCreateAssetMenu() const;
 	TSharedRef< SWidget > GenerateExportAssetMenu() const;
@@ -152,11 +158,11 @@ private:
 
 	void CopyCurveToSoundWave(const FAssetData& SoundWaveAssetData) const;
 
-	void CreateAnimation(const TArray<UObject*> NewAssets, const EPoseSourceOption Option);
+	bool CreateAnimation(const TArray<UObject*> NewAssets, const EPoseSourceOption Option);
 
-	void CreatePoseAsset(const TArray<UObject*> NewAssets, const EPoseSourceOption Option);
+	bool CreatePoseAsset(const TArray<UObject*> NewAssets, const EPoseSourceOption Option);
 
-	void HandleAssetCreated(const TArray<UObject*> NewAssets);
+	bool HandleAssetCreated(const TArray<UObject*> NewAssets);
 
 	void ConditionalRefreshEditor(UObject* InObject);
 

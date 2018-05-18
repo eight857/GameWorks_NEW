@@ -1,8 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
-
-/*=============================================================================
-	HTML5TargetDevice.h: Declares the HTML5TargetDevice class.
-=============================================================================*/
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,6 +8,7 @@
 
 class FHTML5TargetDevice;
 class ITargetPlatform;
+
 
 /**
  * Type definition for shared pointers to instances of FHTML5TargetDevice.

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D12Resources.h: D3D resource RHI definitions.
@@ -182,6 +182,7 @@ public:
 
 	inline bool ShouldDeferDelete() const { return bDeferDelete; }
 	inline bool IsPlacedResource() const { return Heap.GetReference() != nullptr; }
+	inline FD3D12Heap* GetHeap() const { return Heap; };
 	inline bool IsDepthStencilResource() const { return bDepthStencil; }
 
 	void StartTrackingForResidency();
@@ -374,8 +375,13 @@ public:
 		eStandAlone,
 		eSubAllocation,
 		eFastAllocation,
-		eAliased // Occulus is the only API that uses this
+		eAliased, // Oculus is the only API that uses this
+		eHeapAliased, 
 	};
+
+	// Resource locations shouldn't be copied or moved. Use TransferOwnership to move resource locations.
+	FD3D12ResourceLocation(FD3D12ResourceLocation&&) = delete;
+	FD3D12ResourceLocation(FD3D12ResourceLocation const&) = delete;
 
 	FD3D12ResourceLocation(FD3D12Device* Parent);
 	~FD3D12ResourceLocation();
@@ -415,19 +421,27 @@ public:
 		SetResource(Resource);
 		SetSize(BufferSize);
 
-		if (IsCPUWritable(Resource->GetHeapType()))
+		if (!IsCPUInaccessible(Resource->GetHeapType()))
 		{
 			SetMappedBaseAddress(Resource->Map());
 		}
 		SetGPUVirtualAddress(Resource->GetGPUVirtualAddress());
 		SetTransient(bInIsTransient);
-
-		// don't bother tracking transient memory
-		if (!bTransient)
-		{
-			LLM(FLowLevelMemTracker::Get().OnLowLevelAlloc(ELLMTracker::RHI, reinterpret_cast<void*>(GPUVirtualAddress), Size));
-		}
 	}
+
+	inline void AsHeapAliased(FD3D12Resource* Resource)
+	{
+		SetType(FD3D12ResourceLocation::ResourceLocationType::eHeapAliased);
+		SetResource(Resource);
+		SetSize(0);
+
+		if (IsCPUWritable(Resource->GetHeapType()))
+		{
+			SetMappedBaseAddress(Resource->Map());
+		}
+		SetGPUVirtualAddress(Resource->GetGPUVirtualAddress());
+	}
+
 
 	inline void AsFastAllocation(FD3D12Resource* Resource, uint32 BufferSize, D3D12_GPU_VIRTUAL_ADDRESS GPUBase, void* CPUBase, uint64 Offset)
 	{
@@ -443,7 +457,7 @@ public:
 		SetGPUVirtualAddress(GPUBase + Offset);
 	}
 
-	// Occulus API Aliases textures so this allows 2+ resource locations to reference the same underlying
+	// Oculus API Aliases textures so this allows 2+ resource locations to reference the same underlying
 	// resource. We should avoid this as much as possible as it requires expensive reference counting and
 	// it complicates the resource ownership model.
 	static void Alias(FD3D12ResourceLocation& Destination, FD3D12ResourceLocation& Source);
@@ -620,6 +634,7 @@ class FD3D12TransientResource
 {
 	// Nothing special for fast ram
 };
+class FD3D12FastClearResource {};
 #endif
 
 /** Index buffer resource class that stores stride information. */
@@ -712,11 +727,6 @@ public:
 	void SetDynamicSRV(FD3D12ShaderResourceView* InSRV)
 	{
 		DynamicSRV = InSRV;
-	}
-
-	FD3D12ShaderResourceView* GetDynamicSRV() const
-	{
-		return DynamicSRV;
 	}
 
 	// IRefCountedObject interface.

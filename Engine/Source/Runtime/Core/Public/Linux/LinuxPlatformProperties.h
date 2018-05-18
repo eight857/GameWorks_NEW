@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*================================================================================
 	LinuxPlatformProperties.h - Basic static properties of a platform 
@@ -93,6 +93,11 @@ struct FLinuxPlatformProperties
 	static FORCEINLINE bool HasFixedResolution()
 	{
 		return false;
+	}
+
+	static FORCEINLINE bool SupportsTessellation()
+	{
+		return true;
 	}
 
 	static FORCEINLINE bool SupportsWindowedMode()

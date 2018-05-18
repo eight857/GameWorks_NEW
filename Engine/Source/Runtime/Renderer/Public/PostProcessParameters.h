@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PostProcessParameters.h: Shader base classes
@@ -74,7 +74,8 @@ struct FPostProcessPassParameters
 	void Bind(const FShaderParameterMap& ParameterMap);
 
 	/** Set the pixel shader parameter values. */
-	void SetPS(const FPixelShaderRHIParamRef& ShaderRHI, const FRenderingCompositePassContext& Context, FSamplerStateRHIParamRef Filter = TStaticSamplerState<>::GetRHI(), EFallbackColor FallbackColor = eFC_0000, FSamplerStateRHIParamRef* FilterOverrideArray = 0);
+	template <typename TRHICmdList>
+	void SetPS(TRHICmdList& RHICmdList, const FPixelShaderRHIParamRef& ShaderRHI, const FRenderingCompositePassContext& Context, FSamplerStateRHIParamRef Filter = TStaticSamplerState<>::GetRHI(), EFallbackColor FallbackColor = eFC_0000, FSamplerStateRHIParamRef* FilterOverrideArray = 0);
 
 	/** Set the compute shader parameter values. */
 	template< typename TRHICmdList >
@@ -95,17 +96,18 @@ private:
 	FShaderParameter PostprocessInputSizeParameter[ePId_Input_MAX];
 	FShaderParameter PostProcessInputMinMaxParameter[ePId_Input_MAX];
 	FShaderParameter ScreenPosToPixel;
+	FShaderParameter SceneColorBufferUVViewport;
 	FShaderResourceParameter BilinearTextureSampler0;
 	FShaderResourceParameter BilinearTextureSampler1;
 
 public:
 	// @param Filter can be 0 if FilterOverrideArray is used
 	// @param FilterOverrideArray can be 0 if Filter is used
-	template< typename ShaderRHIParamRef, typename TRHICmdList >
+	template< typename TShaderRHIParamRef, typename TRHICmdList >
 	void Set(
-		const ShaderRHIParamRef& ShaderRHI,
-		const FRenderingCompositePassContext& Context,
 		TRHICmdList& RHICmdList,
+		const TShaderRHIParamRef& ShaderRHI,
+		const FRenderingCompositePassContext& Context,
 		FSamplerStateRHIParamRef Filter,
 		EFallbackColor FallbackColor,
 		FSamplerStateRHIParamRef* FilterOverrideArray = 0

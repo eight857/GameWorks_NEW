@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	StaticLightingPrivate.h: Private static lighting system definitions.
@@ -83,6 +83,7 @@ struct FLightmassStatistics
 		FinishingTime					= 0.0;
 		TotalTime						= 0.0;
 		ExportVisibilityDataTime = 0.0;
+		ExportVolumetricLightmapDataTime = 0.0f;
 		ExportLightsTime = 0.0;
 		ExportModelsTime = 0.0;
 		ExportStaticMeshesTime = 0.0;
@@ -121,6 +122,7 @@ struct FLightmassStatistics
 		FinishingTime					+= Other.FinishingTime;
 		TotalTime						+= Other.TotalTime;
 		ExportVisibilityDataTime += Other.ExportVisibilityDataTime;
+		ExportVolumetricLightmapDataTime += Other.ExportVolumetricLightmapDataTime;
 		ExportLightsTime += Other.ExportLightsTime;
 		ExportModelsTime += Other.ExportModelsTime;
 		ExportStaticMeshesTime += Other.ExportStaticMeshesTime;
@@ -172,6 +174,7 @@ struct FLightmassStatistics
 	double	TotalTime;
 	/** Time spent in various export stages */
 	double ExportVisibilityDataTime;
+	double ExportVolumetricLightmapDataTime;
 	double ExportLightsTime;
 	double ExportModelsTime;
 	double ExportStaticMeshesTime;
@@ -232,7 +235,8 @@ public:
 
 private:
 	FStaticLightingManager() 
-		: ActiveStaticLightingSystem(NULL) 
+		: ActiveStaticLightingSystem(nullptr) 
+		, bBuildReflectionCapturesOnFinish(true)
 	{}
 	
 	class FStaticLightingSystem* ActiveStaticLightingSystem;
@@ -245,6 +249,8 @@ private:
 
 	/** Singleton of static lighting manager */
 	static TSharedPtr<FStaticLightingManager> StaticLightingManager;
+
+	bool bBuildReflectionCapturesOnFinish;
 
 	void FinishLightingBuild();
 
@@ -361,6 +367,9 @@ private:
 	 */
 	void UpdateAutomaticImportanceVolumeBounds( const FBox& MeshBounds );
 
+	/** Populate BuildDataResourcesToKeep from the GUIDs referenced in the given level. */
+	void GatherBuildDataResourcesToKeep(const ULevel* Level);
+
 private:
 
 	/** The lights in the world which the system is building. */
@@ -423,6 +432,9 @@ private:
 
 	/** The lighting scenario that's currently being built, if any.  When valid, any outputs of the lighting build should go into this level's MapBuildData. */
 	ULevel* LightingScenario;
+
+	/** The resource guid for all hidden/excluded levels. Used to keep those level data valid. */
+	TSet<FGuid> BuildDataResourcesToKeep;
 
 	/** A handle on the processor that actually interfacets with Lightmass */
 	class FLightmassProcessor* LightmassProcessor;

@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.Collections.Generic;
@@ -13,28 +13,17 @@ public class BootstrapPackagedGameTarget : TargetRules
 		LaunchModuleName = "BootstrapPackagedGame";
 
 		bUseStaticCRT = true;
-	}
 
-	//
-	// TargetRules interface.
-	//
-
-	public override void SetupGlobalEnvironment(
-		TargetInfo Target,
-		ref LinkEnvironmentConfiguration OutLinkEnvironmentConfiguration,
-		ref CPPEnvironmentConfiguration OutCPPEnvironmentConfiguration
-		)
-	{
-		BuildConfiguration.bUseUnityBuild = false;
-		BuildConfiguration.bUseSharedPCHs = false;
-		BuildConfiguration.bUseMallocProfiler = false;
+		bUseUnityBuild = false;
+		bUseSharedPCHs = false;
+		bUseMallocProfiler = false;
 
 		// Disable all parts of the editor.
-		UEBuildConfiguration.bCompileLeanAndMeanUE = true;
-		UEBuildConfiguration.bCompileICU = false;
-		UEBuildConfiguration.bBuildEditor = false;
-		UEBuildConfiguration.bBuildWithEditorOnlyData = false;
-		UEBuildConfiguration.bCompileAgainstEngine = false;
-		UEBuildConfiguration.bCompileAgainstCoreUObject = false;
+		bCompileLeanAndMeanUE = true;
+		bCompileICU = false;
+		bBuildEditor = false;
+		bBuildWithEditorOnlyData = false;
+		bCompileAgainstEngine = false;
+		bCompileAgainstCoreUObject = false;
 	}
 }

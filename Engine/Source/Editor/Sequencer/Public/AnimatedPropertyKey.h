@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -39,7 +39,10 @@ struct FAnimatedPropertyKey
 		}
 		else if (const UObjectPropertyBase* ObjectProperty = Cast<const UObjectPropertyBase>(Property))
 		{
-			Definition.ObjectTypeName = ObjectProperty->PropertyClass->GetFName();
+			if (ObjectProperty->PropertyClass)
+			{
+				Definition.ObjectTypeName = ObjectProperty->PropertyClass->GetFName();
+			}
 		}
 		else if(const UArrayProperty* ArrayProperty = Cast<const UArrayProperty>(Property))
 		{

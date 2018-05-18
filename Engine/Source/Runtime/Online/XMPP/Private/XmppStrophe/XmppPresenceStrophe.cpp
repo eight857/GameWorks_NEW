@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "XmppStrophe/XmppPresenceStrophe.h"
 #include "XmppStrophe/XmppConnectionStrophe.h"
@@ -92,7 +92,8 @@ bool FXmppPresenceStrophe::ReceiveStanza(const FStropheStanza& IncomingStanza)
 			FDateTime::ParseIso8601(*TimestampStanza->GetText(), Presence.SentTime);
 		}
 
-		Presence.UserJid.ParseResource(Presence.AppId, Presence.Platform);
+		FString UnusedPlatformUserId;
+		Presence.UserJid.ParseResource(Presence.AppId, Presence.Platform, UnusedPlatformUserId);
 	}
 
 	return IncomingPresenceUpdates.Enqueue(MakeUnique<FXmppUserPresence>(MoveTemp(Presence)));

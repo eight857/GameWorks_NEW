@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -142,6 +142,16 @@ public:
 	 * @return true if the conversion happened, false otherwise
 	 */
 	static bool ParseVector2D(const FString& Source, FVector2D& OutVal);
+
+	/**
+	* Converts a string into a FVector4. Accepted form: " %f, %f, %f, %f "
+	*
+	* @param Source the input string to try to convert
+	* @param OutVal the output vector4
+	*
+	* @return true if the conversion happened, false otherwise
+	*/
+	static bool ParseVector4(const FString& Source, FVector4& OutVal);
 
 	/**
 	 * Converts a string into a FRotator. Accepted form: " %f, %f, %f "

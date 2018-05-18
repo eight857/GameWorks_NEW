@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,7 +10,7 @@
 class AActor;
 class APawn;
 class APlayerController;
-class UAssetClassProperty;
+class USoftClassProperty;
 class UBlueprint;
 class ULevel;
 class UPrimitiveComponent;
@@ -260,25 +260,10 @@ FORCEINLINE T* ExactCast( UObject* Src )
 
 #endif
 
-
-template <typename InterfaceType>
-DEPRECATED(4.6, "InterfaceCast is deprecated, use Cast or dynamic_cast instead.")
-FORCEINLINE InterfaceType* InterfaceCast(UObject* Src)
-{
-	return Cast<InterfaceType>(Src);
-}
-
-template <typename InterfaceType>
-DEPRECATED(4.6, "InterfaceCast is deprecated, use Cast or dynamic_cast instead.")
-FORCEINLINE InterfaceType* InterfaceCast(const UObject* Src)
-{
-	return Cast<InterfaceType>(const_cast<UObject*>(Src));
-}
-
 // auto weak versions
-template< class T, class U > FORCEINLINE T* Cast       ( const TAutoWeakObjectPtr<U>& Src                                                                   ) { return Cast       <T>(Src.Get()); }
-template< class T, class U > FORCEINLINE T* ExactCast  ( const TAutoWeakObjectPtr<U>& Src                                                                   ) { return ExactCast  <T>(Src.Get()); }
-template< class T, class U > FORCEINLINE T* CastChecked( const TAutoWeakObjectPtr<U>& Src, ECastCheckedType::Type CheckType = ECastCheckedType::NullChecked ) { return CastChecked<T>(Src.Get(), CheckType); }
+template< class T, class U > FORCEINLINE T* Cast       ( const TWeakObjectPtr<U>& Src                                                                   ) { return Cast       <T>(Src.Get()); }
+template< class T, class U > FORCEINLINE T* ExactCast  ( const TWeakObjectPtr<U>& Src                                                                   ) { return ExactCast  <T>(Src.Get()); }
+template< class T, class U > FORCEINLINE T* CastChecked( const TWeakObjectPtr<U>& Src, ECastCheckedType::Type CheckType = ECastCheckedType::NullChecked ) { return CastChecked<T>(Src.Get(), CheckType); }
 
 // FSubobjectPtr versions
 template< class T > FORCEINLINE T* Cast       ( const FSubobjectPtr& Src                                                                   ) { return Cast       <T>(Src.Get()); }
@@ -327,8 +312,8 @@ DECLARE_CAST_BY_FLAG(UObjectPropertyBase)				\
 DECLARE_CAST_BY_FLAG(UObjectProperty)					\
 DECLARE_CAST_BY_FLAG(UWeakObjectProperty)				\
 DECLARE_CAST_BY_FLAG(ULazyObjectProperty)				\
-DECLARE_CAST_BY_FLAG(UAssetObjectProperty)				\
-DECLARE_CAST_BY_FLAG(UAssetClassProperty)				\
+DECLARE_CAST_BY_FLAG(USoftObjectProperty)				\
+DECLARE_CAST_BY_FLAG(USoftClassProperty)				\
 DECLARE_CAST_BY_FLAG(UBoolProperty)						\
 DECLARE_CAST_BY_FLAG(UFunction)							\
 DECLARE_CAST_BY_FLAG(UStructProperty)					\

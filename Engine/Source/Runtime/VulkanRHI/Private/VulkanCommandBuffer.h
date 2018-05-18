@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved..
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved..
 
 /*=============================================================================
 	VulkanCommandBuffer.h: Private Vulkan RHI definitions.
@@ -8,11 +8,19 @@
 
 #include "CoreMinimal.h"
 #include "VulkanConfiguration.h"
+#if VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
+#include "ArrayView.h"
+#include "VulkanDescriptorSets.h"
+#endif
 
 class FVulkanDevice;
 class FVulkanCommandBufferPool;
 class FVulkanCommandBufferManager;
 class FVulkanRenderTargetLayout;
+class FVulkanQueue;
+#if VULKAN_USE_DESCRIPTOR_POOL_MANAGER
+class FVulkanDescriptorPoolSet;
+#endif
 
 namespace VulkanRHI
 {
@@ -74,18 +82,23 @@ public:
 		State = EState::IsInsideBegin;
 	}
 
-	void End()
-	{
-		check(IsOutsideRenderPass());
-		VERIFYVULKANRESULT(VulkanRHI::vkEndCommandBuffer(GetHandle()));
-		State = EState::HasEnded;
-	}
+	void End();
 
 	inline volatile uint64 GetFenceSignaledCounter() const
 	{
 		return FenceSignaledCounter;
 	}
 
+	inline volatile uint64 GetSubmittedFenceCounter() const
+	{
+		return SubmittedFenceCounter;
+	}
+
+	inline bool HasValidTiming() const
+	{
+		return (Timing != nullptr) && (FMath::Abs((int64)FenceSignaledCounter - (int64)LastValidTiming) < 3);
+	}
+	
 	void Begin();
 
 	enum class EState
@@ -99,6 +112,22 @@ public:
 
 	bool bNeedsDynamicStateSet;
 	bool bHasPipeline;
+	bool bHasViewport;
+	bool bHasScissor;
+	bool bHasStencilRef;
+
+	VkViewport CurrentViewport;
+	VkRect2D CurrentScissor;
+	uint32 CurrentStencilRef;
+
+#if VULKAN_USE_DESCRIPTOR_POOL_MANAGER
+	FVulkanDescriptorPoolSet* CurrentDescriptorPoolSet = nullptr;
+#endif
+
+#if VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
+	TArrayView<VkDescriptorSet> AllocateDescriptorSets(const FVulkanLayout& Layout);
+	void SetDescriptorSetsFence(const FVulkanLayout& Layout);
+#endif
 
 private:
 	FVulkanDevice* Device;
@@ -108,11 +137,18 @@ private:
 	// Do not cache this pointer as it might change depending on VULKAN_REUSE_FENCES
 	VulkanRHI::FFence* Fence;
 
+	// Last value passed after the fence got signaled
 	volatile uint64 FenceSignaledCounter;
+	// Last value when we submitted the cmd buffer; useful to track down if something waiting for the fence has actually been submitted
+	volatile uint64 SubmittedFenceCounter;
 
 	void RefreshFenceStatus();
+	void InitializeTimings(FVulkanCommandListContext* InContext);
 
 	FVulkanCommandBufferPool* CommandBufferPool;
+
+	FVulkanGPUTiming* Timing;
+	uint64 LastValidTiming;
 
 	friend class FVulkanDynamicRHI;
 };
@@ -156,17 +192,26 @@ public:
 	/*
 	void PrepareForNewActiveCommandBuffer();
 */
-
 	inline VkCommandPool GetHandle() const
 	{
 		check(Handle != VK_NULL_HANDLE);
 		return Handle;
 	}
 
+#if VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
+	TArrayView<VkDescriptorSet> AllocateDescriptorSets(FVulkanCmdBuffer* CmdBuffer, const FVulkanLayout& Layout);
+	void ResetDescriptors(FVulkanCmdBuffer* CmdBuffer);
+	void SetDescriptorSetsFence(FVulkanCmdBuffer* CmdBuffer, const FVulkanLayout& Layout);
+#endif
+
 private:
 	FVulkanDevice* Device;
 	VkCommandPool Handle;
 	//FVulkanCmdBuffer* ActiveCmdBuffer;
+
+#if VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
+	TMap<uint32, VulkanRHI::FDescriptorSetsAllocator*> DSAllocators;
+#endif
 
 	FVulkanCmdBuffer* Create();
 
@@ -221,9 +266,25 @@ public:
 		return Pool.GetHandle();
 	}
 
+	uint32 CalculateGPUTime();
+
 private:
 	FVulkanDevice* Device;
 	FVulkanCommandBufferPool Pool;
+	FVulkanQueue* Queue;
 	FVulkanCmdBuffer* ActiveCmdBuffer;
 	FVulkanCmdBuffer* UploadCmdBuffer;
 };
+
+
+#if VULKAN_USE_PER_PIPELINE_DESCRIPTOR_POOLS
+inline TArrayView<VkDescriptorSet> FVulkanCmdBuffer::AllocateDescriptorSets(const FVulkanLayout& Layout)
+{
+	return CommandBufferPool->AllocateDescriptorSets(this, Layout);
+}
+
+inline void FVulkanCmdBuffer::SetDescriptorSetsFence(const FVulkanLayout& Layout)
+{
+	CommandBufferPool->SetDescriptorSetsFence(this, Layout);
+}
+#endif

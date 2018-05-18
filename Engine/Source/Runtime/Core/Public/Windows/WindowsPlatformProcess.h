@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -22,9 +22,6 @@ public:
 	FORCEINLINE explicit FProcHandle( HandleType Other )
 		: TProcHandle( Other )
 	{}
-
-	DEPRECATED(4.8, "FProcHandle::Close() is redundant - handles created with FPlatformProcess::CreateProc() should be closed with FPlatformProcess::CloseProc().")
-	FORCEINLINE bool Close();
 };
 
 
@@ -163,7 +160,6 @@ public:
 	static bool IsApplicationRunning( uint32 ProcessId );
 	static bool IsApplicationRunning( const TCHAR* ProcName );
 	static FString GetApplicationName( uint32 ProcessId );	
-	static bool IsThisApplicationForeground();
 	static bool ExecProcess( const TCHAR* URL, const TCHAR* Params, int32* OutReturnCode, FString* OutStdOut, FString* OutStdErr );
 	static bool ExecElevatedProcess(const TCHAR* URL, const TCHAR* Params, int32* OutReturnCode);
 	static void LaunchFileInDefaultExternalApplication( const TCHAR* FileName, const TCHAR* Parms = NULL, ELaunchVerb::Type Verb = ELaunchVerb::Open );
@@ -179,6 +175,7 @@ public:
 	static FString ReadPipe( void* ReadPipe );
 	static bool ReadPipeToArray(void* ReadPipe, TArray<uint8> & Output);
 	static bool WritePipe(void* WritePipe, const FString& Message, FString* OutWritten = nullptr);
+	static bool WritePipe(void* WritePipe, const uint8* Data, const int32 DataLength, int32* OutDataLength = nullptr);
 	static FSemaphore* NewInterprocessSynchObject(const FString& Name, bool bCreate, uint32 MaxLocks = 1);
 	static bool DeleteInterprocessSynchObject(FSemaphore * Object);
 	static bool Daemonize();
@@ -214,46 +211,7 @@ private:
 	 * @param SearchPaths Search directories to scan for imports
 	 */
 	static void* LoadLibraryWithSearchPaths(const FString& FileName, const TArray<FString>& SearchPaths);
-
-	/**
-	 * Resolve all the imports for the given library, searching through a set of directories.
-	 *
-	 * @param FileName Path to the library to load
-	 * @param SearchPaths Search directories to scan for imports
-	 * @param ImportFileNames Array which is filled with a list of the resolved imports found in the given search directories
-	 * @param VisitedImportNames Array which stores a list of imports which have been checked
-	 */
-	static void ResolveImportsRecursive(const FString& FileName, const TArray<FString>& SearchPaths, TArray<FString>& ImportFileNames, TArray<FString>& VisitedImportNames);
-
-	/**
-	 * Resolve an individual import.
-	 *
-	 * @param ImportName Name of the imported module
-	 * @param SearchPaths Search directories to scan for imports
-	 * @param OutFileName On success, receives the path to the imported file
-	 * @return true if an import was found.
-	 */
-	static bool ResolveImport(const FString& ImportName, const TArray<FString>& SearchPaths, FString& OutFileName);
-
-	/**
-	 * Reads a list of import names from a portable executable file.
-	 *
-	 * @param FileName Path to the library
-	 * @param ImportNames Array to receive the list of imported PE file names
-	 */
-	static bool ReadLibraryImports(const TCHAR* FileName, TArray<FString>& ImportNames);
 };
 
 
 typedef FWindowsPlatformProcess FPlatformProcess;
-
-inline bool FProcHandle::Close()
-{
-	if (IsValid())
-	{
-		FPlatformProcess::CloseProc(*this);
-		return true;
-	}
-	return false;
-}
-

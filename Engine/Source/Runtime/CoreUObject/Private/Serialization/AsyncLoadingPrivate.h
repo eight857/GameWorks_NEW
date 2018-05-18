@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -56,6 +56,11 @@ public:
 
 	void LogItem(const TCHAR* Item, int64 Offset = 0, int64 Size = 0, double StartTime = 0.0);
 
+	bool IsCookedForEDLInEditor() const
+	{
+		return bCookedForEDLInEditor;
+	}
+
 private:
 #if DEVIRTUALIZE_FLinkerLoad_Serialize
 	/**
@@ -109,9 +114,10 @@ private:
 	int64 HeaderSizeWhenReadingExportsFromSplitFile;
 
 	ELoadPhase LoadPhase;
-	bool bKeepRestOfFilePrecached;
+
 	/** If true, this package is a cooked EDL package loaded in uncooked builds */
 	bool bCookedForEDLInEditor;
+
 	FAsyncFileCallBack ReadCallbackFunction;
 	/** Cached filename for debugging.												*/
 	FString	FileName;

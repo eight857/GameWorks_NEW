@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -22,6 +22,7 @@ public class UpdateLocalVersion : BuildCommand
 		int? ChangelistOverride = ParseParamNullableInt("cl");
 		int? CompatibleChangelistOverride = ParseParamNullableInt("compatiblecl");
 		string Build = ParseParamValue("Build", null);
-		UE4Build.UpdateVersionFiles(ChangelistNumberOverride: ChangelistOverride, CompatibleChangelistNumberOverride: CompatibleChangelistOverride, Build: Build);
+		bool bSkipHeader = ParseParam("SkipHeader");
+		UE4Build.UpdateVersionFiles(ChangelistNumberOverride: ChangelistOverride, CompatibleChangelistNumberOverride: CompatibleChangelistOverride, Build: Build, bSkipHeader: bSkipHeader);
 	}
 }

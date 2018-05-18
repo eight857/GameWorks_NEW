@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/Guid.h"
 #include "Modules/ModuleManager.h"
-#include "Interfaces/ILauncherServicesModule.h"
+#include "ILauncherServicesModule.h"
 #include "Profiles/LauncherDeviceGroup.h"
 #include "Profiles/LauncherProfile.h"
 #include "Profiles/LauncherProfileManager.h"

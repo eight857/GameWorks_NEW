@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -26,7 +26,16 @@ struct FKeyPropertyResult
 	FKeyPropertyResult()
 		: bTrackModified(false)
 		, bHandleCreated(false)
-		, bTrackCreated(false) {}
+		, bTrackCreated(false)
+		, bKeyCreated(false) {}
+
+	inline void operator |= (const FKeyPropertyResult& A)
+	{
+		bTrackModified |= A.bTrackModified;
+		bHandleCreated |= A.bHandleCreated;
+		bTrackCreated |= A.bTrackCreated;
+		bKeyCreated |= A.bKeyCreated;
+	}
 
 	/* Was the track modified in any way? */
 	bool bTrackModified;
@@ -36,6 +45,9 @@ struct FKeyPropertyResult
 
 	/* Was a track created? */
 	bool bTrackCreated;
+
+	/* Was a key created? */
+	bool bKeyCreated;
 };
 
 /** Delegate for adding keys for a property
@@ -151,6 +163,8 @@ public:
 	virtual TSharedPtr<SWidget> BuildOutlinerEditWidget(const FGuid& ObjectBinding, UMovieSceneTrack* Track, const FBuildEditWidgetParams& Params) override;
 	virtual void BuildTrackContextMenu( FMenuBuilder& MenuBuilder, UMovieSceneTrack* Track ) override;
 	virtual bool HandleAssetAdded(UObject* Asset, const FGuid& TargetObjectGuid) override;
+	virtual bool OnAllowDrop(const FDragDropEvent& DragDropEvent, UMovieSceneTrack* Track) override;
+	virtual FReply OnDrop(const FDragDropEvent& DragDropEvent, UMovieSceneTrack* Track) override;
 
 	virtual void OnInitialize() override;
 	virtual void OnRelease() override;

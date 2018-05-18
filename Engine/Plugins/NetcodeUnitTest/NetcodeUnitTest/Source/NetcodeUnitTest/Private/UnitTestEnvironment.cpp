@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnitTestEnvironment.h"
 #include "Misc/CommandLine.h"
@@ -21,7 +21,7 @@ void FUnitTestEnvironment::AddUnitTestEnvironment(FString Game, FUnitTestEnviron
 	{
 		UnitTestEnvironments.Add(Game, Env);
 
-		if (Game == FApp::GetGameName())
+		if (Game == FApp::GetProjectName())
 		{
 			UUnitTest::UnitEnv = Env;
 		}
@@ -46,6 +46,10 @@ FString FUnitTestEnvironment::GetDefaultServerParameters(FString InLogCmds/*=TEX
 
 	if (NUTUtil::ParseValue(FCommandLine::Get(), TEXT("UnitTestServerParms="), CmdLineServerParms))
 	{
+		// @todo #JohnB: You need to add a log or notice, indicating that this invalidates the unit test as having a 'clean' run,
+		//					without external influences affecting its environment (important, as this can cause unit tests to fail,
+		//					when they depend on a log entry dependent on this commandline)
+
 		auto ParseCmds =
 			[&](const TCHAR* CmdsParm, FString& OutFullCmds)
 			{

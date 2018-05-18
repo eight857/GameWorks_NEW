@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -11,16 +11,12 @@ public class HTTPChunkInstaller : ModuleRules
             new string[] {
                 "BuildPatchServices",
                 "Core",
+				"ApplicationCore",
                 "Engine",
                 "Http",
                 "Json",
                 "PakFile",
             }
             );
-
- //       if (Target.Platform != UnrealTargetPlatform.Win64 && Target.Platform != UnrealTargetPlatform.Win32 && Target.Platform != UnrealTargetPlatform.IOS)
-        {
-            PrecompileForTargets = PrecompileTargetsType.None;
-        }
     }
 }

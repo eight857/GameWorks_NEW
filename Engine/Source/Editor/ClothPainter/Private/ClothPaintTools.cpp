@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ClothPaintTools.h"
 #include "ClothPaintSettings.h"
@@ -13,6 +13,11 @@
 #include "ClothPaintToolCommands.h"
 #include "UICommandInfo.h"
 #include "UICommandList.h"
+#include "IDetailCustomization.h"
+#include "DetailCategoryBuilder.h"
+#include "DetailLayoutBuilder.h"
+#include "DetailWidgetRow.h"
+#include "SButton.h"
 
 #define LOCTEXT_NAMESPACE "ClothTools"
 
@@ -45,6 +50,17 @@ UObject* FClothPaintTool_Brush::GetSettingsObject()
 	return Settings;
 }
 
+bool FClothPaintTool_Brush::HasValueRange()
+{
+	return true;
+}
+
+void FClothPaintTool_Brush::GetValueRange(float& OutRangeMin, float& OutRangeMax)
+{
+	OutRangeMin = Settings->PaintValue;
+	OutRangeMax = OutRangeMin;
+}
+
 void FClothPaintTool_Brush::PaintAction(FPerVertexPaintActionArgs& InArgs, int32 VertexIndex, FMatrix InverseBrushMatrix)
 {
 	FClothMeshPaintAdapter* ClothAdapter = (FClothMeshPaintAdapter*)InArgs.Adapter;
@@ -62,7 +78,7 @@ void FClothPaintTool_Brush::PaintAction(FPerVertexPaintActionArgs& InArgs, int32
 
 			float Value = SharedPainter->GetPropertyValue(VertexIndex);
 			const float BrushRadius = BrushSettings->GetBrushRadius();
-			MeshPaintHelpers::ApplyBrushToVertex(Position, InverseBrushMatrix, BrushRadius * BrushRadius, BrushSettings->BrushFalloffAmount, Settings->PaintValue, Value);
+			MeshPaintHelpers::ApplyBrushToVertex(Position, InverseBrushMatrix, BrushRadius, BrushSettings->BrushFalloffAmount, BrushSettings->BrushStrength, Settings->PaintValue, Value);
 			SharedPainter->SetPropertyValue(VertexIndex, Value);
 		}
 	}
@@ -121,7 +137,7 @@ void FClothPaintTool_Gradient::Render(USkeletalMeshComponent* InComponent, IMesh
 		return;
 	}
 
-	const float VertexPointSize = 3.0f;
+	const float VertexPointSize = GetDefault<UMeshPaintSettings>()->VertexPreviewSize;
 	const UClothPainterSettings* PaintSettings = CastChecked<UClothPainterSettings>(SharedPainter->GetPainterSettings());
 	const UPaintBrushSettings* BrushSettings = SharedPainter->GetBrushSettings();
 
@@ -130,27 +146,27 @@ void FClothPaintTool_Gradient::Render(USkeletalMeshComponent* InComponent, IMesh
 	
 	const FMatrix ComponentToWorldMatrix = InComponent->GetComponentTransform().ToMatrixWithScale();
 	
+	for (const int32& Index : GradientStartIndices)
+	{
+		FVector Vertex;
+		InAdapter->GetVertexPosition(Index, Vertex);
+
+		const FVector WorldPositionVertex = ComponentToWorldMatrix.TransformPosition(Vertex);
+		PDI->DrawPoint(WorldPositionVertex, FLinearColor::Green, VertexPointSize, SDPG_World);
+	}
+	
+	for (const int32& Index : GradientEndIndices)
+	{
+		FVector Vertex;
+		InAdapter->GetVertexPosition(Index, Vertex);
+
+		const FVector WorldPositionVertex = ComponentToWorldMatrix.TransformPosition(Vertex);
+		PDI->DrawPoint(WorldPositionVertex, FLinearColor::Red, VertexPointSize, SDPG_World);
+	}
+	
+	
 	for (const MeshPaintHelpers::FPaintRay& PaintRay : PaintRays)
 	{
-		for (const int32& Index : GradientStartIndices)
-		{
-			FVector Vertex;
-			InAdapter->GetVertexPosition(Index, Vertex);
-
-			const FVector WorldPositionVertex = ComponentToWorldMatrix.TransformPosition(Vertex);
-			PDI->DrawPoint(WorldPositionVertex, FLinearColor::Green, VertexPointSize * 2.0f, SDPG_World);
-		}
-	
-		for (const int32& Index : GradientEndIndices)
-		{
-			FVector Vertex;
-			InAdapter->GetVertexPosition(Index, Vertex);
-
-			const FVector WorldPositionVertex = ComponentToWorldMatrix.TransformPosition(Vertex);
-			PDI->DrawPoint(WorldPositionVertex, FLinearColor::Red, VertexPointSize * 2.0f, SDPG_World);
-		}
-	
-	
 		const FHitResult& HitResult = SharedPainter->GetHitResult(PaintRay.RayStart, PaintRay.RayDirection);
 		if (HitResult.Component == InComponent)
 		{
@@ -177,7 +193,7 @@ void FClothPaintTool_Gradient::Render(USkeletalMeshComponent* InComponent, IMesh
 				for (const FVector& Vertex : InRangeVertices)
 				{
 					const FVector WorldPositionVertex = ComponentToWorldMatrix.TransformPosition(Vertex);
-					PDI->DrawPoint(WorldPositionVertex, bSelectingBeginPoints ? FLinearColor::Green : FLinearColor::Red, VertexPointSize * 2.0f, SDPG_Foreground);
+					PDI->DrawPoint(WorldPositionVertex, bSelectingBeginPoints ? FLinearColor::Green : FLinearColor::Red, VertexPointSize, SDPG_Foreground);
 				}
 			}
 		}
@@ -202,6 +218,9 @@ UObject* FClothPaintTool_Gradient::GetSettingsObject()
 
 void FClothPaintTool_Gradient::Activate(TWeakPtr<FUICommandList> InCommands)
 {
+	GradientStartIndices.Empty();
+	GradientEndIndices.Empty();
+
 	TSharedPtr<FUICommandList> SharedCommands = InCommands.Pin();
 	if(SharedCommands.IsValid())
 	{
@@ -223,6 +242,23 @@ void FClothPaintTool_Gradient::Deactivate(TWeakPtr<FUICommandList> InCommands)
 
 		SharedCommands->UnmapAction(Commands.ApplyGradient);
 	}
+}
+
+void FClothPaintTool_Gradient::OnMeshChanged()
+{
+	GradientStartIndices.Empty();
+	GradientEndIndices.Empty();
+}
+
+bool FClothPaintTool_Gradient::HasValueRange()
+{
+	return true;
+}
+
+void FClothPaintTool_Gradient::GetValueRange(float& OutRangeMin, float& OutRangeMax)
+{
+	OutRangeMin = FMath::Min(Settings->GradientStartValue, Settings->GradientEndValue);
+	OutRangeMax = FMath::Max(Settings->GradientStartValue, Settings->GradientEndValue);
 }
 
 void FClothPaintTool_Gradient::PaintAction(FPerVertexPaintActionArgs& InArgs, int32 VertexIndex, FMatrix InverseBrushMatrix)
@@ -372,6 +408,72 @@ bool FClothPaintTool_Gradient::CanApplyGradient()
 	return GradientEndIndices.Num() > 0 && GradientStartIndices.Num() > 0;
 }
 
+class FSmoothToolCustomization : public IDetailCustomization
+{
+public:
+	FSmoothToolCustomization() = delete;
+
+	FSmoothToolCustomization(TSharedPtr<FClothPainter> InPainter)
+		: Painter(InPainter)
+	{}
+
+	static TSharedRef<IDetailCustomization> MakeInstance(TSharedPtr<FClothPainter> InPainter)
+	{
+		return MakeShareable(new FSmoothToolCustomization(InPainter));
+	}
+
+	virtual void CustomizeDetails(IDetailLayoutBuilder& DetailBuilder) override
+	{
+		const FName ToolCategoryName = "ToolSettings";
+		IDetailCategoryBuilder& CategoryBuilder = DetailBuilder.EditCategory(ToolCategoryName);
+
+		TArray<TSharedRef<IPropertyHandle>> DefaultProperties;
+		CategoryBuilder.GetDefaultProperties(DefaultProperties);
+
+		for(TSharedRef<IPropertyHandle>& Handle : DefaultProperties)
+		{
+			CategoryBuilder.AddProperty(Handle);
+		}
+
+		FDetailWidgetRow& MeshSmoothRow = CategoryBuilder.AddCustomRow(LOCTEXT("MeshSmoothRowName", "MeshSmooth"));
+
+		MeshSmoothRow.ValueContent()
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("MeshSmoothButtonText", "Smooth Mesh"))
+				.ToolTipText(LOCTEXT("MeshSmoothButtonToolTip", "Applies the smooth operation to the whole mesh at once."))
+				.OnClicked(this, &FSmoothToolCustomization::OnMeshSmoothClicked)
+			];
+	}
+
+private:
+
+	FReply OnMeshSmoothClicked()
+	{
+		if(Painter.IsValid())
+		{
+			const int32 NumVerts = Painter->GetAdapter()->GetMeshVertices().Num();
+			TSet<int32> IndexSet;
+			IndexSet.Reserve(NumVerts);
+
+			for(int32 Index = 0; Index < NumVerts; ++Index)
+			{
+				IndexSet.Add(Index);
+			}
+
+			TSharedPtr<FClothPaintTool_Smooth> SmoothTool = StaticCastSharedPtr<FClothPaintTool_Smooth>(Painter->GetSelectedTool());
+			if(SmoothTool.IsValid())
+			{
+				SmoothTool->SmoothVertices(IndexSet, Painter);
+			}
+		}
+
+		return FReply::Handled();
+	}
+
+	TSharedPtr<FClothPainter> Painter;
+};
+
 FClothPaintTool_Smooth::~FClothPaintTool_Smooth()
 {
 	if(Settings)
@@ -406,6 +508,11 @@ bool FClothPaintTool_Smooth::IsPerVertex() const
 	return false;
 }
 
+void FClothPaintTool_Smooth::RegisterSettingsObjectCustomizations(IDetailsView* InDetailsView)
+{
+	InDetailsView->RegisterInstancedCustomPropertyLayout(UClothPaintTool_SmoothSettings::StaticClass(), FOnGetDetailCustomizationInstance::CreateStatic(&FSmoothToolCustomization::MakeInstance, Painter.Pin()));
+}
+
 void FClothPaintTool_Smooth::PaintAction(FPerVertexPaintActionArgs& InArgs, int32 VertexIndex, FMatrix InverseBrushMatrix)
 {
 	TSharedPtr<FClothPainter> SharedPainter = Painter.Pin();
@@ -430,6 +537,16 @@ void FClothPaintTool_Smooth::PaintAction(FPerVertexPaintActionArgs& InArgs, int3
 
 	TSet<int32> InfluencedVertices;
 	Adapter->GetInfluencedVertexIndices(ComponentSpaceSquaredBrushRadius, ComponentSpaceBrushPosition, ComponentSpaceCameraPosition, BrushSettings->bOnlyFrontFacingTriangles, InfluencedVertices);
+	SmoothVertices(InfluencedVertices, SharedPainter);
+}
+
+void FClothPaintTool_Smooth::SmoothVertices(const TSet<int32> &InfluencedVertices, TSharedPtr<FClothPainter> SharedPainter)
+{
+	check(SharedPainter.IsValid());
+
+	TSharedPtr<IMeshPaintGeometryAdapter> AdapterInterface = SharedPainter->GetAdapter();
+	FClothMeshPaintAdapter* Adapter = (FClothMeshPaintAdapter*)AdapterInterface.Get();
+
 	const int32 NumVerts = InfluencedVertices.Num();
 	if(NumVerts > 0)
 	{
@@ -437,7 +554,7 @@ void FClothPaintTool_Smooth::PaintAction(FPerVertexPaintActionArgs& InArgs, int3
 		NewValues.AddZeroed(NumVerts);
 
 		int32 InfluencedIndex = 0;
-		for(int32 Index : InfluencedVertices)
+		for(const int32 Index : InfluencedVertices)
 		{
 			const TArray<int32>* Neighbors = Adapter->GetVertexNeighbors(Index);
 			if(Neighbors && Neighbors->Num() > 0)
@@ -519,7 +636,7 @@ void FClothPaintTool_Fill::Render(USkeletalMeshComponent* InComponent, IMeshPain
 		return;
 	}
 
-	const float VertexPointSize = 3.0f;
+	const float VertexPointSize = GetDefault<UMeshPaintSettings>()->VertexPreviewSize;
 	const UClothPainterSettings* PaintSettings = CastChecked<UClothPainterSettings>(SharedPainter->GetPainterSettings());
 	const UPaintBrushSettings* BrushSettings = SharedPainter->GetBrushSettings();
 
@@ -553,11 +670,22 @@ void FClothPaintTool_Fill::Render(USkeletalMeshComponent* InComponent, IMeshPain
 				for(const FVector& Vertex : InRangeVertices)
 				{
 					const FVector WorldPositionVertex = ComponentToWorldMatrix.TransformPosition(Vertex);
-					PDI->DrawPoint(WorldPositionVertex, FLinearColor::Green, VertexPointSize * 2.0f, SDPG_Foreground);
+					PDI->DrawPoint(WorldPositionVertex, FLinearColor::Green, VertexPointSize, SDPG_Foreground);
 				}
 			}
 		}
 	}
+}
+
+bool FClothPaintTool_Fill::HasValueRange()
+{
+	return true;
+}
+
+void FClothPaintTool_Fill::GetValueRange(float& OutRangeMin, float& OutRangeMax)
+{
+	OutRangeMin = Settings->FillValue;
+	OutRangeMax = OutRangeMin;
 }
 
 void FClothPaintTool_Fill::PaintAction(FPerVertexPaintActionArgs& InArgs, int32 VertexIndex, FMatrix InverseBrushMatrix)

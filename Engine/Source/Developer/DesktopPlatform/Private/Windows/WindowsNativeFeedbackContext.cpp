@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "WindowsNativeFeedbackContext.h"
 #include "HAL/ThreadHeartBeat.h"
@@ -8,6 +8,7 @@
 #include "Misc/OutputDeviceRedirector.h"
 #include "Misc/App.h"
 #include "Internationalization/Internationalization.h"
+#include "Windows/WindowsPlatformApplicationMisc.h"
 
 #include "AllowWindowsPlatformTypes.h"
 
@@ -82,21 +83,6 @@ void FWindowsNativeFeedbackContext::Serialize( const TCHAR* V, ELogVerbosity::Ty
 			LogOutput += FString(V) + FString("\r\n");
 			SetEvent(hUpdateEvent);
 		}
-	}
-}
-
-VARARG_BODY( bool, FWindowsNativeFeedbackContext::YesNof, const TCHAR*, VARARG_NONE )
-{
-	TCHAR TempStr[4096];
-	GET_VARARGS( TempStr, ARRAY_COUNT(TempStr), ARRAY_COUNT(TempStr)-1, Fmt, Fmt );
-	if( ( GIsClient || GIsEditor ) && ( ( GIsSilent != true ) && ( FApp::IsUnattended() != true ) ) )
-	{
-		FSlowHeartBeatScope SuspendHeartBeat;
-		return( ::MessageBox( NULL, TempStr, *NSLOCTEXT("Core", "Question", "Question").ToString(), MB_YESNO|MB_TASKMODAL ) == IDYES);
-	}
-	else
-	{
-		return false;
 	}
 }
 
@@ -192,7 +178,7 @@ DWORD FWindowsNativeFeedbackContext::SlowTaskThreadProc(void* ThreadParam)
 	WndClassEx.cbSize = sizeof(WndClassEx);
 	WndClassEx.style = CS_HREDRAW | CS_VREDRAW | (Context->bShowCancelButton? 0 : CS_NOCLOSE);
 	WndClassEx.lpfnWndProc = &SlowTaskWindowProc;
-	WndClassEx.hIcon = LoadIcon(HInstance, MAKEINTRESOURCE(FWindowsPlatformMisc::GetAppIcon()));
+	WndClassEx.hIcon = LoadIcon(HInstance, MAKEINTRESOURCE(FWindowsPlatformApplicationMisc::GetAppIcon()));
 	WndClassEx.hCursor = LoadCursor(NULL, IDC_ARROW);
 	WndClassEx.hInstance = HInstance;
 	WndClassEx.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);

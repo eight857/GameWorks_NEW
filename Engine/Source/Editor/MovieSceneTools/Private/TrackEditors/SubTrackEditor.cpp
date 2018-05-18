@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TrackEditors/SubTrackEditor.h"
 #include "Rendering/DrawElements.h"
@@ -22,6 +22,8 @@
 #include "SequencerSectionPainter.h"
 #include "ISequenceRecorder.h"
 #include "SequenceRecorderSettings.h"
+#include "DragAndDrop/AssetDragDropOp.h"
+#include "MovieSceneToolHelpers.h"
 
 namespace SubTrackEditorConstants
 {
@@ -44,6 +46,8 @@ public:
 		: DisplayName(InDisplayName)
 		, SectionObject(*CastChecked<UMovieSceneSubSection>(&InSection))
 		, Sequencer(InSequencer)
+		, InitialStartOffsetDuringResize(0.f)
+		, InitialStartTimeDuringResize(0.f)
 	{
 	}
 
@@ -277,6 +281,25 @@ public:
 		return FReply::Handled();
 	}
 
+	virtual void BeginSlipSection() override
+	{
+		InitialStartOffsetDuringResize = SectionObject.Parameters.StartOffset;
+		InitialStartTimeDuringResize = SectionObject.GetStartTime();
+	}
+
+	virtual void SlipSection(float SlipTime) override
+	{
+		float StartOffset = (SlipTime - InitialStartTimeDuringResize) / SectionObject.Parameters.TimeScale;
+		StartOffset += InitialStartOffsetDuringResize;
+
+		// Ensure start offset is not less than 0
+		StartOffset = FMath::Max(StartOffset, 0.f);
+
+		SectionObject.Parameters.StartOffset = StartOffset;
+
+		ISequencerSection::SlipSection(SlipTime);
+	}
+
 private:
 
 	/** Display name of the section */
@@ -287,6 +310,12 @@ private:
 
 	/** Sequencer interface */
 	TWeakPtr<ISequencer> Sequencer;
+
+	/** Cached start offset value valid only during resize */
+	float InitialStartOffsetDuringResize;
+	
+	/** Cached start time valid only during resize */
+	float InitialStartTimeDuringResize;
 };
 
 
@@ -349,6 +378,11 @@ bool FSubTrackEditor::HandleAssetAdded(UObject* Asset, const FGuid& TargetObject
 		return false;
 	}
 
+	if (!SupportsSequence(Sequence))
+	{
+		return false;
+	}
+
 	//@todo If there's already a cinematic shot track, allow that track to handle this asset
 	UMovieScene* FocusedMovieScene = GetFocusedMovieScene();
 
@@ -383,6 +417,66 @@ const FSlateBrush* FSubTrackEditor::GetIconBrush() const
 	return FEditorStyle::GetBrush("Sequencer.Tracks.Sub");
 }
 
+
+bool FSubTrackEditor::OnAllowDrop(const FDragDropEvent& DragDropEvent, UMovieSceneTrack* Track)
+{
+	if (!Track->IsA(UMovieSceneSubTrack::StaticClass()) || Track->IsA(UMovieSceneCinematicShotTrack::StaticClass()))
+	{
+		return false;
+	}
+
+	TSharedPtr<FDragDropOperation> Operation = DragDropEvent.GetOperation();
+
+	if (!Operation.IsValid() || !Operation->IsOfType<FAssetDragDropOp>() )
+	{
+		return false;
+	}
+	
+	TSharedPtr<FAssetDragDropOp> DragDropOp = StaticCastSharedPtr<FAssetDragDropOp>( Operation );
+
+	for (const FAssetData& AssetData : DragDropOp->GetAssets())
+	{
+		if (Cast<UMovieSceneSequence>(AssetData.GetAsset()))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+
+FReply FSubTrackEditor::OnDrop(const FDragDropEvent& DragDropEvent, UMovieSceneTrack* Track)
+{
+	if (!Track->IsA(UMovieSceneSubTrack::StaticClass()) || Track->IsA(UMovieSceneCinematicShotTrack::StaticClass()))
+	{
+		return FReply::Unhandled();
+	}
+
+	TSharedPtr<FDragDropOperation> Operation = DragDropEvent.GetOperation();
+
+	if (!Operation.IsValid() || !Operation->IsOfType<FAssetDragDropOp>() )
+	{
+		return FReply::Unhandled();
+	}
+	
+	TSharedPtr<FAssetDragDropOp> DragDropOp = StaticCastSharedPtr<FAssetDragDropOp>( Operation );
+	
+	bool bAnyDropped = false;
+	for (const FAssetData& AssetData : DragDropOp->GetAssets())
+	{
+		UMovieSceneSequence* Sequence = Cast<UMovieSceneSequence>(AssetData.GetAsset());
+
+		if (Sequence)
+		{
+			AnimatablePropertyChanged(FOnKeyProperty::CreateRaw(this, &FSubTrackEditor::HandleSequenceAdded, Sequence));
+
+			bAnyDropped = true;
+		}
+	}
+
+	return bAnyDropped ? FReply::Handled() : FReply::Unhandled();
+}
 
 /* FSubTrackEditor callbacks
  *****************************************************************************/
@@ -538,7 +632,8 @@ FKeyPropertyResult FSubTrackEditor::AddKeyInternal(float KeyTime, UMovieSceneSeq
 	{
 		UMovieSceneSubTrack* SubTrack = Cast<UMovieSceneSubTrack>(InTrack);
 		float Duration = InMovieSceneSequence->GetMovieScene()->GetPlaybackRange().Size<float>();
-		SubTrack->AddSequence(InMovieSceneSequence, KeyTime, Duration);
+		UMovieSceneSubSection* NewSection = SubTrack->AddSequence(InMovieSceneSequence, KeyTime, Duration);
+		NewSection->SetRowIndex(MovieSceneToolHelpers::FindAvailableRowIndex(SubTrack, NewSection));
 		KeyPropertyResult.bTrackModified = true;
 
 		return KeyPropertyResult;
@@ -557,7 +652,8 @@ FKeyPropertyResult FSubTrackEditor::HandleSequenceAdded(float KeyTime, UMovieSce
 
 	auto SubTrack = FindOrCreateMasterTrack<UMovieSceneSubTrack>().Track;
 	float Duration = Sequence->GetMovieScene()->GetPlaybackRange().Size<float>();
-	SubTrack->AddSequence(Sequence, KeyTime, Duration);
+	UMovieSceneSubSection* NewSection = SubTrack->AddSequence(Sequence, KeyTime, Duration);
+	NewSection->SetRowIndex(MovieSceneToolHelpers::FindAvailableRowIndex(SubTrack, NewSection));
 	KeyPropertyResult.bTrackModified = true;
 
 	return KeyPropertyResult;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MetalCommandList.cpp: Metal command buffer list wrapper.
@@ -199,7 +199,9 @@ void FMetalCommandList::Commit(id<MTLCommandBuffer> Buffer, NSArray<MTLCommandBu
 			[CompletionHandlers release];
 		}
 	}];
-	
+    
+    FMetalGPUProfiler::RecordCommandBuffer(Buffer);
+    
 	if (bImmediate)
 	{
 		if (bWait)

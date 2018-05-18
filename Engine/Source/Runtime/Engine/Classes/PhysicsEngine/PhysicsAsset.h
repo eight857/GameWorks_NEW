@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,7 +18,7 @@ class USkeletalBodySetup;
  * PhysicsAsset contains a set of rigid bodies and constraints that make up a single ragdoll.
  * The asset is not limited to human ragdolls, and can be used for any physical simulation using bodies and constraints.
  * A SkeletalMesh has a single PhysicsAsset, which allows for easily turning ragdoll physics on or off for many SkeletalMeshComponents
- * The asset can be configured inside the Physics Asset Editor (PhAT).
+ * The asset can be configured inside the Physics Asset Editor.
  *
  * @see https://docs.unrealengine.com/latest/INT/Engine/Physics/PhAT/Reference/index.html
  * @see USkeletalMesh
@@ -37,8 +37,8 @@ class UPhysicsAsset : public UObject
 	UPROPERTY()
 	class USkeletalMesh * DefaultSkelMesh_DEPRECATED;
 
-	UPROPERTY()
-	TAssetPtr<class USkeletalMesh> PreviewSkeletalMesh;
+	UPROPERTY(AssetRegistrySearchable)
+	TSoftObjectPtr<class USkeletalMesh> PreviewSkeletalMesh;
 
 	UPROPERTY(EditAnywhere, Category = Profiles, meta=(DisableCopyPaste))
 	TArray<FName> PhysicalAnimationProfiles;
@@ -88,6 +88,10 @@ public:
 	 *	Note, this is accessed from within physics engine, so is not safe to change while physics is running
 	 */
 	TMap<FRigidBodyIndexPair,bool>		CollisionDisableTable;
+
+	/** Information for thumbnail rendering */
+	UPROPERTY(VisibleAnywhere, Instanced, Category = Thumbnail)
+	class UThumbnailInfo* ThumbnailInfo;
 
 	//~ Begin UObject Interface
 	virtual void Serialize(FArchive& Ar) override;
@@ -150,11 +154,14 @@ public:
 
 	void GetUsedMaterials(TArray<UMaterialInterface*>& Materials);
 
-	// @todo document
+	// Disable collsion between the bodies specified by index
 	ENGINE_API void DisableCollision(int32 BodyIndexA, int32 BodyIndexB);
 
-	// @todo document
+	// Enable collsion between the bodies specified by index
 	ENGINE_API void EnableCollision(int32 BodyIndexA, int32 BodyIndexB);
+
+	// Check whether the two bodies specified are enabled for collision
+	ENGINE_API bool IsCollisionEnabled(int32 BodyIndexA, int32 BodyIndexB) const;
 
 	/** Update the BoundsBodies array and cache the indices of bodies marked with bConsiderForBounds to BoundsBodies array. */
 	ENGINE_API void UpdateBoundsBodiesArray();
@@ -176,6 +183,16 @@ public:
 #if WITH_EDITOR
 	/** Update skeletal meshes when physics asset changes*/
 	ENGINE_API void RefreshPhysicsAssetChange() const;
+
+	/** Delegate fired when physics asset changes */
+	DECLARE_MULTICAST_DELEGATE_OneParam(FRefreshPhysicsAssetChangeDelegate, const UPhysicsAsset*);
+	ENGINE_API static FRefreshPhysicsAssetChangeDelegate OnRefreshPhysicsAssetChange;
+
+	/** Set the preview mesh for this physics asset */
+	ENGINE_API void SetPreviewMesh(USkeletalMesh* PreviewMesh);
+
+	/** Get the preview mesh for this physics asset */
+	ENGINE_API USkeletalMesh* GetPreviewMesh() const;
 #endif
 
 private:
@@ -247,6 +264,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = PhysicalAnimation)
 	FPhysicalAnimationProfile CurrentPhysicalAnimationProfile;
 #endif
+
+	/** If true we ignore scale changes from animation. This is useful for subtle scale animations like breathing where the physics collision should remain unchanged*/
+	UPROPERTY(EditAnywhere, Category = BodySetup)
+	bool bSkipScaleFromAnimation;
 
 private:
 	UPROPERTY()

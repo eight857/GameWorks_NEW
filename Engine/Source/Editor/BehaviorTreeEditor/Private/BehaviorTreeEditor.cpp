@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BehaviorTreeEditor.h"
 #include "Widgets/Text/STextBlock.h"
@@ -36,7 +36,7 @@
 #include "ScopedTransaction.h"
 #include "BehaviorTreeColors.h"
 
-#include "BehaviorTree/Composites/BTComposite_SimpleParallel.h"
+#include "BehaviorTree/BTCompositeNode.h"
 #include "BehaviorTree/BlackboardData.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/Tasks/BTTask_RunBehavior.h"
@@ -791,7 +791,7 @@ static uint16 GetMaxAllowedRange(const class UBTDecorator* DecoratorOb)
 	UBTCompositeNode* TestParent = DecoratorOb->GetParentNode();
 	while (TestParent)
 	{
-		if (TestParent->IsA(UBTComposite_SimpleParallel::StaticClass()))
+		if (TestParent->IsApplyingDecoratorScope())
 		{
 			MaxRange = TestParent->GetLastExecutionIndex();
 			break;
@@ -904,7 +904,7 @@ void FBehaviorTreeEditor::CreateInternalWidgets()
 	FPropertyEditorModule& PropertyEditorModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>( "PropertyEditor" );
 	FDetailsViewArgs DetailsViewArgs( false, false, true, FDetailsViewArgs::HideNameArea, false );
 	DetailsViewArgs.NotifyHook = this;
-	DetailsViewArgs.DefaultsOnlyVisibility = FDetailsViewArgs::EEditDefaultsOnlyNodeVisibility::Hide;
+	DetailsViewArgs.DefaultsOnlyVisibility = EEditDefaultsOnlyNodeVisibility::Hide;
 	DetailsView = PropertyEditorModule.CreateDetailView( DetailsViewArgs );
 	DetailsView->SetObject( NULL );
 	DetailsView->SetIsPropertyEditingEnabledDelegate(FIsPropertyEditingEnabled::CreateSP(this, &FBehaviorTreeEditor::IsPropertyEditable));

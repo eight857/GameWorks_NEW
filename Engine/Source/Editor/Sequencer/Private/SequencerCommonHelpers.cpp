@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SequencerCommonHelpers.h"
 #include "SequencerSelectedKey.h"
@@ -245,12 +245,19 @@ bool AreKeysSelectedInNode(FSequencer& Sequencer, TSharedRef<FSequencerDisplayNo
 
 void SequencerHelpers::ValidateNodesWithSelectedKeysOrSections(FSequencer& Sequencer)
 {
+	TArray<TSharedRef<FSequencerDisplayNode>> NodesToRemove;
+
 	for (auto Node : Sequencer.GetSelection().GetNodesWithSelectedKeysOrSections())
 	{
 		if (!IsSectionSelectedInNode(Sequencer, Node) && !AreKeysSelectedInNode(Sequencer, Node))
 		{
-			Sequencer.GetSelection().RemoveFromNodesWithSelectedKeysOrSections(Node);
+			NodesToRemove.Add(Node);
 		}
+	}
+
+	for (auto Node : NodesToRemove)
+	{
+		Sequencer.GetSelection().RemoveFromNodesWithSelectedKeysOrSections(Node);
 	}
 }
 
@@ -301,6 +308,7 @@ void SequencerHelpers::UpdateHoveredNodeFromSelectedKeys(FSequencer& Sequencer)
 void SequencerHelpers::PerformDefaultSelection(FSequencer& Sequencer, const FPointerEvent& MouseEvent)
 {
 	FSequencerSelection& Selection = Sequencer.GetSelection();
+	Selection.SuspendBroadcast();
 
 	// @todo: selection in transactions
 	auto ConditionallyClearSelection = [&]{
@@ -316,6 +324,8 @@ void SequencerHelpers::PerformDefaultSelection(FSequencer& Sequencer, const FPoi
 	if (!Hotspot.IsValid())
 	{
 		ConditionallyClearSelection();
+		Selection.ResumeBroadcast();
+		Selection.GetOnOutlinerNodeSelectionChanged().Broadcast();
 		return;
 	}
 
@@ -359,6 +369,8 @@ void SequencerHelpers::PerformDefaultSelection(FSequencer& Sequencer, const FPoi
 			UpdateHoveredNodeFromSelectedSections(Sequencer);
 		}
 		
+		Selection.ResumeBroadcast();
+		Selection.GetOnOutlinerNodeSelectionChanged().Broadcast();
 		return;
 	}
 
@@ -405,6 +417,9 @@ void SequencerHelpers::PerformDefaultSelection(FSequencer& Sequencer, const FPoi
 	{
 		UpdateHoveredNodeFromSelectedSections(Sequencer);
 	}
+
+	Selection.ResumeBroadcast();
+	Selection.GetOnOutlinerNodeSelectionChanged().Broadcast();
 }
 
 TSharedPtr<SWidget> SequencerHelpers::SummonContextMenu(FSequencer& Sequencer, const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)

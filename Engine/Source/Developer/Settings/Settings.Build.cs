@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -10,22 +10,19 @@ public class Settings : ModuleRules
 			new string[]
 			{
 				"Core",
-			}
-		);
+			});
 
-        PrivateDependencyModuleNames.AddRange(
-            new string[]
-            {
+		PrivateDependencyModuleNames.AddRange(
+			new string[]
+			{
 				"CoreUObject",
-            }
-        );
+			});
 
 		PrivateIncludePaths.AddRange(
 			new string[]
-            {
-                "Developer/Settings/Private",
-            }
-		);
+			{
+				"Developer/Settings/Private",
+			});
 
 		PrecompileForTargets = PrecompileTargetsType.Any;
 	}

@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Concurrent;
@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using System.Xml.Serialization;
 using UnrealBuildTool;
 using AutomationTool;
+using Tools.DotNETCommon;
 
 namespace AutomationTool
 {
@@ -143,7 +144,7 @@ namespace AutomationTool
 		public bool Compare(DirectoryReference RootDir)
 		{
 			string Message;
-			if(CompareInternal(RootDir, out Message))
+			if(Compare(RootDir, out Message))
 			{
 				if(Message != null)
 				{
@@ -165,20 +166,9 @@ namespace AutomationTool
 		/// Compare stored for this file with the one on disk, and output an error if they differ.
 		/// </summary>
 		/// <param name="RootDir">Root directory for this branch</param>
-		/// <returns>True if the files are identical, false otherwise</returns>
-		public bool CompareSilent(DirectoryReference RootDir)
-		{
-			string Message;
-			return CompareInternal(RootDir, out Message);
-		}
-
-		/// <summary>
-		/// Compare stored for this file with the one on disk, and output an error if they differ.
-		/// </summary>
-		/// <param name="RootDir">Root directory for this branch</param>
 		/// <param name="Message">Message describing the difference</param>
 		/// <returns>True if the files are identical, false otherwise</returns>
-		bool CompareInternal(DirectoryReference RootDir, out string Message)
+		public bool Compare(DirectoryReference RootDir, out string Message)
 		{
 			FileReference LocalFile = ToFileReference(RootDir);
 
@@ -1116,15 +1106,15 @@ namespace AutomationTool
 			DirectoryReference RootDir = new DirectoryReference(CommandUtils.CmdEnv.LocalRoot);
 
 			DirectoryReference LocalDir = DirectoryReference.Combine(RootDir, "Engine", "Saved", "TestTempStorage-Local");
-			CommandUtils.CreateDirectory_NoExceptions(LocalDir.FullName);
+			CommandUtils.CreateDirectory(LocalDir);
 			CommandUtils.DeleteDirectoryContents(LocalDir.FullName);
 
 			DirectoryReference SharedDir = DirectoryReference.Combine(RootDir, "Engine", "Saved", "TestTempStorage-Shared");
-			CommandUtils.CreateDirectory_NoExceptions(SharedDir.FullName);
+			CommandUtils.CreateDirectory(SharedDir);
 			CommandUtils.DeleteDirectoryContents(SharedDir.FullName);
 
 			DirectoryReference WorkingDir = DirectoryReference.Combine(RootDir, "Engine", "Saved", "TestTempStorage-Working");
-			CommandUtils.CreateDirectory_NoExceptions(WorkingDir.FullName);
+			CommandUtils.CreateDirectory(WorkingDir);
 			CommandUtils.DeleteDirectoryContents(WorkingDir.FullName);
 
 			// Create the temp storage object

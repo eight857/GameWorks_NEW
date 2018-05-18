@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	FXSystem.cpp: Implementation of the effects system.
@@ -94,7 +94,7 @@ namespace FXConsoleVariables
 		TEXT("FX.AllowAsyncTick"),
 		bAllowAsyncTick,
 		TEXT("allow parallel ticking of particle systems."),
-		ECVF_Cheat
+		ECVF_Default
 		);
 	FAutoConsoleVariableRef CVarParticleSlackGPU(
 		TEXT("FX.ParticleSlackGPU"),

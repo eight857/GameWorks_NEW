@@ -1,9 +1,17 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
+#include "CoreTypes.h"
+#include "Containers/Array.h"
+#include "Delegates/Delegate.h"
 #include "IMessageTracer.h"
+#include "Templates/SharedPointer.h"
+
+struct FMessageTracerEndpointInfo;
+struct FMessageTracerMessageInfo;
+struct FMessageTracerTypeInfo;
+
 
 /**
  * Implements a view model for the messaging debugger.

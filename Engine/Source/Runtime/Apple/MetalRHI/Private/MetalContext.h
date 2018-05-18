@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -12,6 +12,7 @@
 #include "MetalCommandList.h"
 #include "MetalRenderPass.h"
 #include "MetalHeap.h"
+#include "MetalCaptureManager.h"
 #if PLATFORM_IOS
 #include "IOSView.h"
 #endif
@@ -49,7 +50,7 @@ public:
 	/**
 	 * Set the color, depth and stencil render targets, and then make the new command buffer/encoder
 	 */
-	void SetRenderTargetsInfo(const FRHISetRenderTargetsInfo& RenderTargetsInfo, bool const bReset = true);
+	void SetRenderTargetsInfo(const FRHISetRenderTargetsInfo& RenderTargetsInfo, bool const bRestart = false);
 	
 	/**
 	 * Allocate from a dynamic ring buffer - by default align to the allowed alignment for offset field when setting buffers
@@ -82,16 +83,18 @@ public:
 	
 	void CopyFromTextureToBuffer(id<MTLTexture> Texture, uint32 sourceSlice, uint32 sourceLevel, MTLOrigin sourceOrigin, MTLSize sourceSize, id<MTLBuffer> toBuffer, uint32 destinationOffset, uint32 destinationBytesPerRow, uint32 destinationBytesPerImage, MTLBlitOption options);
 	
-	void CopyFromBufferToTexture(id<MTLBuffer> Buffer, uint32 sourceOffset, uint32 sourceBytesPerRow, uint32 sourceBytesPerImage, MTLSize sourceSize, id<MTLTexture> toTexture, uint32 destinationSlice, uint32 destinationLevel, MTLOrigin destinationOrigin);
+	void CopyFromBufferToTexture(id<MTLBuffer> Buffer, uint32 sourceOffset, uint32 sourceBytesPerRow, uint32 sourceBytesPerImage, MTLSize sourceSize, id<MTLTexture> toTexture, uint32 destinationSlice, uint32 destinationLevel, MTLOrigin destinationOrigin, MTLBlitOption options);
 	
 	void CopyFromTextureToTexture(id<MTLTexture> Texture, uint32 sourceSlice, uint32 sourceLevel, MTLOrigin sourceOrigin, MTLSize sourceSize, id<MTLTexture> toTexture, uint32 destinationSlice, uint32 destinationLevel, MTLOrigin destinationOrigin);
 	
 	void CopyFromBufferToBuffer(id<MTLBuffer> SourceBuffer, NSUInteger SourceOffset, id<MTLBuffer> DestinationBuffer, NSUInteger DestinationOffset, NSUInteger Size);
 	
-    void AsyncCopyFromBufferToTexture(id<MTLBuffer> Buffer, uint32 sourceOffset, uint32 sourceBytesPerRow, uint32 sourceBytesPerImage, MTLSize sourceSize, id<MTLTexture> toTexture, uint32 destinationSlice, uint32 destinationLevel, MTLOrigin destinationOrigin);
+    bool AsyncCopyFromBufferToTexture(id<MTLBuffer> Buffer, uint32 sourceOffset, uint32 sourceBytesPerRow, uint32 sourceBytesPerImage, MTLSize sourceSize, id<MTLTexture> toTexture, uint32 destinationSlice, uint32 destinationLevel, MTLOrigin destinationOrigin, MTLBlitOption options);
     
-    void AsyncCopyFromTextureToTexture(id<MTLTexture> Texture, uint32 sourceSlice, uint32 sourceLevel, MTLOrigin sourceOrigin, MTLSize sourceSize, id<MTLTexture> toTexture, uint32 destinationSlice, uint32 destinationLevel, MTLOrigin destinationOrigin);
+    bool AsyncCopyFromTextureToTexture(id<MTLTexture> Texture, uint32 sourceSlice, uint32 sourceLevel, MTLOrigin sourceOrigin, MTLSize sourceSize, id<MTLTexture> toTexture, uint32 destinationSlice, uint32 destinationLevel, MTLOrigin destinationOrigin);
     
+    void AsyncCopyFromBufferToBuffer(id<MTLBuffer> SourceBuffer, NSUInteger SourceOffset, id<MTLBuffer> DestinationBuffer, NSUInteger DestinationOffset, NSUInteger Size);
+	
     void AsyncGenerateMipmapsForTexture(id<MTLTexture> Texture);
     
 	void SubmitAsyncCommands(MTLCommandBufferHandler ScheduledHandler, MTLCommandBufferHandler CompletionHandler, bool const bWait);
@@ -173,6 +176,7 @@ public:
 	void ReleaseResource(id<MTLResource> Object);
 	void ReleaseTexture(FMetalSurface* Surface, id<MTLTexture> Texture);
 	void ReleaseFence(id<MTLFence> Fence);
+	void ReleaseHeap(id<MTLHeap> Heap);
 	
 	void BeginFrame();
 	void FlushFreeList();
@@ -186,7 +190,7 @@ public:
 	void EndScene();
 	
 	void BeginDrawingViewport(FMetalViewport* Viewport);
-	void EndDrawingViewport(FMetalViewport* Viewport, bool bPresent);
+	void EndDrawingViewport(FMetalViewport* Viewport, bool bPresent, bool bLockToVsync);
 	
 	/** Take a parallel FMetalContext from the free-list or allocate a new one if required */
 	FMetalRHICommandContext* AcquireContext(int32 NewIndex, int32 NewNum);
@@ -213,14 +217,19 @@ private:
 	/** Dynamic memory heap */
 	FMetalHeap Heap;
 	
+	/** GPU Frame Capture Manager */
+	FMetalCaptureManager CaptureManager;
+	
 	/** Free lists for releasing objects only once it is safe to do so */
 	TSet<id> ObjectFreeList;
 	TSet<id<MTLResource>> ResourceFreeList;
+	TSet<id<MTLHeap>> HeapFreeList;
 	struct FMetalDelayedFreeList
 	{
 		dispatch_semaphore_t Signal;
 		TSet<id> ObjectFreeList;
 		TSet<id<MTLResource>> ResourceFreeList;
+		TSet<id<MTLHeap>> HeapFreeList;
 #if METAL_DEBUG_OPTIONS
 		int32 DeferCount;
 #endif
@@ -255,4 +264,7 @@ private:
 	
 	/** Count of concurrent contexts encoding commands. */
 	int32 ActiveContexts;
+	
+	/** Whether we presented this frame - only used to track when to introduce debug markers */
+	bool bPresented;
 };

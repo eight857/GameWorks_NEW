@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TranslationDataManager.h"
 #include "Internationalization/InternationalizationManifest.h"
@@ -490,8 +490,8 @@ void FTranslationDataManager::GetHistoryForTranslationUnits()
 				}
 				else
 				{
-					ProjectName = FApp::GetGameName();
-					SavedDir = FPaths::GameSavedDir();
+					ProjectName = FApp::GetProjectName();
+					SavedDir = FPaths::ProjectSavedDir();
 				}
 
 				FString TempFileName = SavedDir / "CachedTranslationHistory" / "UE4-Manifest-" + ProjectName + "-" + FPaths::GetBaseFilename(InManifestFilePath) + "-Rev-" + FString::FromInt(Revision->GetRevisionNumber());
@@ -729,8 +729,14 @@ void FTranslationDataManager::LoadFromArchive(TArray<UTranslationUnit*>& InTrans
 				if (ArchiveEntry.IsValid())
 				{
 					const FString PreviousTranslation = TranslationUnit->Translation;
-					TranslationUnit->Translation = ""; // Reset to null string
-					const FString TranslatedString = ArchiveEntry->Translation.Text;
+					TranslationUnit->Translation.Reset();
+
+					FString TranslatedString = ArchiveEntry->Translation.Text;
+					if (!ArchiveEntry->Source.Text.Equals(TranslationUnit->Source, ESearchCase::CaseSensitive))
+					{
+						// Stale translation
+						TranslatedString.Reset();
+					}
 
 					if (TranslatedString.IsEmpty())
 					{
@@ -782,9 +788,9 @@ void FTranslationDataManager::LoadFromArchive(TArray<UTranslationUnit*>& InTrans
 						if (PreviousTranslation != TranslationUnit->Translation)
 						{
 							FString PreviousTranslationTrimmed = PreviousTranslation;
-							PreviousTranslationTrimmed.Trim().TrimTrailing();
+							PreviousTranslationTrimmed.TrimStartAndEndInline();
 							FString CurrentTranslationTrimmed = TranslationUnit->Translation;
-							CurrentTranslationTrimmed.Trim().TrimTrailing();
+							CurrentTranslationTrimmed.TrimStartAndEndInline();
 							// Ignore changes to only whitespace at beginning and/or end of string on import
 							if (PreviousTranslationTrimmed == CurrentTranslationTrimmed)
 							{
@@ -957,7 +963,7 @@ bool FTranslationDataManager::SaveSelectedTranslations(TArray<UTranslationUnit*>
 
 				if (bSaveChangesToTranslationService)
 				{
-					FString UploadFilePath = FPaths::GameSavedDir() / "Temp" / CultureName / ManifestAndArchiveName + ".po";
+					FString UploadFilePath = FPaths::ProjectSavedDir() / "Temp" / CultureName / ManifestAndArchiveName + ".po";
 					FFileHelper::SaveStringToFile(PortableObjectDom.ToString(), *UploadFilePath);
 
 					FGuid LocalizationTargetGuid = LocalizationTarget->Settings.Guid;
@@ -966,7 +972,7 @@ bool FTranslationDataManager::SaveSelectedTranslations(TArray<UTranslationUnit*>
 					TSharedRef<FUploadLocalizationTargetFile, ESPMode::ThreadSafe> UploadTargetFileOp = ILocalizationServiceOperation::Create<FUploadLocalizationTargetFile>();
 					UploadTargetFileOp->SetInTargetGuid(LocalizationTargetGuid);
 					UploadTargetFileOp->SetInLocale(CultureName);
-					FPaths::MakePathRelativeTo(UploadFilePath, *FPaths::GameDir());
+					FPaths::MakePathRelativeTo(UploadFilePath, *FPaths::ProjectDir());
 					UploadTargetFileOp->SetInRelativeInputFilePathAndName(UploadFilePath);
 					UploadTargetFileOp->SetPreserveAllText(true);
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CookedIterativeNetworkFile.h"
 #include "Templates/ScopedPointer.h"
@@ -305,7 +305,6 @@ bool FCookedIterativeNetworkFile::ShouldBeUsed(IPlatformFile* Inner, const TCHAR
 FCookedIterativeNetworkFile::~FCookedIterativeNetworkFile()
 {
 }
-
 
 /**
  * Module for the streaming file

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -11,8 +11,7 @@ namespace UnrealBuildTool.Rules
 				{
 					"Core",
 					"CoreUObject",
-				}
-			); 
+				});
 
 			PrivateIncludePaths.AddRange(
 				new string[] {
@@ -20,8 +19,7 @@ namespace UnrealBuildTool.Rules
 					"Runtime/Messaging/Private/Bus",
 					"Runtime/Messaging/Private/Bridge",
 					"Runtime/Messaging/Private/Serialization",
-				}
-			);
+				});
 		}
 	}
 }

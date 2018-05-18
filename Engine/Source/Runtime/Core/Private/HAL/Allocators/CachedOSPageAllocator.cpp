@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HAL/Allocators/CachedOSPageAllocator.h"
 #include "HAL/UnrealMemory.h"
 #include "Logging/LogMacros.h"
 #include "CoreGlobals.h"
+#include "HAL/LowLevelMemTracker.h"
 
 
 void* FCachedOSPageAllocator::AllocateImpl(SIZE_T Size, uint32 CachedByteLimit, FFreePageBlock* First, FFreePageBlock* Last, uint32& FreedPageBlocksNum, uint32& CachedTotal)
@@ -54,23 +55,27 @@ void* FCachedOSPageAllocator::AllocateImpl(SIZE_T Size, uint32 CachedByteLimit, 
 				return Result;
 			}
 
-			if (void* Ptr = FPlatformMemory::BinnedAllocFromOS(Size))
+		{
+			LLM_PLATFORM_SCOPE(ELLMTag::FMalloc);
+			if(void* Ptr = FPlatformMemory::BinnedAllocFromOS(Size))
 			{
 				return Ptr;
 			}
+		}
 
 			// Are we holding on to much mem? Release it all.
 			for (FFreePageBlock* Block = First; Block != Last; ++Block)
 			{
 				FPlatformMemory::BinnedFreeToOS(Block->Ptr, Block->ByteSize);
-				Block->Ptr      = nullptr;
+				Block->Ptr = nullptr;
 				Block->ByteSize = 0;
 			}
 			FreedPageBlocksNum = 0;
-			CachedTotal        = 0;
+			CachedTotal = 0;
 		}
 	}
 
+	LLM_PLATFORM_SCOPE(ELLMTag::FMalloc);
 	return FPlatformMemory::BinnedAllocFromOS(Size);
 }
 

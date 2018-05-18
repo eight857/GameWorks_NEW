@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -20,6 +20,16 @@ public:
 	{
 #if WITH_PHYSX
 		OwningSimulation.GetLowLevelBody(ActorDataIndex).body2World = U2PTransform(ActorToBody * WorldTM);
+#endif
+	}
+
+	/** Sets the kinematic target. This will affect velocities as expected*/
+	void SetKinematicTarget(const FTransform& WorldTM)
+	{
+#if WITH_PHYSX
+		FKinematicTarget& KinematicTarget = OwningSimulation.GetKinematicTarget(ActorDataIndex);
+		KinematicTarget.BodyToWorld = U2PTransform(ActorToBody * WorldTM);
+		KinematicTarget.bTargetSet = true;
 #endif
 	}
 
@@ -75,6 +85,13 @@ public:
 #endif
 	}
 
+	void AddForce(const FVector& Force)
+	{
+#if WITH_PHYSX
+		OwningSimulation.AddForce(ActorDataIndex, Force);
+#endif
+	}
+
 	void AddRadialForce(const FVector& Origin, float Strength, float Radius, ERadialImpulseFalloff Falloff, FSimulation::EForceType ForceType)
 	{
 #if WITH_PHYSX
@@ -96,7 +113,7 @@ public:
 #if WITH_PHYSX
 		return OwningSimulation.GetLowLevelBody(ActorDataIndex).linearDamping;
 #else
-		return 0.f
+		return 0.f;
 #endif
 	}
 
@@ -114,7 +131,7 @@ public:
 #if WITH_PHYSX
 		return OwningSimulation.GetLowLevelBody(ActorDataIndex).angularDamping;
 #else
-		return 0.f
+		return 0.f;
 #endif
 	}
 
@@ -132,7 +149,7 @@ public:
 #if WITH_PHYSX
 		return OwningSimulation.GetLowLevelBody(ActorDataIndex).maxLinearVelocitySq;
 #else
-		return 0.f
+		return 0.f;
 #endif
 	}
 
@@ -150,7 +167,7 @@ public:
 #if WITH_PHYSX
 		return OwningSimulation.GetLowLevelBody(ActorDataIndex).maxAngularVelocitySq;
 #else
-		return 0.f
+		return 0.f;
 #endif
 	}
 
@@ -168,7 +185,7 @@ public:
 #if WITH_PHYSX
 		return OwningSimulation.GetLowLevelBody(ActorDataIndex).invMass;
 #else
-		return 0.f
+		return 0.f;
 #endif
 	}
 
@@ -186,7 +203,7 @@ public:
 #if WITH_PHYSX
 		return P2UVector(OwningSimulation.GetLowLevelBody(ActorDataIndex).invInertia);
 #else
-		return 0.f
+		return FVector(0.f);
 #endif
 	}
 
@@ -204,7 +221,7 @@ public:
 #if WITH_PHYSX
 		return OwningSimulation.GetLowLevelBody(ActorDataIndex).maxDepenetrationVelocity;
 #else
-		return 0.f
+		return 0.f;
 #endif
 	}
 
@@ -222,7 +239,7 @@ public:
 #if WITH_PHYSX
 		return OwningSimulation.GetLowLevelBody(ActorDataIndex).maxContactImpulse;
 #else
-		return 0.f
+		return 0.f;
 #endif
 	}
 

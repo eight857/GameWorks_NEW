@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DataTableUtils.h"
 #include "UObject/UnrealType.h"
 #include "UObject/TextProperty.h"
+#include "Engine/DataTable.h"
 #include "Engine/UserDefinedEnum.h"
 #include "Engine/UserDefinedStruct.h"
 #include "Policies/PrettyJsonPrintPolicy.h"
@@ -167,9 +168,9 @@ void GetPropertyValueAsStringDirect(const UProperty* InProp, const uint8* InData
 
 			int32 NumWrittenSetEntries = 0;
 			FScriptSetHelper SetHelper(SetProp, InData);
-			for (int32 SetEntryIndex = 0; SetEntryIndex < SetHelper.Num(); ++SetEntryIndex)
+			for (int32 SetSparseIndex = 0; SetSparseIndex < SetHelper.GetMaxIndex(); ++SetSparseIndex)
 			{
-				if (SetHelper.IsValidIndex(SetEntryIndex))
+				if (SetHelper.IsValidIndex(SetSparseIndex))
 				{
 					if (NumWrittenSetEntries++ > 0)
 					{
@@ -177,7 +178,7 @@ void GetPropertyValueAsStringDirect(const UProperty* InProp, const uint8* InData
 						OutString.AppendChar(' ');
 					}
 
-					const uint8* SetEntryData = SetHelper.GetElementPtr(SetEntryIndex);
+					const uint8* SetEntryData = SetHelper.GetElementPtr(SetSparseIndex);
 					OutString.Append(ExportStructAsJson(StructInner->Struct, SetEntryData));
 				}
 			}
@@ -191,9 +192,9 @@ void GetPropertyValueAsStringDirect(const UProperty* InProp, const uint8* InData
 
 			int32 NumWrittenMapEntries = 0;
 			FScriptMapHelper MapHelper(MapProp, InData);
-			for (int32 MapEntryIndex = 0; MapEntryIndex < MapHelper.Num(); ++MapEntryIndex)
+			for (int32 MapSparseIndex = 0; MapSparseIndex < MapHelper.GetMaxIndex(); ++MapSparseIndex)
 			{
-				if (MapHelper.IsValidIndex(MapEntryIndex))
+				if (MapHelper.IsValidIndex(MapSparseIndex))
 				{
 					if (NumWrittenMapEntries++ > 0)
 					{
@@ -201,8 +202,8 @@ void GetPropertyValueAsStringDirect(const UProperty* InProp, const uint8* InData
 						OutString.AppendChar(' ');
 					}
 
-					const uint8* MapKeyData = MapHelper.GetKeyPtr(MapEntryIndex);
-					const uint8* MapValueData = MapHelper.GetValuePtr(MapEntryIndex);
+					const uint8* MapKeyData = MapHelper.GetKeyPtr(MapSparseIndex);
+					const uint8* MapValueData = MapHelper.GetValuePtr(MapSparseIndex);
 
 					OutString.AppendChar('"');
 					GetPropertyValueAsStringDirect(MapHelper.GetKeyProperty(), MapKeyData, InPortFlags, InDTExportFlags, OutString);
@@ -427,7 +428,8 @@ FName DataTableUtils::MakeValidName(const FString& InString)
 
 bool DataTableUtils::IsSupportedTableProperty(const UProperty* InProp)
 {
-	return(	InProp->IsA(UIntProperty::StaticClass()) || 
+	return( InProp &&
+			(InProp->IsA(UIntProperty::StaticClass()) || 
 			InProp->IsA(UNumericProperty::StaticClass()) ||
 			InProp->IsA(UDoubleProperty::StaticClass()) ||
 			InProp->IsA(UFloatProperty::StaticClass()) ||
@@ -441,7 +443,7 @@ bool DataTableUtils::IsSupportedTableProperty(const UProperty* InProp)
 			InProp->IsA(UArrayProperty::StaticClass()) ||
 			InProp->IsA(USetProperty::StaticClass()) ||
 			InProp->IsA(UMapProperty::StaticClass()) ||
-			InProp->IsA(UEnumProperty::StaticClass())
+			InProp->IsA(UEnumProperty::StaticClass()))
 			);
 }
 
@@ -477,4 +479,29 @@ FString DataTableUtils::GetPropertyDisplayName(const UProperty* Prop, const FStr
 #else  // WITH_EDITOR
 	return DefaultName;
 #endif // WITH_EDITOR
+}
+
+TArray<FString> DataTableUtils::GetColumnDataAsString(const UDataTable* InTable, const FName& PropertyName, const EDataTableExportFlags InDTExportFlags)
+{
+	TArray<FString> Result;
+	if (!ensure(InTable))
+	{
+		return Result;
+	}
+	if (!ensure(PropertyName != NAME_None))
+	{
+		return Result;
+	}
+
+	UProperty* ColumnProperty = InTable->FindTableProperty(PropertyName);
+	if (ColumnProperty)
+	{
+		for (auto RowIt = InTable->RowMap.CreateConstIterator(); RowIt; ++RowIt)
+		{
+			uint8* RowData = RowIt.Value();
+			Result.Add(GetPropertyValueAsString(ColumnProperty, RowData, InDTExportFlags));
+		}
+	}
+
+	return Result;
 }

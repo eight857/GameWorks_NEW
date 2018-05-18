@@ -10,8 +10,8 @@ public class GoogleInstantPreview : ModuleRules
 	{
         Type = ModuleType.External;
 
-		string GoogleInstantPreviewTargetDir = Path.Combine(UEBuildConfiguration.UEThirdPartyBinariesDirectory, "GoogleInstantPreview");
-		string GoogleInstantPreviewSourceDir = Path.Combine(UEBuildConfiguration.UEThirdPartySourceDirectory, "GoogleInstantPreview");
+		string GoogleInstantPreviewTargetDir = Path.Combine(Target.UEThirdPartyBinariesDirectory, "GoogleInstantPreview");
+		string GoogleInstantPreviewSourceDir = Path.Combine(Target.UEThirdPartySourceDirectory, "GoogleInstantPreview");
 
 		PublicIncludePaths.Add(GoogleInstantPreviewSourceDir);
 
@@ -35,7 +35,7 @@ public class GoogleInstantPreview : ModuleRules
                 {
                     PublicDelayLoadDLLs.Add(dll);
                     string dllPath = Path.Combine(IpSharedLibTargetDir, dll);
-                    RuntimeDependencies.Add(new RuntimeDependency(dllPath));
+                    RuntimeDependencies.Add(dllPath);
                 }
             }
             else if (Target.Platform == UnrealTargetPlatform.Mac)
@@ -52,7 +52,7 @@ public class GoogleInstantPreview : ModuleRules
                     
                     string dylibPath = Path.Combine(IpSharedLibTargetDir, dylib);
                     PublicDelayLoadDLLs.Add(dylibPath);
-                    RuntimeDependencies.Add(new RuntimeDependency(dylibPath));
+                    RuntimeDependencies.Add(dylibPath);
                     
                 }
             }

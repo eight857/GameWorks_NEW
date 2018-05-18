@@ -1,17 +1,23 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
+#include "CoreTypes.h"
+#include "Internationalization/Text.h"
 #include "Misc/Attribute.h"
+#include "SlateOptMacros.h"
+#include "Templates/SharedPointer.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SWidget.h"
-#include "Models/MessagingDebuggerModel.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Views/STableViewBase.h"
 #include "Widgets/Views/STableRow.h"
 #include "Widgets/Views/SListView.h"
-#include "SlateOptMacros.h"
-#include "Widgets/Input/SCheckBox.h"
+
+class FMessagingDebuggerModel;
+
+struct FMessageTracerTypeInfo;
+
 
 /**
  * Implements a row widget for the message type list.

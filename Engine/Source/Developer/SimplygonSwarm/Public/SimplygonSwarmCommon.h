@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -11,7 +11,7 @@
 THIRD_PARTY_INCLUDES_START
 #include "ssf.h"
 THIRD_PARTY_INCLUDES_END
-#include "Interfaces/IImageWrapper.h"
+#include "IImageWrapper.h"
 #include "SPLInclude.h"
 
 namespace SPL = Simplygon::SPL::v80;

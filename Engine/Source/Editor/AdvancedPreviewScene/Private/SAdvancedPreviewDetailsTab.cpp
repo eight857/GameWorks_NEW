@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SAdvancedPreviewDetailsTab.h"
 #include "Editor/EditorPerProjectUserSettings.h"
@@ -52,8 +52,8 @@ void SAdvancedPreviewDetailsTab::Construct(const FArguments& InArgs, const TShar
 	DefaultSettings = UAssetViewerSettings::Get();
 	AdditionalSettings = InArgs._AdditionalSettings;
 	ProfileIndex = PerProjectSettings->AssetViewerProfileIndex;
-	DetailCustomizations = MoveTemp(InArgs._DetailCustomizations);
-	PropertyTypeCustomizations = MoveTemp(InArgs._PropertyTypeCustomizations);
+	DetailCustomizations = InArgs._DetailCustomizations;
+	PropertyTypeCustomizations = InArgs._PropertyTypeCustomizations;
 
 	CreateSettingsView();
 
@@ -242,13 +242,13 @@ void SAdvancedPreviewDetailsTab::CreateSettingsView()
 	FDetailsViewArgs DetailsViewArgs(
 		/*bUpdateFromSelection=*/ false,
 		/*bLockable=*/ false,
-		/*bAllowSearch=*/ false,
+		/*bAllowSearch=*/ true,
 		FDetailsViewArgs::HideNameArea,
 		/*bHideSelectionTip=*/ true,
 		/*InNotifyHook=*/ nullptr,
 		/*InSearchInitialKeyFocus=*/ false,
 		/*InViewIdentifier=*/ NAME_None);
-	DetailsViewArgs.DefaultsOnlyVisibility = FDetailsViewArgs::EEditDefaultsOnlyNodeVisibility::Automatic;
+	DetailsViewArgs.DefaultsOnlyVisibility = EEditDefaultsOnlyNodeVisibility::Automatic;
 	DetailsViewArgs.bShowOptions = false;
 	DetailsViewArgs.bAllowMultipleTopLevelObjects = true;
 
@@ -261,7 +261,7 @@ void SAdvancedPreviewDetailsTab::CreateSettingsView()
 
 	for (const FAdvancedPreviewSceneModule::FPropertyTypeCustomizationInfo& PropertyTypeCustomizationInfo : PropertyTypeCustomizations)
 	{
-		EditModule.RegisterCustomPropertyTypeLayout(PropertyTypeCustomizationInfo.StructName, PropertyTypeCustomizationInfo.OnGetPropertyTypeCustomizationInstance, nullptr, SettingsView);
+		SettingsView->RegisterInstancedCustomPropertyTypeLayout(PropertyTypeCustomizationInfo.StructName, PropertyTypeCustomizationInfo.OnGetPropertyTypeCustomizationInstance);
 	}
 
 	class FDetailRootObjectCustomization : public IDetailRootObjectCustomization

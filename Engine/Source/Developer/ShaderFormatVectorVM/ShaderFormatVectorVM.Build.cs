@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -10,7 +10,6 @@ public class ShaderFormatVectorVM : ModuleRules
         PrivateIncludePathModuleNames.AddRange(
             new string[] {
                 "TargetPlatform",
-                "NiagaraEditor"
                 }
             );
 
@@ -23,7 +22,6 @@ public class ShaderFormatVectorVM : ModuleRules
 				"ShaderCompilerCommon",
 				"ShaderPreprocessor",
             	"VectorVM",
-                "Niagara",
                 }
 			);
 

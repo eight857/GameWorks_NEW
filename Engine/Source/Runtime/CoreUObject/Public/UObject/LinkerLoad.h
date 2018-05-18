@@ -1,16 +1,16 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Serialization/ArchiveUObject.h"
 #include "UObject/LazyObjectPtr.h"
-#include "Misc/StringAssetReference.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 #include "UObject/ObjectResource.h"
 #include "UObject/Linker.h"
 
 class FLinkerPlaceholderBase;
+class ULinkerPlaceholderExportObject;
 struct FScopedSlowTask;
 struct FUntypedBulkData;
 
@@ -148,6 +148,11 @@ public:
 	*/
 	TArray<FPackageIndex> PreloadDependencies;
 
+	/**
+	*  List of external read dependencies that must be finished to load this package
+	*/
+	TArray<FExternalReadCallback> ExternalReadDependencies;
+
 	/** 
 	 * Utility functions to query the object name redirects list for previous names for a class
 	 * @param CurrentClassPath The current name of the class, with a full path
@@ -225,6 +230,8 @@ private:
 
 	/** Whether we already serialized the package file summary.																*/
 	bool					bHasSerializedPackageFileSummary;
+	/** Whether we already serialized preload dependencies.																*/
+	bool					bHasSerializedPreloadDependencies;
 	/** Whether we already fixed up import map.																				*/
 	bool					bHasFixedUpImportMap;
 	/** Whether we already matched up existing exports.																		*/
@@ -563,6 +570,20 @@ public:
 	/** Used by Matinee to fixup component renaming */
 	COREUOBJECT_API static FName FindSubobjectRedirectName(const FName& Name, UClass* Class);
 
+	/** 
+	 * Adds external read dependency 
+	 *
+	 * @return true if dependency has been added
+	 */
+	virtual bool AttachExternalReadDependency(FExternalReadCallback& ReadCallback) override;
+
+	/**
+	 * Finalizes external dependencies till time limit is exceeded
+	 *
+	 * @return true if all dependencies are finished, false otherwise
+	 */
+	bool FinishExternalReadDependencies(double TimeLimit);
+
 private:
 #if WITH_EDITOR
 
@@ -599,6 +620,7 @@ private:
 	 */
 	UClass* GetExportLoadClass(int32 ExportIndex);
 
+#if WITH_EDITORONLY_DATA
 	/** 
 	 * Looks for and loads meta data object from export map.
 	 *
@@ -609,6 +631,7 @@ private:
 	 *         INDEX_NONE otherwise.
 	 */
 	int32 LoadMetaDataFromExportMap(bool bForcePreload);
+#endif
 
 	UObject* CreateImport( int32 Index );
 
@@ -725,12 +748,12 @@ private:
 		return Ar;
 	}
 
-	FORCEINLINE virtual FArchive& operator<<(FAssetPtr& AssetPtr) override
+	FORCEINLINE virtual FArchive& operator<<(FSoftObjectPtr& Value) override
 	{
 		FArchive& Ar = *this;
-		FStringAssetReference ID;
+		FSoftObjectPath ID;
 		ID.Serialize(Ar);
-		AssetPtr = ID;
+		Value = ID;
 		return Ar;
 	}
 	void BadNameIndexError(NAME_INDEX NameIndex);
@@ -936,9 +959,10 @@ private:
 	 * scenarios involving Blueprinted components.
 	 * 
 	 * @param  ExportIndex    Identifies the export you want deferred.
+	 * @param Outer			The outer of the export to potentially defer
 	 * @return True if the export has been deferred (and should not be loaded).
 	 */
-	bool DeferExportCreation(const int32 ExportIndex);
+	bool DeferExportCreation(const int32 ExportIndex, UObject* Outer);
 
 	/**
 	 * Iterates through this linker's ExportMap, looking for the corresponding
@@ -1008,6 +1032,9 @@ private:
 	 * @param  LoadClass    A fully loaded/serialized class that may have property references to placeholder export objects (in need of fix-up).
 	 */
 	void ResolveDeferredExports(UClass* LoadClass);
+
+	/** Helper function to recursively resolve placeholders that were waiting for their outer */
+	void ResolvedDeferredSubobjects(ULinkerPlaceholderExportObject* OwningPlaceholder);
 
 	/**
 	 * Sometimes we have to instantiate an export object that is of an imported 

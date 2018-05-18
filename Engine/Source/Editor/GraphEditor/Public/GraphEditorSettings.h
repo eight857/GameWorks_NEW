@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -158,11 +158,11 @@ public:
 
 	/** Asset pin type color */
 	UPROPERTY(EditAnywhere, config, Category = PinColors)
-	FLinearColor AssetPinTypeColor;
+	FLinearColor SoftObjectPinTypeColor;
 
 	/** Asset Class pin type color */
 	UPROPERTY(EditAnywhere, config, Category = PinColors)
-	FLinearColor AssetClassPinTypeColor;
+	FLinearColor SoftClassPinTypeColor;
 
 	/** Delegate pin type color */
 	UPROPERTY(EditAnywhere, config, Category=PinColors)
@@ -245,6 +245,10 @@ public:
 	/** Default Comment node title color */
 	UPROPERTY(EditAnywhere, config, Category=NodeTitleColors)
 	FLinearColor DefaultCommentNodeTitleColor;
+
+	/** Preview node title color */
+	UPROPERTY(EditAnywhere, config, Category = NodeTitleColors)
+	FLinearColor PreviewNodeTitleColor;
 
 public:
 	/** The thickness of a data wire */

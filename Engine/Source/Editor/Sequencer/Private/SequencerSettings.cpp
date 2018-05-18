@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SequencerSettings.h"
 #include "KeyParams.h"
@@ -31,6 +31,7 @@ USequencerSettings::USequencerSettings( const FObjectInitializer& ObjectInitiali
 	CurveValueSnapInterval = 10.0f;
 	bSnapCurveValueToInterval = true;
 	bLabelBrowserVisible = false;
+	bShowSelectedNodesOnly = false;
 	bRewindOnRecord = true;
 	ZoomPosition = ESequencerZoomPosition::SZP_CurrentTime;
 	bAutoScrollEnabled = false;
@@ -49,7 +50,9 @@ USequencerSettings::USequencerSettings( const FObjectInitializer& ObjectInitiali
 	bAllowPossessionOfPIEViewports = false;
 	bActivateRealtimeViewports = true;
 	bEvaluateSubSequencesInIsolation = false;
+	bRerunConstructionScripts = false;
 	bVisualizePreAndPostRoll = true;
+	TrajectoryPathCap = 250;
 }
 
 void USequencerSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
@@ -415,6 +418,22 @@ void USequencerSettings::SetLabelBrowserVisible(bool Visible)
 	}
 }
 
+bool USequencerSettings::GetShowSelectedNodesOnly() const
+{
+	return bShowSelectedNodesOnly;
+}
+
+void USequencerSettings::SetShowSelectedNodesOnly(bool Visible)
+{
+	if (bShowSelectedNodesOnly != Visible)
+	{
+		bShowSelectedNodesOnly = Visible;
+		SaveConfig();
+
+		OnShowSelectedNodesOnlyChangedEvent.Broadcast();
+	}
+}
+
 bool USequencerSettings::ShouldRewindOnRecord() const
 {
 	return bRewindOnRecord;
@@ -700,6 +719,20 @@ void USequencerSettings::SetEvaluateSubSequencesInIsolation(bool bInEvaluateSubS
 		SaveConfig();
 
 		OnEvaluateSubSequencesInIsolationChangedEvent.Broadcast();
+	}
+}
+
+bool USequencerSettings::ShouldRerunConstructionScripts() const
+{
+	return bRerunConstructionScripts;
+}
+
+void USequencerSettings::SetRerunConstructionScripts(bool bInRerunConstructionScripts)
+{
+	if (bRerunConstructionScripts != bInRerunConstructionScripts)
+	{
+		bRerunConstructionScripts = bInRerunConstructionScripts;
+		SaveConfig();
 	}
 }
 

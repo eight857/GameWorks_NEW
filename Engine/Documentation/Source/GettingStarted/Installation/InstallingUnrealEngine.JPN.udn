@@ -1,5 +1,4 @@
-﻿INTSourceChangelist:2719402
-Availability:Public
+﻿Availability:Public
 Title:アンリアル エンジンのインストール方法
 Description:アンリアル エンジンのインストール手順
 Crumbs: %ROOT%, GettingStarted
@@ -12,23 +11,27 @@ Related:Support/Builds
 Version:4.9
 SkillLevel:Beginner
 
-このクイックスタートの最後まで進むと、以下ができるようになります。
+このチュートリアルを完了すると、以下のことができるようになります。
 
-*	[エピック ゲームズのアカウントを作成する _(まだアカウントをお持ちでない場合)_ ](#Bookmark1)
-*	[インストーラ (エピック ゲームズのランチャー セットアップ プログラム) をダウンロードして実行する](#Bookmark2)
-*	[エピック ゲームズのランチャーにサインインする](#Bookmark3)
-*	[アンリアル エンジンをインストールする](#Bookmark4)
+*	 [エピック ゲームズのアカウントを作成する (まだお持ちない場合)](#Bookmark1)
+*	 [インストーラをダウンロードして実行する (エピック ゲームズのランチャー セットアップ プログラム)](#Bookmark2)
+*	 [エピック ゲームズのランチャーにサインインする](#Bookmark3)
+*	 [アンリアル エンジンをインストールする](#Bookmark4)
 *	[アンリアル エンジンを起動する](#Bookmark5)
 
 ![](InstallationGoal.png)
 
-会員登録者はエピック ゲームズのランチャーで、UE4 の更新をダウンロードし、インストールすることができます。
+登録者はエピック ゲームズのランチャーで、UE4 の更新をダウンロードし、インストールすることができます。
 
 [REGION:warning]
 エピック ゲームズのアカウントを既にお持ちの場合は、スキップして先に進み、[インストーラをダウンロードして実行する](#Bookmark2) について学習しましょう。
 [/REGION]
 
 (#Bookmark1)
+
+## エピック ゲームズのアカウントを作成する
+
+エピック ゲームズのランチャーを実行するには、有効なエピック ゲームズのアカウントを持っている必要があります。
 
 [INCLUDE:GettingStarted/AccountSetup#epicAccount]
 
@@ -51,8 +54,14 @@ SkillLevel:Beginner
 	active_button_content
 	[/PARAMLITERAL]
 	[PARAM:content]
-	1.	インストーラを入手するには、**[Download]** ボタンを **クリック** します。
+	[INCLUDE:#windows_install]
+	[/PARAM]
+[/OBJECT]
 
+[COMMENT:none]
+
+[EXCERPT:windows_install]
+1.	インストーラを入手するには、**[Download]** ボタンを **クリック** します。
 	![](Download_Screen.png)
 
 	1.	ダウンロードが完了したら、インストーラを **実行** します。
@@ -62,8 +71,10 @@ SkillLevel:Beginner
 	1.	**[Epic Games Launcher Setup (エピック ゲームズのランチャー セットアップ)]** ダイアログ ボックスが表示されたら、**[Install]** ボタンを **クリック** します。
 
 	![](RunEpicLauncherSetup.png)
-	[/PARAM]
-[/OBJECT]
+
+[/EXCERPT:windows_install]
+
+[/COMMENT]
 
 [OBJECT:ToggleButtonContent]
 	[PARAMLITERAL:category]
@@ -77,14 +88,14 @@ SkillLevel:Beginner
 	[/PARAMLITERAL]
 	[PARAM:content]
 	1.	インストーラを入手するには、**[Download]** ボタンを **クリック** します。
+	![](Download_Screen.png)
 
-		![](Download_Screen.png)
+	1.新しい **Finder Window** を開くには、**Finder** で `EpicGamesLauncher.dmg` アイコンを **ダブルクリック** します。
 
-	1.	新しい **Finder Window** を開くには、**Finder** で `EpicGamesLauncher.dmg` アイコンを **ダブルクリック** します。
 
 	1.	**[Epic Games Launcher]** アイコンを **「Applications」** フォルダに **ドラッグ** します。
+	![](InstallEpicLaucherMac.png)
 
-		![](InstallEpicLaucherMac.png)	
 	[/PARAM]
 [/OBJECT]
 
@@ -110,7 +121,7 @@ SkillLevel:Beginner
 
 (#Bookmark3)
 
-セットアップ プログラムがマシンに Epic Games Launcher をインストールしたら、エピック ゲームズのアカウントの認証情報を使用してログインします。
+セットアップ プログラムでマシンに Epic Games Launcher がインストールされたら、エピック ゲームズのアカウントの認証情報を使用してログインします。
 
 ![](EpicSignIn.png)
 
@@ -127,11 +138,11 @@ SkillLevel:Beginner
 アンリアルエンジンの各バージョンのインストールには、およそ 8 GB のディスク容量が必要となります。十分な空き容量があることを確認してからインストールを開始してください。
 [/REGION]
 
-1.	Epic Games Launcher Loading Screen 内の [Unreal Engine] タブを **クリック** します。
+1.	Epic Games Launcher Loading Screen 内の **[Unreal Engine]** タブを クリックします。
 
 	![](LauncherLoadScreen.png)
 
-1.	アンリアル エンジンの最新バージョンをダウンロードし、インストールするには、[Install Engine] ボタンを **クリック** します。
+1.	アンリアル エンジンの最新バージョンをダウンロードし、インストールするには、**[Install Engine]** ボタンを クリックします。
 
 	![](InstallEngine.png)
 
@@ -140,8 +151,8 @@ SkillLevel:Beginner
 	![](AcceptEULALauncher.png)
 
 1.	システムの仕様に応じて、アンリアル エンジンの ダウンロードとインストール には、10 分から 40 分程度の時間がかかります。
-
 	![](DownloadingEngine.png)
+
 
 	_進捗インジケータの例 (上の画面)_
 
@@ -153,7 +164,7 @@ SkillLevel:Beginner
 
 ![](LaunchUE4.png)
 
-ここでは、以下について学習しました。
+これで終わりです！ 以下について学習しました。
 
 &#x2713;	[エピック ゲームズのアカウントを作成する _(まだアカウントをお持ちでない場合)_](#Bookmark1)  
 &#x2713;	[インストーラ (エピック ゲームズのランチャー セットアップ プログラム) をダウンロードして実行する ](#Bookmark2)  
@@ -163,7 +174,8 @@ SkillLevel:Beginner
 
 これで、アンリアル エンジンの使用を開始する準備が整いました。
 
-<!--Deprecated as it is redundant with the Related Topics section directly below it.
+[COMMENT:none]
+Deprecated as it is redundant with the Related Topics section directly below it.
 ## アンリアル エンジンの使用を開始する
 
 [](GettingStarted) のドキュメントを参照してアンリアル エンジンの使用方法を学習しましょう！
@@ -175,9 +187,11 @@ UE4 の使用について取り急ぎ学習したい場合は、以下のチュ�
 
 
 [REGION:note]
-UE4 のエディタ内ヘルプ機能は、疑問点を解消するのに優れた場所です。
-[/REGION]-->
-<!--Deprecated on 21 July 2015 due to outdated screenshots and outdated procedures
+UE4 のエディタ内ヘルプ機能は、疑問点を解消するのに役立ちます。
+[/REGION]
+[/COMMENT]
+[COMMENT:none]
+Deprecated on 21 July 2015 due to outdated screenshots and outdated procedures
 %Globals:OSSelect%
 
 ## インストーラーのダウンロード
@@ -229,7 +243,7 @@ UE4 のエディタ内ヘルプ機能は、疑問点を解消するのに優れ�
 
 アンリアル エンジン ランチャーが起動したら、サインインを行って、エンジンの現バージョンをダウンロードしなくてはいけません。
 
-1. ユーザーのアカウント情報でサインインします。
+1. ユーザー アカウント情報でサインインします。
 
 	[REGION:fullwidth]
 	![](ue4_installer_login.png)
@@ -242,8 +256,10 @@ UE4 のエディタ内ヘルプ機能は、疑問点を解消するのに優れ�
 1. ダウンロードが終了したら、**Launch** ボタンでアンリアル エンジンを起動できます。
 
 	![](launch.png)
--->
-<!--Previously deprecated procedures
+
+[/COMMENT]
+[COMMENT:none]
+Previously deprecated procedures
 [EXCERPT:Windows]
 1. ダウンロードしたインストーラを実行して、アンリアル エンジンのインストール先を選択します。
 
@@ -268,4 +284,5 @@ UE4 のエディタ内ヘルプ機能は、疑問点を解消するのに優れ�
 1. Finder でファイルのコピーが終了すると、アンリアルエンジンが **Launchpad** で利用出来るようになります。ここからアンリアル エンジンを起動します。 
 
 [/EXCERPT:MacOS]
--->
+
+[/COMMENT]

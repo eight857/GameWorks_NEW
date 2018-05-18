@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SMergeAssetPickerView.h"
 #include "Templates/SubclassOf.h"
@@ -357,7 +357,7 @@ TSharedRef<SWidget> SMergeAssetPickerPanel::MakeRevisionPickerMenu()
 	}
 	else if (!IsTempAssetSelected())
 	{
-		return SNew(SBlueprintRevisionMenu, Cast<UBlueprint>(SelectedAsset))
+		return SNew(SBlueprintRevisionMenu, SelectedAsset)
 			.bIncludeLocalRevision(true)
 			.OnRevisionSelected(this, &SMergeAssetPickerPanel::OnRevisionSelected);
 	}

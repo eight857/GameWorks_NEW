@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -180,12 +180,6 @@ struct SLATE_API FInputChord
 	bool HasAnyModifierKeys( ) const
 	{
 		return (bAlt || bCtrl || bCmd || bShift);
-	}
-
-	DEPRECATED(4.8, "Use IsValidChord instead of IsValidGesture")
-	bool IsValidGesture() const
-	{
-		return IsValidChord();
 	}
 
 	/**

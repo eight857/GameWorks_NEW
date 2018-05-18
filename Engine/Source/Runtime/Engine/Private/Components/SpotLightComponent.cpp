@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SpotLightComponent.cpp: LightComponent implementation.
@@ -71,25 +71,35 @@ public:
 		InvCosLightShaftConeDifference = 1.0f / (FMath::Cos(ClampedInnerLightShaftConeAngle) - CosLightShaftConeAngle);
 	}
 
-	/** Accesses parameters needed for rendering the light. */
-	virtual void GetParameters(FVector4& LightPositionAndInvRadius, FVector4& LightColorAndFalloffExponent, FVector& NormalizedLightDirection, FVector2D& SpotAngles, float& LightSourceRadius, float& LightSourceLength, float& LightMinRoughness) const override
+	virtual FVector GetPerObjectProjectedShadowProjectionPoint(const FBoxSphereBounds& SubjectBounds) const
 	{
-		LightPositionAndInvRadius = FVector4(
+		const FVector ZAxis(WorldToLight.M[0][2], WorldToLight.M[1][2], WorldToLight.M[2][2]);
+		return FMath::ClosestPointOnSegment(SubjectBounds.Origin, GetOrigin() - ZAxis * SourceLength / 2, GetOrigin() + ZAxis * SourceLength / 2);
+	}
+
+	/** Accesses parameters needed for rendering the light. */
+	virtual void GetParameters(FLightParameters& LightParameters) const override
+	{
+		LightParameters.LightPositionAndInvRadius = FVector4(
 			GetOrigin(),
 			InvRadius);
 
-		LightColorAndFalloffExponent = FVector4(
+		LightParameters.LightColorAndFalloffExponent = FVector4(
 			GetColor().R,
 			GetColor().G,
 			GetColor().B,
 			FalloffExponent);
 
-		NormalizedLightDirection = -GetDirection();
-		SpotAngles = FVector2D(CosOuterCone, InvCosConeDifference);
-		LightSourceRadius = SourceRadius;
-		LightSourceLength = SourceLength;
+		const FVector ZAxis(WorldToLight.M[0][2], WorldToLight.M[1][2], WorldToLight.M[2][2]);
+
+		LightParameters.NormalizedLightDirection = -GetDirection();
+		LightParameters.NormalizedLightTangent = ZAxis;
+		LightParameters.SpotAngles = FVector2D(CosOuterCone, InvCosConeDifference);
+		LightParameters.LightSourceRadius = SourceRadius;
+		LightParameters.LightSoftSourceRadius = SoftSourceRadius;
+		LightParameters.LightSourceLength = SourceLength;
 		// Prevent 0 Roughness which causes NaNs in Vis_SmithJointApprox
-		LightMinRoughness = FMath::Max(MinRoughness, .04f);
+		LightParameters.LightMinRoughness = FMath::Max(MinRoughness, .04f);
 	}
 
 	// FLightSceneInfo interface.
@@ -154,6 +164,23 @@ public:
 		const float BoundsRadius = FMath::Sqrt(1.25f * Radius * Radius - Radius * Radius * CosOuterCone);
 		return FSphere(GetOrigin() + .5f * GetDirection() * Radius, BoundsRadius);
 	}
+
+	virtual float GetEffectiveScreenRadius(const FViewMatrices& ShadowViewMatrices) const override
+	{
+		// Heuristic: use the radius of the inscribed sphere at the cone's end as the light's effective screen radius
+		// We do so because we do not want to use the light's radius directly, which will make us overestimate the shadow map resolution greatly for a spot light
+
+		// In the correct form,
+		//   InscribedSpherePosition = GetOrigin() + GetDirection().Normalize() * GetRadius() / CosOuterCone
+		//   InscribedSphereRadius = GetRadius() / SinOuterCone
+		// Do it incorrectly to avoid division which is more expensive and risks division by zero
+		const FVector InscribedSpherePosition = GetOrigin() + GetDirection().Normalize() * GetRadius() * CosOuterCone;
+		const float InscribedSphereRadius = GetRadius() * SinOuterCone;
+
+		const float SphereDistanceFromViewOrigin = (InscribedSpherePosition - ShadowViewMatrices.GetViewOrigin()).Size();
+
+		return ShadowViewMatrices.GetScreenScale() * InscribedSphereRadius / FMath::Max(SphereDistanceFromViewOrigin, 1.0f);
+	}
 };
 
 USpotLightComponent::USpotLightComponent(const FObjectInitializer& ObjectInitializer)
@@ -176,6 +203,13 @@ USpotLightComponent::USpotLightComponent(const FObjectInitializer& ObjectInitial
 	OuterConeAngle = 44.0f;
 }
 
+float USpotLightComponent::GetCosHalfConeAngle() const
+{
+	const float ClampedInnerConeAngle = FMath::Clamp(InnerConeAngle,0.0f,89.0f) * (float)PI / 180.0f;
+	const float ClampedOuterConeAngle = FMath::Clamp(OuterConeAngle * (float)PI / 180.0f, ClampedInnerConeAngle + 0.001f,89.0f * (float)PI / 180.0f + 0.001f);
+	return FMath::Cos(ClampedOuterConeAngle);
+}
+
 void USpotLightComponent::SetInnerConeAngle(float NewInnerConeAngle)
 {
 	if (AreDynamicDataChangesAllowed(false)
@@ -196,6 +230,28 @@ void USpotLightComponent::SetOuterConeAngle(float NewOuterConeAngle)
 	}
 }
 
+float USpotLightComponent::ComputeLightBrightness() const
+{
+	float LightBrightness = ULightComponent::ComputeLightBrightness();
+
+	if (bUseInverseSquaredFalloff)
+	{
+		if (IntensityUnits == ELightUnits::Candelas)
+		{
+			LightBrightness *= (100.f * 100.f); // Conversion from cm2 to m2
+		}
+		else if (IntensityUnits == ELightUnits::Lumens)
+		{
+			LightBrightness *= (100.f * 100.f / 2.f / PI / (1.f - GetCosHalfConeAngle())); // Conversion from cm2 to m2 and cone remapping.
+		}
+		else
+		{
+			LightBrightness *= 16; // Legacy scale of 16
+		}
+	}
+	return LightBrightness;
+}
+
 // Disable for now
 //void USpotLightComponent::SetLightShaftConeAngle(float NewLightShaftConeAngle)
 //{
@@ -213,13 +269,8 @@ FLightSceneProxy* USpotLightComponent::CreateSceneProxy() const
 
 FSphere USpotLightComponent::GetBoundingSphere() const
 {
-	float ClampedInnerConeAngle = FMath::Clamp(InnerConeAngle,0.0f,89.0f) * (float)PI / 180.0f;
-	float ClampedOuterConeAngle = FMath::Clamp(OuterConeAngle * (float)PI / 180.0f,ClampedInnerConeAngle + 0.001f,89.0f * (float)PI / 180.0f + 0.001f);
-
-	float CosOuterCone = FMath::Cos(ClampedOuterConeAngle);
-
 	// Use the law of cosines to find the distance to the furthest edge of the spotlight cone from a position that is halfway down the spotlight direction
-	const float BoundsRadius = FMath::Sqrt(1.25f * AttenuationRadius * AttenuationRadius - AttenuationRadius * AttenuationRadius * CosOuterCone);
+	const float BoundsRadius = FMath::Sqrt(1.25f * AttenuationRadius * AttenuationRadius - AttenuationRadius * AttenuationRadius * GetCosHalfConeAngle());
 	return FSphere(GetComponentTransform().GetLocation() + .5f * GetDirection() * AttenuationRadius, BoundsRadius);
 }
 

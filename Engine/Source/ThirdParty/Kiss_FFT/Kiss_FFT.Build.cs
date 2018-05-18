@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -8,29 +8,29 @@ public class Kiss_FFT : ModuleRules
 	{
 		Type = ModuleType.External;
 
-		Definitions.Add("WITH_KISSFFT=1");
+		PublicDefinitions.Add("WITH_KISSFFT=1");
 
 		// Compile and link with kissFFT
-		string Kiss_FFTPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "Kiss_FFT/kiss_fft129";
+		string Kiss_FFTPath = Target.UEThirdPartySourceDirectory + "Kiss_FFT/kiss_fft129";
 
 		PublicIncludePaths.Add(Kiss_FFTPath);
 
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{
-			if (Target.Configuration == UnrealTargetConfiguration.Debug && BuildConfiguration.bDebugBuildsActuallyUseDebugCRT)
+			if (Target.Configuration == UnrealTargetConfiguration.Debug && Target.bDebugBuildsActuallyUseDebugCRT)
 			{
-				PublicLibraryPaths.Add(Kiss_FFTPath + "/lib/x64/VS" + WindowsPlatform.GetVisualStudioCompilerVersionName() + "/Debug");
+				PublicLibraryPaths.Add(Kiss_FFTPath + "/lib/x64/VS" + Target.WindowsPlatform.GetVisualStudioCompilerVersionName() + "/Debug");
 			}
 			else
 			{
-				PublicLibraryPaths.Add(Kiss_FFTPath + "/lib/x64/VS" + WindowsPlatform.GetVisualStudioCompilerVersionName() + "/Release");
+				PublicLibraryPaths.Add(Kiss_FFTPath + "/lib/x64/VS" + Target.WindowsPlatform.GetVisualStudioCompilerVersionName() + "/Release");
 			}
 
 			PublicAdditionalLibraries.Add("KissFFT.lib");
 		}
 		else if (Target.Platform == UnrealTargetPlatform.Mac)
 		{
-			if (Target.Configuration == UnrealTargetConfiguration.Debug && BuildConfiguration.bDebugBuildsActuallyUseDebugCRT)
+			if (Target.Configuration == UnrealTargetConfiguration.Debug && Target.bDebugBuildsActuallyUseDebugCRT)
 			{
 				PublicAdditionalLibraries.Add(Kiss_FFTPath + "/Lib/Mac/Debug/libKissFFT.a");
 			}

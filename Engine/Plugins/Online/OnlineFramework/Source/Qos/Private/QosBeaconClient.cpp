@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "QosBeaconClient.h"
 #include "QosBeaconHost.h"
@@ -31,7 +31,7 @@ void AQosBeaconClient::SendQosRequest(const FOnlineSessionSearchResult& DesiredH
 		if (SessionInt.IsValid())
 		{
 			FString ConnectInfo;
-			if (SessionInt->GetResolvedConnectString(DesiredHost, BeaconPort, ConnectInfo))
+			if (SessionInt->GetResolvedConnectString(DesiredHost, NAME_BeaconPort, ConnectInfo))
 			{
 				FURL ConnectURL(NULL, *ConnectInfo, TRAVEL_Absolute);
 				if (InitClient(ConnectURL) && DesiredHost.Session.SessionInfo.IsValid())

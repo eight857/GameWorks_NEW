@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -18,8 +18,8 @@ public class MaterialEditor : ModuleRules
 				"AssetRegistry", 
 				"AssetTools",
 				"Kismet",
-				"EditorWidgets"
-			}
+				"EditorWidgets",
+            }
 		);
 
 		PrivateDependencyModuleNames.AddRange(
@@ -27,6 +27,7 @@ public class MaterialEditor : ModuleRules
                 "AppFramework",
 				"Core",
 				"CoreUObject",
+				"ApplicationCore",
 				"InputCore",
 				"Engine",
 				"Slate",
@@ -35,10 +36,13 @@ public class MaterialEditor : ModuleRules
 				"ShaderCore",
 				"RenderCore",
 				"RHI",
-				"UnrealEd",
                 "MaterialUtilities",
                 "PropertyEditor",
+				"UnrealEd",
 				"GraphEditor",
+                "AdvancedPreviewScene",
+                "Projects",
+
 			}
 		);
 

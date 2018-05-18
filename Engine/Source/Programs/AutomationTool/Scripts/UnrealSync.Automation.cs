@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using AutomationTool;
 using System;
@@ -30,7 +30,7 @@ namespace AutomationScripts.Automation
 		{
 			var GameName = ParseParamValue("game");
 			var QueryType = GetTypeParam();
-			var BranchPath = CommandUtils.GetDirectoryName(P4Env.BuildRootP4);
+			var BranchPath = CommandUtils.GetDirectoryName(P4Env.Branch);
 			var Ticks = ParseParam("ticks");
 
 			var BranchAndGameName = string.IsNullOrWhiteSpace(GameName)
@@ -168,7 +168,7 @@ namespace AutomationScripts.Automation
 		{
 			var Preview = ParseParam("preview");
 			var ArtistSync = ParseParam("artist");
-			var BranchPath = CommandUtils.GetDirectoryName(P4Env.BuildRootP4);
+			var BranchPath = CommandUtils.GetDirectoryName(P4Env.Branch);
 			var LabelParam = ParseParamValue("label");
 			var GameName = ParseParamValue("game");
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -192,7 +192,6 @@ private:
 	/** Array of associated key data */
 	TArray<KeyValueType>* KeyValues;
 };
-
 
 namespace Impl
 {

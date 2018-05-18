@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -6,6 +6,7 @@ using System.IO;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.Serialization;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -464,7 +465,7 @@ namespace UnrealBuildTool
 		/// <summary>
 		/// Executes a list of actions.
 		/// </summary>
-		public static bool ExecuteActions(BuildConfiguration BuildConfiguration, List<Action> ActionsToExecute, bool bIsRemoteCompile, out string ExecutorName, string TargetInfoForTelemetry, bool bIsHotReload = false)
+		public static bool ExecuteActions(BuildConfiguration BuildConfiguration, List<Action> ActionsToExecute, bool bIsRemoteCompile, out string ExecutorName, string TargetInfoForTelemetry, EHotReload HotReload)
 		{
 			bool Result = true;
 			ExecutorName = "";
@@ -538,7 +539,7 @@ namespace UnrealBuildTool
 									bExists = File.Exists(Item.AbsolutePath) || Directory.Exists(Item.AbsolutePath);
 								}
 
-								if (bIsHotReload)
+								if (HotReload != EHotReload.Disabled)
 								{
 									string FailedFilename = Path.Combine(Path.GetDirectoryName(Item.AbsolutePath), "failed.hotreload");
 									if (!bExists)
@@ -946,17 +947,6 @@ namespace UnrealBuildTool
 					// legitimate output to always be considered outdated.
 					if (ProducedItem.bExists && (ProducedItem.bIsRemoteFile || ProducedItem.Length > 0 || ProducedItem.IsDirectory))
 					{
-						// When linking incrementally, don't use LIB, EXP pr PDB files when checking for the oldest produced item,
-						// as those files aren't always touched.
-						if (RootAction.bUseIncrementalLinking)
-						{
-							String ProducedItemExtension = Path.GetExtension(ProducedItem.AbsolutePath).ToUpperInvariant();
-							if (ProducedItemExtension == ".LIB" || ProducedItemExtension == ".EXP" || ProducedItemExtension == ".PDB")
-							{
-								continue;
-							}
-						}
-
 						// Use the oldest produced item's time as the last execution time.
 						if (ProducedItem.LastWriteTime < LastExecutionTime)
 						{
@@ -1198,7 +1188,7 @@ namespace UnrealBuildTool
 					{
 						if (ProducedItem.bExists && (bShouldDeleteAllFiles || OutdatedAction.bShouldDeleteProducedItems))
 						{
-							Log.TraceVerbose("Deleting outdated item: {0}", ProducedItem.AbsolutePath);
+							Log.TraceLog("Deleting outdated item: {0}", ProducedItem.AbsolutePath);
 							ProducedItem.Delete();
 						}
 					}

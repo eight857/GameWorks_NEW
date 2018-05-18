@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -47,6 +47,7 @@ public:
 	SLATE_BEGIN_ARGS( SMultiLineEditableText )
 		: _Text()
 		, _HintText()
+		, _SearchText()
 		, _Marshaller()
 		, _WrapTextAt( 0.0f )
 		, _AutoWrapText(false)
@@ -59,6 +60,7 @@ public:
 		, _IsReadOnly(false)
 		, _OnTextChanged()
 		, _OnTextCommitted()
+		, _AllowMultiLine(true)
 		, _SelectAllTextWhenFocused(false)
 		, _ClearTextSelectionOnFocusLoss(true)
 		, _RevertTextOnEscape(false)
@@ -80,6 +82,9 @@ public:
 
 		/** Hint text that appears when there is no text in the text box */
 		SLATE_ATTRIBUTE(FText, HintText)
+
+		/** Text to search for (a new search is triggered whenever this text changes) */
+		SLATE_ATTRIBUTE(FText, SearchText)
 
 		/** The marshaller used to get/set the raw text to/from the text layout. */
 		SLATE_ARGUMENT(TSharedPtr< ITextLayoutMarshaller >, Marshaller)
@@ -119,17 +124,28 @@ public:
 		/** The vertical scroll bar widget */
 		SLATE_ARGUMENT(TSharedPtr< SScrollBar >, VScrollBar)
 
+		/**
+		 * This is NOT for validating input!
+		 * 
+		 * Called whenever a character is typed.
+		 * Not called for copy, paste, or any other text changes!
+		 */
+		SLATE_EVENT(FOnIsTypedCharValid, OnIsTypedCharValid)
+
 		/** Called whenever the text is changed interactively by the user */
 		SLATE_EVENT(FOnTextChanged, OnTextChanged)
 
 		/** Called whenever the text is committed.  This happens when the user presses enter or the text box loses focus. */
 		SLATE_EVENT(FOnTextCommitted, OnTextCommitted)
 
+		/** Whether to allow multi-line text */
+		SLATE_ATTRIBUTE(bool, AllowMultiLine)
+
 		/** Whether to select all text when the user clicks to give focus on the widget */
 		SLATE_ATTRIBUTE(bool, SelectAllTextWhenFocused)
 
 		/** Whether to clear text selection when focus is lost */
-		SLATE_ATTRIBUTE( bool, ClearTextSelectionOnFocusLoss )
+		SLATE_ATTRIBUTE(bool, ClearTextSelectionOnFocusLoss)
 
 		/** Whether to allow the user to back out of changes when they press the escape key */
 		SLATE_ATTRIBUTE(bool, RevertTextOnEscape)
@@ -151,6 +167,9 @@ public:
 
 		/** Called when the cursor is moved within the text area */
 		SLATE_EVENT(FOnCursorMoved, OnCursorMoved)
+
+		/** Callback delegate to have first chance handling of the OnKeyChar event */
+		SLATE_EVENT(FOnKeyChar, OnKeyCharHandler)
 
 		/** Callback delegate to have first chance handling of the OnKeyDown event */
 		SLATE_EVENT(FOnKeyDown, OnKeyDownHandler)
@@ -209,6 +228,12 @@ public:
 	/** Get the text that appears when there is no text in the text box */
 	FText GetHintText() const;
 
+	/** Set the text that is currently being searched for (if any) */
+	void SetSearchText(const TAttribute<FText>& InSearchText);
+
+	/** Get the text that is currently being searched for (if any) */
+	FText GetSearchText() const;
+
 	/** See attribute TextStyle */
 	void SetTextStyle(const FTextBlockStyle* InTextStyle);
 
@@ -242,8 +267,39 @@ public:
 	/** See the AllowContextMenu attribute */
 	void SetAllowContextMenu(const TAttribute< bool >& InAllowContextMenu);
 
+	/** Set the VirtualKeyboardDismissAction attribute */
+	void SetVirtualKeyboardDismissAction(TAttribute< EVirtualKeyboardDismissAction > InVirtualKeyboardDismissAction);
+	
 	/** Sets the ReadOnly attribute */
 	void SetIsReadOnly(const TAttribute< bool >& InIsReadOnly);
+
+	/**
+	 * Sets whether to select all text when the user clicks to give focus on the widget
+	 *
+	 * @param  InSelectAllTextWhenFocused	Select all text when the user clicks?
+	 */
+	void SetSelectAllTextWhenFocused(const TAttribute<bool>& InSelectAllTextWhenFocused);
+
+	/**
+	 * Sets whether to clear text selection when focus is lost
+	 *
+	 * @param  InClearTextSelectionOnFocusLoss	Clear text selection when focus is lost?
+	 */
+	void SetClearTextSelectionOnFocusLoss(const TAttribute<bool>& InClearTextSelectionOnFocusLoss);
+
+	/**
+	 * Sets whether to allow the user to back out of changes when they press the escape key
+	 *
+	 * @param  InRevertTextOnEscape			Allow the user to back out of changes?
+	 */
+	void SetRevertTextOnEscape(const TAttribute<bool>& InRevertTextOnEscape);
+
+	/**
+	 * Sets whether to clear keyboard focus when pressing enter to commit changes
+	 *
+	 * @param  InClearKeyboardFocusOnCommit		Clear keyboard focus when pressing enter?
+	 */
+	void SetClearKeyboardFocusOnCommit(const TAttribute<bool>& InClearKeyboardFocusOnCommit);
 
 	/** Query to see if any text is selected within the document */
 	bool AnyTextSelected() const;
@@ -276,6 +332,12 @@ public:
 	/** Apply the given style to the currently selected text (or insert a new run at the current cursor position if no text is selected) */
 	void ApplyToSelection(const FRunInfo& InRunInfo, const FTextBlockStyle& InStyle);
 
+	/** Begin a new text search (this is called automatically when the bound search text changes) */
+	void BeginSearch(const FText& InSearchText, const ESearchCase::Type InSearchCase = ESearchCase::IgnoreCase, const bool InReverse = false);
+
+	/** Advance the current search to the next match (does nothing if not currently searching) */
+	void AdvanceSearch(const bool InReverse = false);
+
 	/** Get the run currently under the cursor, or null if there is no run currently under the cursor */
 	TSharedPtr<const IRun> GetRunUnderCursor() const;
 
@@ -292,6 +354,16 @@ public:
 	void Refresh();
 
 	/**
+	 * Sets the OnKeyCharHandler to provide first chance handling of the OnKeyChar event
+	 *
+	 * @param InOnKeyCharHandler			Delegate to call during OnKeyChar event
+	 */
+	void SetOnKeyCharHandler(FOnKeyChar InOnKeyCharHandler)
+	{
+		OnKeyCharHandler = InOnKeyCharHandler;
+	}
+
+	/**
 	 * Sets the OnKeyDownHandler to provide first chance handling of the OnKeyDown event
 	 *
 	 * @param InOnKeyDownHandler			Delegate to call during OnKeyDown event
@@ -300,6 +372,11 @@ public:
 	{
 		OnKeyDownHandler = InOnKeyDownHandler;
 	}
+
+	/**
+	 *	Force a single scroll operation. 
+	 */
+	void ForceScroll(int32 UserIndex, float ScrollAxisMagnitude);
 
 protected:
 	//~ Begin SWidget Interface
@@ -367,6 +444,9 @@ protected:
 	/** The text layout that deals with the editable text */
 	TUniquePtr<FSlateEditableTextLayout> EditableTextLayout;
 
+	/** Whether to allow multi-line text */
+	TAttribute<bool> bAllowMultiLine;
+
 	/** Whether to select all text when the user clicks to give focus on the widget */
 	TAttribute<bool> bSelectAllTextWhenFocused;
 
@@ -387,6 +467,9 @@ protected:
 
 	/** Delegate to call before a context menu is opened */
 	FOnContextMenuOpening OnContextMenuOpening;
+
+	/** Called when a character is typed and we want to know if the text field supports typing this character. */
+	FOnIsTypedCharValid OnIsTypedCharValid;
 
 	/** Called whenever the text is changed interactively by the user */
 	FOnTextChanged OnTextChangedCallback;
@@ -426,6 +509,9 @@ protected:
 
 	/**	The current position of the software cursor */
 	FVector2D SoftwareCursorPosition;
+
+	/** Callback delegate to have first chance handling of the OnKeyChar event */
+	FOnKeyChar OnKeyCharHandler;
 
 	/** Callback delegate to have first chance handling of the OnKeyDown event */
 	FOnKeyDown OnKeyDownHandler;

@@ -1,11 +1,15 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
+#include "Async/TaskGraphInterfaces.h"
 #include "Stats/Stats.h"
-#include "IMessageContext.h"
-#include "Transport/UdpSerializedMessage.h"
+#include "Templates/SharedPointer.h"
+
+class FEvent;
+class FUdpSerializedMessage;
+class IMessageContext;
+
 
 /**
  * Implements an asynchronous task for serializing a message.
@@ -20,8 +24,9 @@ public:
 	 * @param InMessageContext The context of the message to serialize.
 	 * @param InSerializedMessage Will hold the serialized message data.
 	 */
-	FUdpSerializeMessageTask(TSharedRef<IMessageContext, ESPMode::ThreadSafe> InMessageContext, TSharedRef<FUdpSerializedMessage, ESPMode::ThreadSafe> InSerializedMessage)
-		: MessageContext(InMessageContext)
+	FUdpSerializeMessageTask(TSharedRef<IMessageContext, ESPMode::ThreadSafe> InMessageContext, TSharedRef<FUdpSerializedMessage, ESPMode::ThreadSafe> InSerializedMessage, TSharedPtr<FEvent, ESPMode::ThreadSafe> InCompletionEvent)
+		: CompletionEventPtr(InCompletionEvent)
+		, MessageContext(InMessageContext)
 		, SerializedMessage(InSerializedMessage)
 	{ }
 
@@ -58,9 +63,12 @@ public:
 
 private:
 
-	/** Holds the context of the message to serialize. */
+	/** An event signaling that the message was serialized. */
+	TWeakPtr<FEvent, ESPMode::ThreadSafe> CompletionEventPtr;
+
+	/** The context of the message to serialize. */
 	TSharedRef<IMessageContext, ESPMode::ThreadSafe> MessageContext;
 
-	/** Holds a reference to the serialized message data. */
+	/** A reference to the serialized message data. */
 	TSharedRef<FUdpSerializedMessage, ESPMode::ThreadSafe> SerializedMessage;
 };

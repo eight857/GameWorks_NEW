@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CoreMinimal.h"
@@ -13,6 +13,7 @@
 #include "Components/ModelComponent.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "BSPOps.h"
+#include "Engine/DataTable.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEditorTransaction, Log, All);
 
@@ -74,6 +75,11 @@ FTransaction::FObjectRecord::FObjectRecord(FTransaction* Owner, UObject* InObjec
 	if (UBlueprintGeneratedClass* Class = Cast<UBlueprintGeneratedClass>(InObject->GetClass()))
 	{
 		bWantsBinarySerialization = false; 
+	}
+	// Data tables can contain user structs, so it's unsafe to use binary
+	if (UDataTable* DataTable = Cast<UDataTable>(InObject))
+	{
+		bWantsBinarySerialization = false;
 	}
 	ObjectAnnotation = Object->GetTransactionAnnotation();
 	FWriter Writer( Data, ReferencedObjects, ReferencedNames, bWantsBinarySerialization );
@@ -612,9 +618,13 @@ void UTransBuffer::AddReferencedObjects(UObject* InThis, FReferenceCollector& Co
 		// We cannot support undoing across GC if we allow it to eliminate references so we need
 		// to suppress it.
 		Collector.AllowEliminatingReferences(false);
-		for( int32 Index = 0; Index < This->UndoBuffer.Num(); Index++ )
+		for (const TSharedRef<FTransaction>& SharedTrans : This->UndoBuffer)
 		{
-			This->UndoBuffer[ Index ].AddReferencedObjects( Collector );
+			SharedTrans->AddReferencedObjects( Collector );
+		}
+		for (const TSharedRef<FTransaction>& SharedTrans : This->RemovedTransactions)
+		{
+			SharedTrans->AddReferencedObjects(Collector);
 		}
 		Collector.AllowEliminatingReferences(true);
 	}
@@ -648,7 +658,9 @@ int32 UTransBuffer::End()
 				static_cast<FTransaction*>(GUndo)->DumpObjectMap( *GLog );
 			}
 #endif
-			GUndo = NULL;
+			GUndo = nullptr;
+			PreviousUndoCount = INDEX_NONE;
+			RemovedTransactions.Reset();
 		}
 		ActiveRecordCounts.Pop();
 		CheckState();
@@ -703,10 +715,21 @@ void UTransBuffer::Cancel( int32 StartIndex /*=0*/ )
 		if ( StartIndex == 0 )
 		{
 			// clear the global pointer to the soon-to-be-deleted transaction
-			GUndo = NULL;
+			GUndo = nullptr;
 			
 			// remove the currently active transaction from the buffer
-			UndoBuffer.Pop();
+			UndoBuffer.Pop(false);
+
+			// replace the removed transactions
+			UndoBuffer.Reserve(UndoBuffer.Num() + RemovedTransactions.Num());
+			for (TSharedRef<FTransaction>& Transaction : RemovedTransactions)
+			{
+				UndoBuffer.Add(Transaction);
+			}
+			RemovedTransactions.Reset();
+
+			UndoCount = PreviousUndoCount;
+			PreviousUndoCount = INDEX_NONE;
 		}
 		else
 		{
@@ -716,7 +739,7 @@ void UTransBuffer::Cancel( int32 StartIndex /*=0*/ )
 				RecordsToKeep += ActiveRecordCounts[ActiveIndex];
 			}
 
-			FTransaction& Transaction = UndoBuffer.Last();
+			FTransaction& Transaction = UndoBuffer.Last().Get();
 			Transaction.RemoveRecords(Transaction.GetRecordCount() - RecordsToKeep);
 		}
 
@@ -793,7 +816,7 @@ const FTransaction* UTransBuffer::GetTransaction( int32 QueueIndex ) const
 {
 	if (UndoBuffer.Num() > QueueIndex && QueueIndex != INDEX_NONE)
 	{
-		return &UndoBuffer[QueueIndex];
+		return &UndoBuffer[QueueIndex].Get();
 	}
 
 	return NULL;
@@ -810,7 +833,7 @@ FUndoSessionContext UTransBuffer::GetUndoContext( bool bCheckWhetherUndoPossible
 		return Context;
 	}
 
-	const FTransaction* Transaction = &UndoBuffer[ UndoBuffer.Num() - (UndoCount + 1) ];
+	TSharedRef<FTransaction>& Transaction = UndoBuffer[ UndoBuffer.Num() - (UndoCount + 1) ];
 	return Transaction->GetContext();
 }
 
@@ -825,7 +848,7 @@ FUndoSessionContext UTransBuffer::GetRedoContext()
 		return Context;
 	}
 
-	const FTransaction* Transaction = &UndoBuffer[ UndoBuffer.Num() - UndoCount ];
+	TSharedRef<FTransaction>& Transaction = UndoBuffer[ UndoBuffer.Num() - UndoCount ];
 	return Transaction->GetContext();
 }
 
@@ -865,7 +888,7 @@ bool UTransBuffer::Undo(bool bCanRedo)
 	// Apply the undo changes.
 	GIsTransacting = true;
 	{
-		FTransaction& Transaction = UndoBuffer[ UndoBuffer.Num() - ++UndoCount ];
+		FTransaction& Transaction = UndoBuffer[ UndoBuffer.Num() - ++UndoCount ].Get();
 		UE_LOG(LogEditorTransaction, Log,  TEXT("Undo %s"), *Transaction.GetTitle().ToString() );
 		CurrentTransaction = &Transaction;
 
@@ -902,7 +925,7 @@ bool UTransBuffer::Redo()
 	// Apply the redo changes.
 	GIsTransacting = true;
 	{
-		FTransaction& Transaction = UndoBuffer[ UndoBuffer.Num() - UndoCount-- ];
+		FTransaction& Transaction = UndoBuffer[ UndoBuffer.Num() - UndoCount-- ].Get();
 		UE_LOG(LogEditorTransaction, Log,  TEXT("Redo %s"), *Transaction.GetTitle().ToString() );
 		CurrentTransaction = &Transaction;
 
@@ -935,7 +958,7 @@ SIZE_T UTransBuffer::GetUndoSize() const
 	SIZE_T Result=0;
 	for( int32 i=0; i<UndoBuffer.Num(); i++ )
 	{
-		Result += UndoBuffer[i].DataSize();
+		Result += UndoBuffer[i]->DataSize();
 	}
 	return Result;
 }
@@ -961,7 +984,7 @@ void UTransBuffer::SetPrimaryUndoObject(UObject* PrimaryObject)
 
 		if ( CurrentTransactionIdx >= 0 )
 		{
-			FTransaction* Transaction = &UndoBuffer[ CurrentTransactionIdx ];
+			TSharedRef<FTransaction>& Transaction = UndoBuffer[ CurrentTransactionIdx ];
 			Transaction->SetPrimaryObject(PrimaryObject);
 		}
 	}
@@ -970,9 +993,9 @@ void UTransBuffer::SetPrimaryUndoObject(UObject* PrimaryObject)
 bool UTransBuffer::IsObjectInTransationBuffer( const UObject* Object ) const
 {
 	TArray<UObject*> TransactionObjects;
-	for( const FTransaction& Transaction : UndoBuffer )
+	for( const TSharedRef<FTransaction>& Transaction : UndoBuffer )
 	{
-		Transaction.GetTransactionObjects(TransactionObjects);
+		Transaction->GetTransactionObjects(TransactionObjects);
 
 		if( TransactionObjects.Contains(Object) )
 		{
@@ -998,9 +1021,9 @@ bool UTransBuffer::IsObjectTransacting(const UObject* Object) const
 
 bool UTransBuffer::ContainsPieObject() const
 {
-	for( const FTransaction& Transaction : UndoBuffer )
+	for( const TSharedRef<FTransaction>& Transaction : UndoBuffer )
 	{
-		if( Transaction.ContainsPieObject() )
+		if( Transaction->ContainsPieObject() )
 		{
 			return true;
 		}

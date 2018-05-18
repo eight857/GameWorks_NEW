@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PointLightComponent.cpp: PointLightComponent implementation.
@@ -43,29 +43,43 @@ class FPointLightSceneProxy : public TPointLightSceneProxy<FPointLightPolicy>
 public:
 
 	/** Accesses parameters needed for rendering the light. */
-	virtual void GetParameters(FVector4& LightPositionAndInvRadius, FVector4& LightColorAndFalloffExponent, FVector& NormalizedLightDirection, FVector2D& SpotAngles, float& LightSourceRadius, float& LightSourceLength, float& LightMinRoughness) const
+	virtual void GetParameters(FLightParameters& LightParameters) const override
 	{
-		LightPositionAndInvRadius = FVector4(
+		LightParameters.LightPositionAndInvRadius = FVector4(
 			GetOrigin(),
 			InvRadius);
 
-		LightColorAndFalloffExponent = FVector4(
+		LightParameters.LightColorAndFalloffExponent = FVector4(
 			GetColor().R,
 			GetColor().G,
 			GetColor().B,
 			FalloffExponent);
 
-		NormalizedLightDirection = -GetDirection();
-		SpotAngles = FVector2D( -2.0f, 1.0f );
-		LightSourceRadius = SourceRadius;
-		LightSourceLength = SourceLength;
+		const FVector ZAxis(WorldToLight.M[0][2], WorldToLight.M[1][2], WorldToLight.M[2][2]);
+
+		LightParameters.NormalizedLightDirection = -GetDirection();
+		LightParameters.NormalizedLightTangent = ZAxis;
+		LightParameters.SpotAngles = FVector2D( -2.0f, 1.0f );
+		LightParameters.LightSourceRadius = SourceRadius;
+		LightParameters.LightSoftSourceRadius = SoftSourceRadius;
+		LightParameters.LightSourceLength = SourceLength;
 		// Prevent 0 Roughness which causes NaNs in Vis_SmithJointApprox
-		LightMinRoughness = FMath::Max(MinRoughness, .04f);
+		LightParameters.LightMinRoughness = FMath::Max(MinRoughness, .04f);
 	}
 
 	virtual FSphere GetBoundingSphere() const
 	{
 		return FSphere(GetPosition(), GetRadius());
+	}
+
+	virtual float GetEffectiveScreenRadius(const FViewMatrices& ShadowViewMatrices) const override
+	{
+		// Use the distance from the view origin to the light to approximate perspective projection
+		// We do not use projected screen position since it causes problems when the light is behind the camera
+
+		const float LightDistance = (GetOrigin() - ShadowViewMatrices.GetViewOrigin()).Size();
+
+		return ShadowViewMatrices.GetScreenScale() * GetRadius() / FMath::Max(LightDistance, 1.0f);
 	}
 
 	/**
@@ -120,6 +134,7 @@ UPointLightComponent::UPointLightComponent(const FObjectInitializer& ObjectIniti
 	AttenuationRadius = 1000;
 	LightFalloffExponent = 8.0f;
 	SourceRadius = 0.0f;
+	SoftSourceRadius = 0.0f;
 	SourceLength = 0.0f;
 	bUseInverseSquaredFalloff = true;
 }
@@ -160,6 +175,16 @@ void UPointLightComponent::SetSourceRadius(float NewValue)
 	}
 }
 
+void UPointLightComponent::SetSoftSourceRadius(float NewValue)
+{
+	if (AreDynamicDataChangesAllowed()
+		&& SoftSourceRadius != NewValue)
+	{
+		SoftSourceRadius = NewValue;
+		MarkRenderStateDirty();
+	}
+}
+
 void UPointLightComponent::SetSourceLength(float NewValue)
 {
 	if (AreDynamicDataChangesAllowed()
@@ -168,6 +193,28 @@ void UPointLightComponent::SetSourceLength(float NewValue)
 		SourceLength = NewValue;
 		MarkRenderStateDirty();
 	}
+}
+
+float UPointLightComponent::ComputeLightBrightness() const
+{
+	float LightBrightness = Super::ComputeLightBrightness();
+
+	if (bUseInverseSquaredFalloff)
+	{
+		if (IntensityUnits == ELightUnits::Candelas)
+		{
+			LightBrightness *= (100.f * 100.f); // Conversion from cm2 to m2
+		}
+		else if (IntensityUnits == ELightUnits::Lumens)
+		{
+			LightBrightness *= (100.f * 100.f / 4 / PI); // Conversion from cm2 to m2 and 4PI from the sphere area in the 1/r2 attenuation
+		}
+		else
+		{
+			LightBrightness *= 16; // Legacy scale of 16
+		}
+	}
+	return LightBrightness;
 }
 
 bool UPointLightComponent::AffectsBounds(const FBoxSphereBounds& InBounds) const
@@ -244,6 +291,11 @@ void UPointLightComponent::Serialize(FArchive& Ar)
 		bUseInverseSquaredFalloff = InverseSquaredFalloff_DEPRECATED;
 		AttenuationRadius = Radius_DEPRECATED;
 	}
+	// Reorient old light tubes that didn't use an IES profile
+	else if(Ar.UE4Ver() < VER_UE4_POINTLIGHT_SOURCE_ORIENTATION && SourceLength > KINDA_SMALL_NUMBER && IESTexture == nullptr)
+	{
+		AddLocalRotation( FRotator(-90.f, 0.f, 0.f) );
+	}
 }
 
 #if WITH_EDITOR
@@ -278,6 +330,7 @@ void UPointLightComponent::PostEditChangeProperty(FPropertyChangedEvent& Propert
 	// Make sure exponent is > 0.
 	LightFalloffExponent = FMath::Max( (float) KINDA_SMALL_NUMBER, LightFalloffExponent );
 	SourceRadius = FMath::Max(0.0f, SourceRadius);
+	SoftSourceRadius = FMath::Max(0.0f, SoftSourceRadius);
 	SourceLength = FMath::Max(0.0f, SourceLength);
 	Intensity = FMath::Max(0.0f, Intensity);
 	LightmassSettings.IndirectLightingSaturation = FMath::Max(LightmassSettings.IndirectLightingSaturation, 0.0f);
@@ -332,3 +385,44 @@ void UPointLightComponent::PushRadiusToRenderThread()
 	}
 }
 
+float UPointLightComponent::GetUnitsConversionFactor(ELightUnits SrcUnits, ELightUnits TargetUnits, float CosHalfConeAngle)
+{
+	FMath::Clamp<float>(CosHalfConeAngle, -1, 1 - KINDA_SMALL_NUMBER);
+
+	if (SrcUnits == TargetUnits)
+	{
+		return 1.f;
+	}
+	else
+	{
+		float CnvFactor = 1.f;
+		
+		if (SrcUnits == ELightUnits::Candelas)
+		{
+			CnvFactor = 100.f * 100.f;
+		}
+		else if (SrcUnits == ELightUnits::Lumens)
+		{
+			CnvFactor = 100.f * 100.f / 2.f / PI / (1.f - CosHalfConeAngle);
+		}
+		else
+		{
+			CnvFactor = 16.f;
+		}
+
+		if (TargetUnits == ELightUnits::Candelas)
+		{
+			CnvFactor *= 1.f / 100.f / 100.f;
+		}
+		else if (TargetUnits == ELightUnits::Lumens)
+		{
+			CnvFactor *= 2.f  * PI * (1.f - CosHalfConeAngle) / 100.f / 100.f;
+		}
+		else
+		{
+			CnvFactor *= 1.f / 16.f;
+		}
+
+		return CnvFactor;
+	}
+}

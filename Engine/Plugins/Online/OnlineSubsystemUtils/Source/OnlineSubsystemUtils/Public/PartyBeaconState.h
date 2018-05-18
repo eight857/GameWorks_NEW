@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -42,7 +42,9 @@ namespace EPartyReservationResult
 		// The reservation was rejected because it was badly formed
 		ReservationInvalid,
 		// The reservation was rejected because this was the wrong session
-		BadSessionId
+		BadSessionId,
+		/** The reservation contains players already in this game */
+		ReservationDenied_ContainsExistingPlayers,
 	};
 }
 
@@ -109,6 +111,10 @@ namespace EPartyReservationResult
 			{
 				return TEXT("Bad Session Id");
 			}
+			case ReservationDenied_ContainsExistingPlayers:
+			{
+				return TEXT("Reservation Contains Existing Players");
+			}
 		}
 		return TEXT("");
 	}
@@ -136,6 +142,8 @@ namespace EPartyReservationResult
 			return NSLOCTEXT("EPartyReservationResult", "DuplicateReservation", "Duplicate reservation detected");
 		case EPartyReservationResult::ReservationInvalid:
 			return NSLOCTEXT("EPartyReservationResult", "InvalidReservation", "Bad reservation request");
+		case EPartyReservationResult::ReservationDenied_ContainsExistingPlayers:
+			return NSLOCTEXT("EPartyReservationResult", "ContainsExistingPlayers", "Party members already in session");
 		case EPartyReservationResult::NoResult:
 		case EPartyReservationResult::BadSessionId:
 		default:
@@ -152,6 +160,8 @@ namespace ETeamAssignmentMethod
 	extern ONLINESUBSYSTEMUTILS_API const FName BestFit;
 	/** Assign random team */
 	extern ONLINESUBSYSTEMUTILS_API const FName Random;
+	/** Manually assign the team */
+	extern ONLINESUBSYSTEMUTILS_API const FName Manual;
 }
 
 /** A single player reservation */
@@ -202,7 +212,10 @@ struct ONLINESUBSYSTEMUTILS_API FPartyReservation
 	/** Is this data well formed */
 	bool IsValid() const;
 
-	/** 
+	/** Dump this reservation to log */
+	void Dump() const;
+
+	/**
 	 * Checks if a player from a different reservation can migrate to this reservation
 	 * For example, TeamNum must match
 	 *
@@ -531,8 +544,9 @@ protected:
 
 	/** 
 	 * Check that our reservations are in a good state
+	 * @param bIgnoreEmptyReservations Whether we want to ignore empty reservations or not (because we intend to clean them up later)
 	 */
-	void SanityCheckReservations();
+	void SanityCheckReservations(const bool bIgnoreEmptyReservations) const;
 
 	friend class APartyBeaconHost;
 };

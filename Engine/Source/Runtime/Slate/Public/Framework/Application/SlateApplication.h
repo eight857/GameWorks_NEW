@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -127,6 +127,8 @@ public:
 
 	FGestureDetector GestureDetector;
 
+	TSharedPtr<FNavigationConfig> NavigationConfig;
+
 private:
 	FORCEINLINE bool HasValidFocusPath() const
 	{
@@ -151,6 +153,8 @@ private:
 	void SetFocusPath(const FWidgetPath& InWidgetPath, EFocusCause InCause, bool InShowFocus);
 
 	void FinishFrame();
+
+	void NotifyWindowDestroyed(TSharedRef<SWindow> DestroyedWindow);
 
 private:
 	/** The index the user was assigned. */
@@ -289,6 +293,9 @@ public:
 	/** @return the global tab manager */
 	static TSharedRef<class FGlobalTabmanager> GetGlobalTabManager();
 
+	/** Initializes high dpi support for the process */
+	static void InitHighDPI();
+
 	/** @return the root style node, which is the entry point to the style graph representing all the current style rules. */
 	const class FStyleNode* GetRootStyle() const;
 
@@ -346,8 +353,9 @@ public:
 	/** Returns true if this slate application is ready to display windows. */
 	bool CanDisplayWindows() const;
 
-	virtual EUINavigation GetNavigationDirectionFromKey( const FKeyEvent& InKeyEvent ) const override;
-	
+	virtual EUINavigation GetNavigationDirectionFromKey(const FKeyEvent& InKeyEvent) const override;
+	virtual EUINavigation GetNavigationDirectionFromAnalog(const FAnalogInputEvent& InAnalogEvent) override;
+
 	/**
 	 * Adds a modal window to the application.  
 	 * In most cases, this function does not return until the modal window is closed (the only exception is a modal window for slow tasks)  
@@ -439,7 +447,7 @@ public:
 	bool HasOpenSubMenus(TSharedPtr<IMenu> InMenu) const;
 
 	/** @return	Returns true if there are any pop-up menus summoned */
-	bool AnyMenusVisible() const;
+	virtual bool AnyMenusVisible() const override;
 
 	/**
 	 * Attempt to locate a menu that contains the specified widget
@@ -495,6 +503,10 @@ public:
 
 	/** Event after slate application ticks. */
 	FSlateTickEvent& OnPostTick()  { return PostTickEvent; }
+
+	/** Delegate for when a new user has been registered. */
+	DECLARE_EVENT_OneParam(FSlateApplication, FUserRegisteredEvent, int32);
+	FUserRegisteredEvent& OnUserRegistered() { return UserRegisteredEvent; }
 
 	/** 
 	 * Removes references to FViewportRHI's.  
@@ -612,6 +624,9 @@ public:
 	DECLARE_EVENT_OneParam(FSlateApplication, FOnApplicationMousePreInputButtonDownListener, const FPointerEvent&);
 	FOnApplicationMousePreInputButtonDownListener& OnApplicationMousePreInputButtonDownListener() { return OnApplicationMousePreInputButtonDownListenerEvent; }
 
+	/** Gets a delegate that is invoked in the editor when a windows dpi scale changes or when a widget window may have changed and DPI scale info needs to be checked */
+	DECLARE_EVENT_OneParam(FSlateApplication, FOnWindowDPIScaleChanged, TSharedRef<SWindow>);
+	FOnWindowDPIScaleChanged& OnWindowDPIScaleChanged() { return OnWindowDPIScaleChangedEvent; }
 #endif //WITH_EDITOR
 
 	/**
@@ -791,7 +806,7 @@ public:
 	 * Calculates the popup window position from the passed in window position and size. 
 	 * Adjusts position for popup windows which are outside of the work area of the monitor where they reside
 	 *
-	 * @param InAnchor				The current(suggseted) window position and size of an area which may not be covered by the popup.
+	 * @param InAnchor				The current(suggested) window position and size of an area which may not be covered by the popup.
 	 * @param InSize				The size of the window
 	 * @param InProposedPlacement	The location on screen where the popup should go if allowed. If zero this will be determined from Orientation and Anchor
 	 * @param Orientation			The direction of the popup.
@@ -799,7 +814,16 @@ public:
 	 *								If horizontal it will attempt to open below the anchor but will open above if there is no room.
 	 * @return The adjusted position
 	 */
-	virtual FVector2D CalculatePopupWindowPosition( const FSlateRect& InAnchor, const FVector2D& InSize, const FVector2D& InProposedPlacement = FVector2D::ZeroVector, const EOrientation Orientation = Orient_Vertical) const;
+	virtual FVector2D CalculatePopupWindowPosition( const FSlateRect& InAnchor, const FVector2D& InSize, bool bAutoAdjustForDPIScale = true, const FVector2D& InProposedPlacement = FVector2D::ZeroVector, const EOrientation Orientation = Orient_Vertical) const;
+
+	/**
+	 * Calculates the tooltip window position.
+	 * 
+	 * @param InAnchorRect The current(suggested) window position and size of an area which may not be covered by the popup.
+	 * @param InSize The size of the tooltip window.
+	 * @return The suggested position.
+	 */
+	FVector2D CalculateTooltipWindowPosition( const FSlateRect& InAnchorRect, const FVector2D& InSize, bool bAutoAdjustForDPIScale) const;
 
 	/**
 	 * Is the window in the app's destroy queue? If so it will be destroyed next tick.
@@ -840,6 +864,9 @@ public:
 	 * @param TextEntryWidget The widget that will receive the input from the virtual keyboard
 	 */
 	void ShowVirtualKeyboard( bool bShow, int32 UserIndex, TSharedPtr<IVirtualKeyboardEntry> TextEntryWidget = nullptr );
+
+	/** @return true if the current platform allows cursor positioning in editable text boxes */
+	bool AllowMoveCursor();
 
 	/** Get the work area that has the largest intersection with the specified rectangle */
 	FSlateRect GetWorkArea( const FSlateRect& InRect ) const;
@@ -940,23 +967,7 @@ protected:
 	 * Locates the SlateUser object corresponding to the index, if one can't be found, it will create a slate user at
 	 * the provided index.  If the index is less than 0, null is returned.
 	 */
-	FORCEINLINE FSlateUser* GetOrCreateUser(int32 UserIndex)
-	{
-		if ( UserIndex < 0 )
-		{
-			return nullptr;
-		}
-
-		if ( FSlateUser* User = GetUser(UserIndex) )
-		{
-			return User;
-		}
-
-		TSharedRef<FSlateUser> NewUser = MakeShareable(new FSlateUser(UserIndex, false));
-		RegisterUser(NewUser);
-
-		return &NewUser.Get();
-	}
+	FSlateUser* GetOrCreateUser(int32 UserIndex);
 
 	friend class FAnalogCursor;
 	friend class FEventRouter;
@@ -1150,7 +1161,13 @@ public:
 
 public:
 
-	void SetNavigationConfig( TSharedRef<FNavigationConfig> Config );
+	TFunction<TSharedRef<FNavigationConfig>()> GetNavigationConfigFactory() const { return NavigationConfigFactory; }
+
+	/**
+	 * Sets the navigation config factory.  If you need to control navigation config dynamically, you
+	 * should subclass FNavigationConfig to be dynamically adjustable to your needs.
+	 */
+	void SetNavigationConfigFactory( TFunction<TSharedRef<FNavigationConfig>()> InNavigationConfigFactory );
 
 	/** Called when the slate application is being shut down. */
 	void OnShutdown();
@@ -1170,11 +1187,21 @@ public:
 	 *
 	 * @param CurrentEventPath   The WidgetPath along which the reply-generated event was routed
 	 * @param TheReply           The reply generated by an event that was being processed.
+	 * @param UserIndex			 User index that generated the event we are replying to (defaults to 0, at least for now)
+	 * @param PointerIndex		 Pointer index that generated the event we are replying to
+	 */
+	void ProcessExternalReply(const FWidgetPath& CurrentEventPath, const FReply TheReply, const uint32 UserIndex = 0, const uint32 PointerIndex = 10 /* todo: use the enum */);
+
+	/**
+	 * Apply any requests from the Reply to the application. E.g. Capture mouse
+	 *
+	 * @param CurrentEventPath   The WidgetPath along which the reply-generated event was routed
+	 * @param TheReply           The reply generated by an event that was being processed.
 	 * @param WidgetsUnderMouse  Optional widgets currently under the mouse; initiating drag and drop needs access to widgets under the mouse.
 	 * @param InMouseEvent       Optional mouse event that caused this action.
 	 * @param UserIndex			 User index that generated the event we are replying to (defaults to 0, at least for now)
 	 */
-	void ProcessReply(const FWidgetPath& CurrentEventPath, const FReply TheReply, const FWidgetPath* WidgetsUnderMouse, const FPointerEvent* InMouseEvent, const uint32 UserIndex = 0);
+	void ProcessReply(const FWidgetPath& CurrentEventPath, const FReply& TheReply, const FWidgetPath* WidgetsUnderMouse, const FPointerEvent* InMouseEvent, const uint32 UserIndex = 0);
 	
 	/** Bubble a request for which cursor to display for widgets under the mouse or the widget that captured the mouse. */
 	void QueryCursor();
@@ -1401,6 +1428,7 @@ public:
 	virtual void OnResizingWindow( const TSharedRef< FGenericWindow >& PlatformWindow ) override;
 	virtual bool BeginReshapingWindow( const TSharedRef< FGenericWindow >& PlatformWindow ) override;
 	virtual void FinishedReshapingWindow( const TSharedRef< FGenericWindow >& PlatformWindow ) override;
+	virtual void HandleDPIScaleChanged(const TSharedRef<FGenericWindow>& Window) override;
 	virtual void OnMovedWindow( const TSharedRef< FGenericWindow >& PlatformWindow, const int32 X, const int32 Y ) override;
 	virtual bool OnWindowActivationChanged( const TSharedRef< FGenericWindow >& PlatformWindow, const EWindowActivation ActivationType ) override;
 	virtual bool OnApplicationActivationChanged( const bool IsActive ) override;
@@ -1561,7 +1589,7 @@ private:
 	 *
 	 * @return if the widget was navigated too
 	 */
-	bool ExecuteNavigation(const FWidgetPath& NavigationSource, TSharedPtr<SWidget> DestinationWidget, const uint32 UserIndex);
+	bool ExecuteNavigation(const FWidgetPath& NavigationSource, TSharedPtr<SWidget> DestinationWidget, const uint32 UserIndex, bool bAlwaysHandleNavigationAttempt);
 
 private:
 
@@ -2073,10 +2101,10 @@ private:
 	TMap< const ILayoutCache*, TSharedPtr<FCacheElementPools> > CachedElementLists;
 	TArray< TSharedPtr<FCacheElementPools> > ReleasedCachedElementLists;
 
-	/** Configured fkeys to control navigation */
-	TSharedRef<FNavigationConfig> NavigationConfig;
+	/** This factory function creates a navigation config for each slate user. */
+	TFunction<TSharedRef<FNavigationConfig>()> NavigationConfigFactory;
 
-	/**  */
+	/** The simulated gestures Slate Application will be in charge of. */
 	TBitArray<FDefaultBitArrayAllocator> SimulateGestures;
 
 	/** Delegate for pre slate tick */
@@ -2084,6 +2112,9 @@ private:
 
 	/** Delegate for post slate Tick */
 	FSlateTickEvent PostTickEvent;
+
+	/** Delegate for when a new user has been registered. */
+	FUserRegisteredEvent UserRegisteredEvent;
 
 	/** Delegate for slate Tick during modal dialogs */
 	FOnModalLoopTickEvent ModalLoopTickEvent;
@@ -2141,15 +2172,20 @@ private:
 
 #if WITH_EDITOR
 	/**
-	* Delegate that is invoked before the input key get process by slate widgets bubble system.
-	* User Function cannot mark the input as handled.
-	*/
+	 * Delegate that is invoked before the input key get process by slate widgets bubble system.
+	 * User Function cannot mark the input as handled.
+	 */
 	FOnApplicationPreInputKeyDownListener OnApplicationPreInputKeyDownListenerEvent;
 
 	/**
-	* Delegate that is invoked before the mouse input button get process by slate widgets bubble system.
-	* User Function cannot mark the input as handled.
-	*/
+	 * Delegate that is invoked before the mouse input button get process by slate widgets bubble system.
+	 * User Function cannot mark the input as handled.
+	 */
 	FOnApplicationMousePreInputButtonDownListener OnApplicationMousePreInputButtonDownListenerEvent;
+
+	/**
+	 * Called when an editor window dpi scale is changed
+	 */
+	FOnWindowDPIScaleChanged OnWindowDPIScaleChangedEvent;
 #endif // WITH_EDITOR
 };

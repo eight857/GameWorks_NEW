@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SGraphNode.h"
 #include "EdGraph/EdGraph.h"
@@ -855,6 +855,64 @@ void SGraphNode::UpdateGraphNode()
 	TSharedPtr<SVerticalBox> InnerVerticalBox;
 	this->ContentScale.Bind( this, &SGraphNode::GetContentScale );
 
+
+	InnerVerticalBox = SNew(SVerticalBox)
+		+SVerticalBox::Slot()
+		.AutoHeight()
+		.HAlign(HAlign_Fill)
+		.VAlign(VAlign_Top)
+		.Padding(Settings->GetNonPinNodeBodyPadding())
+		[
+			TitleAreaWidget
+		]
+
+		+SVerticalBox::Slot()
+		.AutoHeight()
+		.HAlign(HAlign_Fill)
+		.VAlign(VAlign_Top)
+		[
+			CreateNodeContentArea()
+		];
+
+	if ((GraphNode->GetDesiredEnabledState() != ENodeEnabledState::Enabled) && !GraphNode->IsAutomaticallyPlacedGhostNode())
+	{
+		const bool bDevelopmentOnly = GraphNode->GetDesiredEnabledState() == ENodeEnabledState::DevelopmentOnly;
+		const FText StatusMessage = bDevelopmentOnly ? NSLOCTEXT("SGraphNode", "DevelopmentOnly", "Development Only") : NSLOCTEXT("SGraphNode", "DisabledNode", "Disabled");
+		const FText StatusMessageTooltip = bDevelopmentOnly ?
+			NSLOCTEXT("SGraphNode", "DevelopmentOnlyTooltip", "This node will only be executed in the editor and in Development builds in a packaged game (it will be treated as disabled in Shipping or Test builds cooked from a commandlet)") :
+			NSLOCTEXT("SGraphNode", "DisabledNodeTooltip", "This node is currently disabled and will not be executed");
+
+		InnerVerticalBox->AddSlot()
+			.AutoHeight()
+			.HAlign(HAlign_Fill)
+			.VAlign(VAlign_Top)
+			.Padding(FMargin(2, 0))
+			[
+				SNew(SBorder)
+				.BorderImage(FEditorStyle::GetBrush(bDevelopmentOnly ? "Graph.Node.DevelopmentBanner" : "Graph.Node.DisabledBanner"))
+				.HAlign(HAlign_Fill)
+				.VAlign(VAlign_Fill)
+				[
+					SNew(STextBlock)
+					.Text(StatusMessage)
+					.ToolTipText(StatusMessageTooltip)
+					.Justification(ETextJustify::Center)
+					.ColorAndOpacity(FLinearColor::White)
+					.ShadowOffset(FVector2D::UnitVector)
+					.Visibility(EVisibility::Visible)
+				]
+			];
+	}
+
+	InnerVerticalBox->AddSlot()
+		.AutoHeight()
+		.Padding(Settings->GetNonPinNodeBodyPadding())
+		[
+			ErrorReporting->AsWidget()
+		];
+
+
+
 	this->GetOrAddSlot( ENodeZone::Center )
 		.HAlign(HAlign_Center)
 		.VAlign(VAlign_Center)
@@ -874,30 +932,7 @@ void SGraphNode::UpdateGraphNode()
 				]
 				+SOverlay::Slot()
 				[
-					SAssignNew(InnerVerticalBox, SVerticalBox)
-					+SVerticalBox::Slot()
-					.AutoHeight()
-					.HAlign(HAlign_Fill)
-					.VAlign(VAlign_Top)
-					.Padding(Settings->GetNonPinNodeBodyPadding())
-					[
-						TitleAreaWidget
-					]
-
-					+SVerticalBox::Slot()
-					.AutoHeight()
-					.HAlign(HAlign_Fill)
-					.VAlign(VAlign_Top)
-					[
-						CreateNodeContentArea()
-					]
-
-					+SVerticalBox::Slot()
-					.AutoHeight()
-					.Padding(Settings->GetNonPinNodeBodyPadding())
-					[
-						ErrorReporting->AsWidget()
-					]
+					InnerVerticalBox.ToSharedRef()
 				]
 			]			
 		];
@@ -1027,13 +1062,11 @@ void SGraphNode::CreateAdvancedViewArrow(TSharedPtr<SVerticalBox> MainBox)
 
 bool SGraphNode::ShouldPinBeHidden(const UEdGraphPin* InPin) const
 {
-	const UEdGraphSchema_K2* K2Schema = Cast<const UEdGraphSchema_K2>(GraphNode->GetSchema());
-
 	bool bHideNoConnectionPins = false;
 	bool bHideNoConnectionNoDefaultPins = false;
 
 	// Not allowed to hide exec pins 
-	const bool bCanHidePin = (K2Schema && (InPin->PinType.PinCategory != K2Schema->PC_Exec));
+	const bool bCanHidePin = (InPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec);
 
 	if (OwnerGraphPanelPtr.IsValid() && bCanHidePin)
 	{
@@ -1043,7 +1076,7 @@ bool SGraphNode::ShouldPinBeHidden(const UEdGraphPin* InPin) const
 
 	const bool bIsOutputPin = InPin->Direction == EGPD_Output;
 	const bool bPinHasDefaultValue = !InPin->DefaultValue.IsEmpty() || (InPin->DefaultObject != NULL);
-	const bool bIsSelfTarget = K2Schema && (InPin->PinType.PinCategory == K2Schema->PC_Object) && (InPin->PinName == K2Schema->PN_Self);
+	const bool bIsSelfTarget = (InPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object) && (InPin->PinName == UEdGraphSchema_K2::PN_Self);
 	const bool bPinHasValidDefault = !bIsOutputPin && (bPinHasDefaultValue || bIsSelfTarget);
 	const bool bPinHasConections = InPin->LinkedTo.Num() > 0;
 
@@ -1080,7 +1113,7 @@ void SGraphNode::CreatePinWidgets()
 			, *GraphNode->GetNodeTitle(ENodeTitleType::ListView).ToString()
 			, *GraphNode->GetPathName()
 			, (CurPin->Direction == EEdGraphPinDirection::EGPD_Input) ? TEXT("input") : TEXT("output")
-			,  CurPin->PinFriendlyName.IsEmpty() ? *CurPin->PinName : *CurPin->PinFriendlyName.ToString()
+			,  CurPin->PinFriendlyName.IsEmpty() ? *CurPin->PinName.ToString() : *CurPin->PinFriendlyName.ToString()
 			,  CurPin->GetOuter() ? *CurPin->GetOuter()->GetClass()->GetName() : TEXT("UNKNOWN")
 			,  CurPin->GetOuter() ? *CurPin->GetOuter()->GetPathName() : TEXT("NULL")) )
 		{
@@ -1334,7 +1367,7 @@ FText SGraphNode::GetErrorMsgToolTip( ) const
 
 bool SGraphNode::IsNameReadOnly() const
 {
-	return !GraphNode->bCanRenameNode;
+	return (!GraphNode->bCanRenameNode || !IsNodeEditable());
 }
 
 bool SGraphNode::OnVerifyNameTextChanged(const FText& InText, FText& OutErrorMessage)
@@ -1359,7 +1392,11 @@ bool SGraphNode::OnVerifyNameTextChanged(const FText& InText, FText& OutErrorMes
 
 void SGraphNode::OnNameTextCommited(const FText& InText, ETextCommit::Type CommitInfo)
 {
-	OnTextCommitted.ExecuteIfBound(InText, CommitInfo, GraphNode);
+	FText ErrorMessage;
+	if (!OnVerifyTextCommit.IsBound() || OnVerifyTextCommit.Execute(InText, GraphNode, ErrorMessage))
+	{
+		OnTextCommitted.ExecuteIfBound(InText, CommitInfo, GraphNode);
+	}
 	
 	UpdateErrorInfo();
 	if (ErrorReporting.IsValid())

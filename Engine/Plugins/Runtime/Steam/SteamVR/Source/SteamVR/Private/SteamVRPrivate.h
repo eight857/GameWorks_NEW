@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 /** Name of the current OpenVR SDK version in use (matches directory name) */
-#define OPENVR_SDK_VER TEXT("OpenVRv1_0_7")
+#define OPENVR_SDK_VER TEXT("OpenVRv1_0_10")
 
 // for STEAMVR_SUPPORTED_PLATFORMS, keep at top
 #include "ISteamVRPlugin.h"

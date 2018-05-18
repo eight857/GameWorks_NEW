@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -162,7 +162,6 @@
 #include "Math/Float16.h"
 #include "Math/Float32.h"
 #include "Math/Vector2DHalf.h"
-#include "Math/AlphaBlendType.h"
 #include "Math/Transform.h"
 #include "Math/ConvexHull2d.h"
 #include "Misc/EnumClassFlags.h"
@@ -281,9 +280,7 @@
 #include "UObject/CoreNative.h"
 #include "UObject/WeakObjectPtr.h"
 #include "Templates/Casts.h"
-#include "Misc/StringAssetReference.h"
-#include "UObject/PersistentObjectPtr.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 #include "UObject/Interface.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/LazyObjectPtr.h"
@@ -297,7 +294,6 @@
 #include "UObject/GCObject.h"
 #include "UObject/ScriptMacros.h"
 #include "UObject/Stack.h"
-#include "Misc/StringClassReference.h"
 #include "UObject/Package.h"
 #include "Misc/PackageName.h"
 #include "UObject/ObjectResource.h"
@@ -555,7 +551,6 @@
 #include "Animation/AnimLinkableElement.h"
 #include "Animation/PreviewAssetAttachComponent.h"
 #include "BoneContainer.h"
-#include "SkeletalMeshTypes.h"
 #include "GPUSkinPublicDefs.h"
 #include "Engine/SkeletalMesh.h"
 #include "EngineGlobals.h"
@@ -673,7 +668,7 @@
 #include "FileHelpers.h"
 #include "Factories/FbxImportUI.h"
 #include "ThumbnailRendering/ThumbnailRenderer.h"
-#include "Editor/UnrealEd/Private/FbxImporter.h"
+#include "FbxImporter.h"
 #include "Toolkits/BaseToolkit.h"
 #include "EditorModes.h"
 #include "Toolkits/AssetEditorToolkit.h"

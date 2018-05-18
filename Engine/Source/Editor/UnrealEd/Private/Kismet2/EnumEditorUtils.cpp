@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Kismet2/EnumEditorUtils.h"
 #include "UObject/UObjectHash.h"
@@ -581,7 +581,7 @@ void FEnumEditorUtils::UpgradeDisplayNamesFromMetaData(UUserDefinedEnum* Enum)
 		bool bDidUpgradeDisplayNames = false;
 		for (int32 Index = 0; Index < EnumeratorsToEnsure; ++Index)
 		{
-			const FString MetaDataEntryDisplayName = Enum->GetMetaData(FEnumEditorUtilsHelper::DisplayName(), Index);
+			const FString& MetaDataEntryDisplayName = Enum->GetMetaData(FEnumEditorUtilsHelper::DisplayName(), Index);
 			if (!MetaDataEntryDisplayName.IsEmpty())
 			{
 				bDidUpgradeDisplayNames = true;

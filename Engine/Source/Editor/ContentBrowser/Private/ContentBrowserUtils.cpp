@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "ContentBrowserUtils.h"
@@ -6,11 +6,13 @@
 #include "HAL/IConsoleManager.h"
 #include "Misc/MessageDialog.h"
 #include "HAL/FileManager.h"
+#include "HAL/PlatformApplicationMisc.h"
 #include "Misc/Paths.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/FeedbackContext.h"
 #include "Misc/ScopedSlowTask.h"
 #include "Misc/App.h"
+#include "Misc/FileHelper.h"
 #include "Modules/ModuleManager.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
@@ -57,6 +59,7 @@
 #define LOCTEXT_NAMESPACE "ContentBrowser"
 
 #define MAX_CLASS_NAME_LENGTH 32 // Enforce a reasonable class name length so the path is not too long for PLATFORM_MAX_FILEPATH_LENGTH
+
 
 namespace ContentBrowserUtils
 {
@@ -461,7 +464,7 @@ void ContentBrowserUtils::RenameAsset(UObject* Asset, const FString& NewName, FT
 	TArray<FAssetRenameData> AssetsAndNames;
 	const FString PackagePath = FPackageName::GetLongPackagePath(Asset->GetOutermost()->GetName());
 	new(AssetsAndNames) FAssetRenameData(Asset, PackagePath, NewName);
-	AssetToolsModule.Get().RenameAssets(AssetsAndNames);
+	AssetToolsModule.Get().RenameAssetsWithDialog(AssetsAndNames);
 }
 
 void ContentBrowserUtils::CopyAssets(const TArray<UObject*>& Assets, const FString& DestPath)
@@ -537,7 +540,7 @@ void ContentBrowserUtils::MoveAssets(const TArray<UObject*>& Assets, const FStri
 
 	if ( AssetsAndNames.Num() > 0 )
 	{
-		AssetToolsModule.Get().RenameAssets(AssetsAndNames);
+		AssetToolsModule.Get().RenameAssetsWithDialog(AssetsAndNames);
 	}
 }
 
@@ -962,7 +965,7 @@ void ContentBrowserUtils::CopyAssetReferencesToClipboard(const TArray<FAssetData
 		ClipboardText += (*AssetIt).GetExportTextName();
 	}
 
-	FPlatformMisc::ClipboardCopy( *ClipboardText );
+	FPlatformApplicationMisc::ClipboardCopy( *ClipboardText );
 }
 
 void ContentBrowserUtils::CaptureThumbnailFromViewport(FViewport* InViewport, const TArray<FAssetData>& InAssetsToAssign)
@@ -1025,34 +1028,30 @@ void ContentBrowserUtils::CaptureThumbnailFromViewport(FViewport* InViewport, co
 		{
 			const FAssetData& CurrentAsset = *AssetIt;
 
-			// check whether this is a type that uses one of the shared static thumbnails
-			if ( AssetToolsModule.Get().AssetUsesGenericThumbnail( CurrentAsset ) )
+			//assign the thumbnail and dirty
+			const FString ObjectFullName = CurrentAsset.GetFullName();
+			const FString PackageName    = CurrentAsset.PackageName.ToString();
+
+			UPackage* AssetPackage = FindObject<UPackage>( NULL, *PackageName );
+			if ( ensure(AssetPackage) )
 			{
-				//assign the thumbnail and dirty
-				const FString ObjectFullName = CurrentAsset.GetFullName();
-				const FString PackageName    = CurrentAsset.PackageName.ToString();
-
-				UPackage* AssetPackage = FindObject<UPackage>( NULL, *PackageName );
-				if ( ensure(AssetPackage) )
+				FObjectThumbnail* NewThumbnail = ThumbnailTools::CacheThumbnail(ObjectFullName, &TempThumbnail, AssetPackage);
+				if ( ensure(NewThumbnail) )
 				{
-					FObjectThumbnail* NewThumbnail = ThumbnailTools::CacheThumbnail(ObjectFullName, &TempThumbnail, AssetPackage);
-					if ( ensure(NewThumbnail) )
-					{
-						//we need to indicate that the package needs to be resaved
-						AssetPackage->MarkPackageDirty();
+					//we need to indicate that the package needs to be resaved
+					AssetPackage->MarkPackageDirty();
 
-						// Let the content browser know that we've changed the thumbnail
-						NewThumbnail->MarkAsDirty();
+					// Let the content browser know that we've changed the thumbnail
+					NewThumbnail->MarkAsDirty();
 						
-						// Signal that the asset was changed if it is loaded so thumbnail pools will update
-						if ( CurrentAsset.IsAssetLoaded() )
-						{
-							CurrentAsset.GetAsset()->PostEditChange();
-						}
-
-						//Set that thumbnail as a valid custom thumbnail so it'll be saved out
-						NewThumbnail->SetCreatedAfterCustomThumbsEnabled();
+					// Signal that the asset was changed if it is loaded so thumbnail pools will update
+					if ( CurrentAsset.IsAssetLoaded() )
+					{
+						CurrentAsset.GetAsset()->PostEditChange();
 					}
+
+					//Set that thumbnail as a valid custom thumbnail so it'll be saved out
+					NewThumbnail->SetCreatedAfterCustomThumbsEnabled();
 				}
 			}
 		}
@@ -1098,26 +1097,7 @@ bool ContentBrowserUtils::AssetHasCustomThumbnail( const FAssetData& AssetData )
 	FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
 	if ( AssetToolsModule.Get().AssetUsesGenericThumbnail(AssetData) )
 	{
-		const FObjectThumbnail* CachedThumbnail = ThumbnailTools::FindCachedThumbnail(AssetData.GetFullName());
-		if ( CachedThumbnail != NULL && !CachedThumbnail->IsEmpty() )
-		{
-			return true;
-		}
-
-		// If we don't yet have a thumbnail map, check the disk
-		FName ObjectFullName = FName(*AssetData.GetFullName());
-		TArray<FName> ObjectFullNames;
-		FThumbnailMap LoadedThumbnails;
-		ObjectFullNames.Add( ObjectFullName );
-		if ( ThumbnailTools::ConditionallyLoadThumbnailsForObjects( ObjectFullNames, LoadedThumbnails ) )
-		{
-			const FObjectThumbnail* Thumbnail = LoadedThumbnails.Find(ObjectFullName);
-
-			if ( Thumbnail != NULL && !Thumbnail->IsEmpty() )
-			{
-				return true;
-			}
-		}
+		return ThumbnailTools::AssetHasCustomThumbnail(AssetData.GetFullName());
 	}
 
 	return false;
@@ -1148,22 +1128,28 @@ ContentBrowserUtils::ECBFolderCategory ContentBrowserUtils::GetFolderCategory( c
 	}
 	else
 	{
-		const bool bIsEngineContent = IsEngineFolder(InPath) || IsPluginFolder(InPath, EPluginLoadedFrom::Engine);
-		if(bIsEngineContent)
+		if (IsEngineFolder(InPath))
 		{
 			return ECBFolderCategory::EngineContent;
 		}
 
-		const bool bIsPluginContent = IsPluginFolder(InPath, EPluginLoadedFrom::GameProject);
-		if(bIsPluginContent)
-		{
-			return ECBFolderCategory::PluginContent;
-		}
-
-		const bool bIsDeveloperContent = IsDevelopersFolder(InPath);
-		if(bIsDeveloperContent)
+		if (IsDevelopersFolder(InPath))
 		{
 			return ECBFolderCategory::DeveloperContent;
+		}
+
+		EPluginLoadedFrom PluginSource;
+		if (IsPluginFolder(InPath, &PluginSource))
+		{
+			if (PluginSource == EPluginLoadedFrom::Project)
+			{
+				return ECBFolderCategory::PluginContent;
+			}
+			else
+			{
+				checkSlow(PluginSource == EPluginLoadedFrom::Engine);
+				return ECBFolderCategory::EngineContent;
+			}
 		}
 
 		return ECBFolderCategory::GameContent;
@@ -1186,20 +1172,46 @@ bool ContentBrowserUtils::IsDevelopersFolder( const FString& InPath )
 	return InPath.StartsWith(DeveloperPathWithSlash) || InPath == DeveloperPathWithoutSlash;
 }
 
-bool ContentBrowserUtils::IsPluginFolder( const FString& InPath , EPluginLoadedFrom WhereFromFilter)
+static bool PathStartsWithPluginAssetPath(const FString& Path, const FString& PluginName)
 {
-	FString PathWithSlash = InPath / TEXT("");
-	for(const TSharedRef<IPlugin>& Plugin: IPluginManager::Get().GetEnabledPlugins())
+	// accepted path examples for a plugin named "Plugin":
+	// "/Plugin"
+	// "/Plugin/"
+	// "/Plugin/More/Stuff"
+	const int32 PluginNameLength = PluginName.Len();
+	const int32 PathLength = Path.Len();
+	if (PathLength <= PluginNameLength)
 	{
-		if(Plugin->CanContainContent() && Plugin->GetLoadedFrom() == WhereFromFilter)
+		return false;
+	}
+	else
+	{
+		const TCHAR* PathCh = *Path;
+		return PathCh[0] == '/' && (PathCh[PluginNameLength + 1] == '/' || PathCh[PluginNameLength + 1] == 0) && FCString::Strnicmp(PathCh + 1, *PluginName, PluginNameLength) == 0;
+	}
+}
+
+bool ContentBrowserUtils::IsPluginFolder(const FString& InPath, const TArray<TSharedRef<IPlugin>>& InPlugins, EPluginLoadedFrom* OutPluginSource)
+{
+	for (const TSharedRef<IPlugin>& PluginRef : InPlugins)
+	{
+		const IPlugin& Plugin = *PluginRef;
+		const FString& PluginName = Plugin.GetName();
+		if (PathStartsWithPluginAssetPath(InPath, PluginName) || InPath == PluginName)
 		{
-			if(PathWithSlash.StartsWith(Plugin->GetMountedAssetPath()) || InPath == Plugin->GetName())
+			if (OutPluginSource != nullptr)
 			{
-				return true;
+				*OutPluginSource = Plugin.GetLoadedFrom();
 			}
+			return true;
 		}
 	}
 	return false;
+}
+
+bool ContentBrowserUtils::IsPluginFolder(const FString& InPath, EPluginLoadedFrom* OutPluginSource)
+{
+	return IsPluginFolder(InPath, IPluginManager::Get().GetEnabledPluginsWithContent(), OutPluginSource);
 }
 
 bool ContentBrowserUtils::IsClassesFolder(const FString& InPath)
@@ -1277,7 +1289,7 @@ bool ContentBrowserUtils::IsValidFolderName(const FString& FolderName, FText& Re
 		}
 	}
 	
-	return FEditorFileUtils::IsFilenameValidForSaving( FolderName, Reason );
+	return FFileHelper::IsFilenameValidForSaving( FolderName, Reason );
 }
 
 bool ContentBrowserUtils::DoesFolderExist(const FString& FolderPath)
@@ -1595,7 +1607,7 @@ bool ContentBrowserUtils::HasCustomColors( TArray< FLinearColor >* OutColors )
 		for( int32 SectionIndex = 0; SectionIndex < Section.Num(); SectionIndex++ )
 		{
 			FString EntryStr = Section[ SectionIndex ];
-			EntryStr.Trim();
+			EntryStr.TrimStartInline();
 
 			FString PathStr;
 			FString ColorStr;
@@ -1656,7 +1668,7 @@ bool ContentBrowserUtils::IsValidObjectPathForCreate(const FString& ObjectPath, 
 	const FString ObjectName = FPackageName::ObjectPathToObjectName(ObjectPath);
 
 	// Make sure the name is not already a class or otherwise invalid for saving
-	if ( !FEditorFileUtils::IsFilenameValidForSaving(ObjectName, OutErrorMessage) )
+	if ( !FFileHelper::IsFilenameValidForSaving(ObjectName, OutErrorMessage) )
 	{
 		// Return false to indicate that the user should enter a new name
 		return false;
@@ -1755,7 +1767,7 @@ bool ContentBrowserUtils::IsValidFolderPathForCreate(const FString& InFolderPath
 int32 ContentBrowserUtils::GetPackageLengthForCooking(const FString& PackageName, bool IsInternalBuild)
 {
 	// Pad out the game name to the maximum allowed
-	const FString GameName = FApp::GetGameName();
+	const FString GameName = FApp::GetProjectName();
 	FString GameNamePadded = GameName;
 	while (GameNamePadded.Len() < MaxGameNameLen)
 	{
@@ -1764,7 +1776,7 @@ int32 ContentBrowserUtils::GetPackageLengthForCooking(const FString& PackageName
 
 	// We use "WindowsNoEditor" below as it's the longest platform name, so will also prove that any shorter platform names will validate correctly
 	const FString AbsoluteRootPath = FPaths::ConvertRelativePathToFull(FPaths::RootDir());
-	const FString AbsoluteGamePath = FPaths::ConvertRelativePathToFull(FPaths::GameDir());
+	const FString AbsoluteGamePath = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
 	const FString AbsoluteCookPath = AbsoluteGamePath / TEXT("Saved") / TEXT("Cooked") / TEXT("WindowsNoEditor") / GameName;
 
 	int32 AbsoluteCookPathToAssetLength = 0;
@@ -1884,7 +1896,7 @@ void GetOutOfDatePackageDependencies(const TArray<FString>& InPackagesThatWillBe
 					AllPackagesArray.Emplace(PackageDependency);
 
 					FString PackageDependencyStr = PackageDependency.ToString();
-					if (!FPackageName::IsScriptPackage(PackageDependencyStr))
+					if (!FPackageName::IsScriptPackage(PackageDependencyStr) && FPackageName::IsValidLongPackageName(PackageDependencyStr))
 					{
 						AllDependencies.Emplace(MoveTemp(PackageDependencyStr));
 					}
@@ -1897,7 +1909,18 @@ void GetOutOfDatePackageDependencies(const TArray<FString>& InPackagesThatWillBe
 	if (AllDependencies.Num() > 0)
 	{
 		ISourceControlProvider& SCCProvider = ISourceControlModule::Get().GetProvider();
-		const TArray<FString> DependencyFilenames = SourceControlHelpers::PackageFilenames(AllDependencies);
+		
+		TArray<FString> DependencyFilenames = SourceControlHelpers::PackageFilenames(AllDependencies);
+		for (int32 DependencyIndex = 0; DependencyIndex < AllDependencies.Num(); ++DependencyIndex)
+		{
+			// Dependency data may contain files that no longer exist on disk; strip those from the list now
+			if (!FPaths::FileExists(DependencyFilenames[DependencyIndex]))
+			{
+				AllDependencies.RemoveAt(DependencyIndex, 1, false);
+				DependencyFilenames.RemoveAt(DependencyIndex, 1, false);
+				--DependencyIndex;
+			}
+		}
 
 		SCCProvider.Execute(ISourceControlOperation::Create<FUpdateStatus>(), DependencyFilenames);
 		for (int32 DependencyIndex = 0; DependencyIndex < AllDependencies.Num(); ++DependencyIndex)
@@ -2204,5 +2227,42 @@ bool ContentBrowserUtils::CanRenameFromPathView(const TArray<FString>& SelectedP
 	return true;
 }
 
+bool ContentBrowserUtils::IsFavoriteFolder(const FString& FolderPath)
+{
+	return FContentBrowserSingleton::Get().FavoriteFolderPaths.Contains(FolderPath);
+}
+
+void ContentBrowserUtils::AddFavoriteFolder(const FString& FolderPath, bool bFlushConfig /*= true*/)
+{
+	FContentBrowserSingleton::Get().FavoriteFolderPaths.AddUnique(FolderPath);
+}
+
+void ContentBrowserUtils::RemoveFavoriteFolder(const FString& FolderPath, bool bFlushConfig /*= true*/)
+{
+	TArray<FString> FoldersToRemove;
+	FoldersToRemove.Add(FolderPath);
+	
+	// Find and remove any subfolders
+	for (const FString& FavoritePath : FContentBrowserSingleton::Get().FavoriteFolderPaths)
+	{
+		if (FavoritePath.StartsWith(FolderPath + TEXT("/")))
+		{
+			FoldersToRemove.Add(FavoritePath);
+		}
+	}
+	for (const FString& FolderToRemove : FoldersToRemove)
+	{
+		FContentBrowserSingleton::Get().FavoriteFolderPaths.Remove(FolderToRemove);
+	}
+	if (bFlushConfig)
+	{
+		GConfig->Flush(false, GEditorPerProjectIni);
+	}
+}
+
+const TArray<FString>& ContentBrowserUtils::GetFavoriteFolders()
+{
+	return FContentBrowserSingleton::Get().FavoriteFolderPaths;
+}
 
 #undef LOCTEXT_NAMESPACE

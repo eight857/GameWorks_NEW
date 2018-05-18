@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 //
 // A channel for exchanging voice data.
@@ -31,8 +31,6 @@ class ENGINE_API UVoiceChannel : public UChannel
 	UVoiceChannel(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get())
 		: UChannel(ObjectInitializer)
 	{
-		// Register with the network channel system
-		ChannelClasses[CHTYPE_Voice] = GetClass();
 		ChType = CHTYPE_Voice;
 	}
 

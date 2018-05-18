@@ -1,4 +1,4 @@
-﻿INTSourceChangelist:3429236
+﻿INTSourceChangelist:3750407
 Availability: Public
 Title:사운드 액터 사용 안내서
 Crumbs: %ROOT%, Engine, Engine/Audio
@@ -18,15 +18,9 @@ order:2
 
 ## 앰비언트 사운드 액터
 
-
-[OBJECT:topiclistnotitle]
-	[PARAM:icon]
-		![](ambientActors.png)
-	[/PARAM]
-	[PARAM:description]
-	
-	[/PARAM]
-[/OBJECT]
+[REGION:raw]
+![](ambientActors.png)
+[/REGION]
 
 (왼쪽 그림과 같은 아이콘의) **앰비언트 사운드 액터** 는 반복 배경음이나 일회성 사운드 등 여러가지 용도로 사용 가능합니다.
 일반적으로 **앰비언트 사운드 액터** 는 사운드에 가까울 수록 더욱 크게 들리는 식으로 현실 세계와 부합합니다. 그에 비해 보통은 큰 사운드는 멀리 있으면 부드럽게 들릴 수 있습니다.
@@ -101,7 +95,7 @@ Attenuation 관련 추가 정보는, [디스턴스 모델 감쇠](Engine/Audio/D
 | **Spatialize** | 공간화 - 소스를 3D 공간에 위치시킵니다. |
 | **Distance Algorithm** | 거리 알고리즘 - 감쇠 모델에 사용할 거리 알고리즘에 대한 볼륨 유형입니다. |
 | **Attenuation Shape** | 감쇠 모양 - 볼륨 감쇠 모양입니다. |
-| **Radius** | 반경 - 볼륨의 전체적인 크기입니다. <BR> 기본 모양은 **구체** 입니다. 이 옵션은 선택된 **감쇠 모양** 에 따라 바뀝니다. |
+| **Radius** | 반경 - 볼륨의 전체적인 크기입니다. 기본 모양은 **구체** 입니다. 이 옵션은 선택된 **감쇠 모양** 에 따라 바뀝니다. |
 | **Falloff Distance** | 저하 거리 - 이 거리에 걸쳐 저하가 일어납니다. |
 | **Non-Spatialized Radius** | 비공간화 반경 - 사운드 소스를 공간화된 것으로 간주하기 시작할 거리입니다. |
 | **Attenuate with LPF** | LPF 로 감쇠 - 로우 패스 필터를 통한 감쇠를 켭니다. |

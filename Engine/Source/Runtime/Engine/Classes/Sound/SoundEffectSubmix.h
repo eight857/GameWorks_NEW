@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -33,22 +33,37 @@ struct FSoundEffectSubmixInputData
 	/** The number of audio frames for this input data. 1 frame is an interleaved sample. */
 	int32 NumFrames;
 
-	/** The number of channels of this audio effect. */
+	/** The number of channels of the submix. */
 	int32 NumChannels;
 
+	/** The number of device channels. */
+	int32 NumDeviceChannels;
+
+	/** The listener transforms (one for each viewport index). */
+	const TArray<FTransform>* ListenerTransforms;
+
 	/** The raw input audio buffer. Size is NumFrames * NumChannels */
-	TArray<float>* AudioBuffer;
+	Audio::AlignedFloatBuffer* AudioBuffer;
 
 	/** Sample accurate audio clock. */
 	double AudioClock;
+
+	FSoundEffectSubmixInputData()
+		: PresetData(nullptr)
+		, NumFrames(0)
+		, NumChannels(0)
+		, NumDeviceChannels(0)
+		, ListenerTransforms(nullptr)
+		, AudioBuffer(nullptr)
+	{}
 };
 
 struct FSoundEffectSubmixOutputData
 {
 	/** The output audio buffer. */
-	TArray<float>* AudioBuffer;
+	Audio::AlignedFloatBuffer* AudioBuffer;
 
-	/** The number of channels in the output buffer. */
+	/** The number of channels of the submix. */
 	int32 NumChannels;
 };
 
@@ -73,6 +88,6 @@ public:
 	/** Process the input block of audio. Called on audio thread. */
 	virtual void OnProcessAudio(const FSoundEffectSubmixInputData& InData, FSoundEffectSubmixOutputData& OutData) {};
 
-	/** Processes audio in the source effect. */
+	/** Processes audio in the submix effect. */
 	void ProcessAudio(FSoundEffectSubmixInputData& InData, FSoundEffectSubmixOutputData& OutData);
 };

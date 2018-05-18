@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * Abstract base class of animation assets that can be played back and evaluated to produce a pose.
@@ -72,6 +72,11 @@ struct FBlendSampleData
 
 	UPROPERTY()
 	float PreviousTime;
+
+	// We may merge multiple samples if they use the same animation
+	// Calculate the combined sample play rate here
+	UPROPERTY()
+	float SamplePlayRate;
 
 	FMarkerTickRecord MarkerTickRecord;
 
@@ -657,7 +662,7 @@ public:
 	float GetPreviousAnimationPositionRatio() const
 	{
 		checkSlow(!bIsLeader);
-		return AnimLengthRatio;
+		return PreviousAnimLengthRatio;
 	}
 
 	// Returns the synchronization point (normalized time; only legal to call if ticking a follower)
@@ -665,6 +670,11 @@ public:
 	{
 		checkSlow(!bIsLeader);
 		return AnimLengthRatio;
+	}
+
+	void InvalidateMarkerSync()
+	{
+		bIsMarkerPositionValid = false;
 	}
 
 	bool CanUseMarkerPosition() const
@@ -908,7 +918,7 @@ public:
 private:
 	/** The default skeletal mesh to use when previewing this asset - this only applies when you open Persona using this asset*/
 	UPROPERTY(duplicatetransient, AssetRegistrySearchable)
-	TAssetPtr<class USkeletalMesh> PreviewSkeletalMesh;
+	TSoftObjectPtr<class USkeletalMesh> PreviewSkeletalMesh;
 #endif //WITH_EDITORONLY_DATA
 
 protected:

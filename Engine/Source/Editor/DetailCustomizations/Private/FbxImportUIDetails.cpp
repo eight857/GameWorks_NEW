@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "FbxImportUIDetails.h"
 #include "Misc/Attribute.h"
@@ -20,6 +20,8 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Input/STextComboBox.h"
 #include "Widgets/SToolTip.h"
+#include "Editor.h"
+#include "IDetailGroup.h"
 
 #define LOCTEXT_NAMESPACE "FbxImportUIDetails"
 
@@ -45,7 +47,43 @@ FFbxImportUIDetails::FFbxImportUIDetails()
 	{
 		LODGroupOptions.Add(MakeShareable(new FString(LODGroupNames[GroupIndex].GetPlainNameString())));
 	}
+
+	UEditorEngine* Editor = Cast<UEditorEngine>(GEngine);
+	if (Editor != nullptr)
+	{
+		Editor->RegisterForUndo(this);
+	}
 }
+
+FFbxImportUIDetails::~FFbxImportUIDetails()
+{
+	UEditorEngine* Editor = Cast<UEditorEngine>(GEngine);
+	if (Editor != nullptr)
+	{
+		Editor->UnregisterForUndo(this);
+	}
+}
+
+void FFbxImportUIDetails::RefreshCustomDetail()
+{
+	if (CachedDetailBuilder)
+	{
+		CachedDetailBuilder->ForceRefreshDetails();
+	}
+}
+
+void FFbxImportUIDetails::PostUndo(bool bSuccess)
+{
+	//Refresh the UI
+	RefreshCustomDetail();
+}
+
+void FFbxImportUIDetails::PostRedo(bool bSuccess)
+{
+	//Refresh the UI
+	RefreshCustomDetail();
+}
+
 
 TSharedRef<IDetailCustomization> FFbxImportUIDetails::MakeInstance()
 {
@@ -163,10 +201,15 @@ void FFbxImportUIDetails::CustomizeDetails( IDetailLayoutBuilder& DetailBuilder 
 		}
 	}
 
+	TMap<FString, TArray<TSharedPtr<IPropertyHandle>>> SubCategoriesProperties;
+	TMap<FString, bool > SubCategoriesAdvanced;
+	TMap<FString, FText > SubCategoriesTooltip;
+
 	for(TSharedPtr<IPropertyHandle> Handle : ExtraProperties)
 	{
 		FString ImportTypeMetaData = Handle->GetMetaData(TEXT("ImportType"));
-		FString CategoryMetaData = Handle->GetMetaData(TEXT("ImportCategory"));
+		const FString& CategoryMetaData = Handle->GetMetaData(TEXT("ImportCategory"));
+		const FString& SubCategoryData = Handle->GetMetaData(TEXT("SubCategory"));
 		if(IsImportTypeMetaDataValid(ImportType, ImportTypeMetaData))
 		{
 			// Decide on category
@@ -175,6 +218,18 @@ void FFbxImportUIDetails::CustomizeDetails( IDetailLayoutBuilder& DetailBuilder 
 				// Populate custom categories.
 				IDetailCategoryBuilder& CustomCategory = DetailBuilder.EditCategory(*CategoryMetaData);
 				CustomCategory.AddProperty(Handle);
+			}
+			else if (!SubCategoryData.IsEmpty())
+			{
+				TArray<TSharedPtr<IPropertyHandle> >& SubCategoryProperties = SubCategoriesProperties.FindOrAdd(SubCategoryData);
+				SubCategoryProperties.Add(Handle);
+				bool& SubCategoryAdvanced = SubCategoriesAdvanced.FindOrAdd(SubCategoryData);
+				FText& SubCategoryTooltip = SubCategoriesTooltip.FindOrAdd(SubCategoryData);
+				if (SubCategoryData.Equals(TEXT("Thresholds")))
+				{
+					SubCategoryAdvanced = true;
+					SubCategoryTooltip = LOCTEXT("Thresholds_subcategory_tooltip", "Thresholds for when a vertex is considered the same as another vertex");
+				}
 			}
 			else
 			{
@@ -198,8 +253,13 @@ void FFbxImportUIDetails::CustomizeDetails( IDetailLayoutBuilder& DetailBuilder 
 					}
 				}
 			}
+
+			
 		}
 	}
+
+	//Lets add all "Mesh" sub category we found
+	AddSubCategory(DetailBuilder, "Mesh", SubCategoriesProperties, SubCategoriesAdvanced, SubCategoriesTooltip);
 
 	// Animation Category
 	IDetailCategoryBuilder& AnimCategory = DetailBuilder.EditCategory("Animation", FText::GetEmpty(), ECategoryPriority::Important);
@@ -235,7 +295,7 @@ void FFbxImportUIDetails::CustomizeDetails( IDetailLayoutBuilder& DetailBuilder 
 
 		for(TSharedPtr<IPropertyHandle> Handle : ExtraProperties)
 		{
-			FString CategoryMetaData = Handle->GetMetaData(TEXT("ImportCategory"));
+			const FString& CategoryMetaData = Handle->GetMetaData(TEXT("ImportCategory"));
 			if(Handle->GetProperty()->GetOuter() == UFbxAnimSequenceImportData::StaticClass()
 			   && CategoryMetaData.IsEmpty())
 			{
@@ -311,6 +371,36 @@ void FFbxImportUIDetails::CustomizeDetails( IDetailLayoutBuilder& DetailBuilder 
 	}
 }
 
+void FFbxImportUIDetails::AddSubCategory(IDetailLayoutBuilder& DetailBuilder, FName MainCategoryName, TMap<FString, TArray<TSharedPtr<IPropertyHandle>>>& SubCategoriesProperties, TMap<FString, bool >& SubCategoriesAdvanced, TMap<FString, FText >& SubCategoriesTooltip)
+{
+	IDetailCategoryBuilder& MainCategory = DetailBuilder.EditCategory(MainCategoryName);
+	//If we found some sub category we can add them to the group
+	for (auto Kvp : SubCategoriesProperties)
+	{
+		FString& SubCategoryName = Kvp.Key;
+		TArray<TSharedPtr<IPropertyHandle>>& SubCategoryProperties = Kvp.Value;
+		bool SubCategoryAdvanced = SubCategoriesAdvanced[Kvp.Key];
+		IDetailGroup& Group = MainCategory.AddGroup(FName(*SubCategoryName), FText::FromString(SubCategoryName), SubCategoryAdvanced);
+		for (int32 PropertyIndex = 0; PropertyIndex < SubCategoryProperties.Num(); ++PropertyIndex)
+		{
+			TSharedPtr<IPropertyHandle>& PropertyHandle = SubCategoryProperties[PropertyIndex];
+			DetailBuilder.HideProperty(PropertyHandle);
+			Group.AddPropertyRow(PropertyHandle.ToSharedRef());
+		}
+		const FText& SubCategoryTooltip = SubCategoriesTooltip[Kvp.Key];
+		if (!SubCategoryTooltip.IsEmpty())
+		{
+			FDetailWidgetRow& GroupHeaderRow = Group.HeaderRow();
+			GroupHeaderRow.NameContent().Widget = SNew(SBox)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(SubCategoryName))
+				.ToolTipText(SubCategoryTooltip)
+			];
+		}
+	}
+}
+
 
 void FFbxImportUIDetails::ConstructBaseMaterialUI(TSharedPtr<IPropertyHandle> Handle, IDetailCategoryBuilder& MaterialCategory)
 {
@@ -331,7 +421,7 @@ void FFbxImportUIDetails::ConstructBaseMaterialUI(TSharedPtr<IPropertyHandle> Ha
 	BaseTextureNames.Empty();
 	BaseColorNames.Add(MakeShareable(new FString()));
 	BaseTextureNames.Add(MakeShareable(new FString()));
-	TArray<FName> ParameterNames;
+	TArray<FMaterialParameterInfo> OutParameterInfo;
 	TArray<FGuid> Guids;
 	float MinDesiredWidth = 150.0f;
 	TSharedPtr<SWidget> NameWidget;
@@ -340,10 +430,10 @@ void FFbxImportUIDetails::ConstructBaseMaterialUI(TSharedPtr<IPropertyHandle> Ha
 	MaterialPropertyRow.GetDefaultWidgets(NameWidget, ValueWidget, Row);
 
 	// base color properties, only used when there is no texture in the diffuse map
-	Material->GetAllVectorParameterNames(ParameterNames, Guids);
-	for (FName &ParameterName : ParameterNames)
+	Material->GetAllVectorParameterInfo(OutParameterInfo, Guids);
+	for (FMaterialParameterInfo &ParameterInfo : OutParameterInfo)
 	{
-		BaseColorNames.Add(MakeShareable(new FString(ParameterName.ToString())));
+		BaseColorNames.Add(MakeShareable(new FString(ParameterInfo.Name.ToString())));
 	}
 	int InitialSelect = FindString(BaseColorNames, ImportUI->TextureImportData->BaseColorName);
 	InitialSelect = InitialSelect == INDEX_NONE ? 0 : InitialSelect; // default to the empty string located at index 0
@@ -374,12 +464,11 @@ void FFbxImportUIDetails::ConstructBaseMaterialUI(TSharedPtr<IPropertyHandle> Ha
 	];
 
 	// base texture properties
-	ParameterNames.Empty();
-	Guids.Empty();
-	Material->GetAllTextureParameterNames(ParameterNames, Guids);
-	for (FName &ParameterName : ParameterNames)
+	OutParameterInfo.Empty();
+	Material->GetAllTextureParameterInfo(OutParameterInfo, Guids);
+	for (FMaterialParameterInfo &ParameterInfo : OutParameterInfo)
 	{
-		BaseTextureNames.Add(MakeShareable(new FString(ParameterName.ToString())));
+		BaseTextureNames.Add(MakeShareable(new FString(ParameterInfo.Name.ToString())));
 	}
 	InitialSelect = FindString(BaseTextureNames, ImportUI->TextureImportData->BaseDiffuseTextureName);
 	InitialSelect = InitialSelect == INDEX_NONE ? 0 : InitialSelect; // default to the empty string located at index 0
@@ -613,53 +702,38 @@ bool FFbxImportUIDetails::IsImportTypeMetaDataValid(EFBXImportType& ImportType, 
 
 void FFbxImportUIDetails::ImportAutoComputeLodDistancesChanged()
 {
-	//We need to update the Base Material UI
-	if (CachedDetailBuilder)
-	{
-		CachedDetailBuilder->ForceRefreshDetails();
-	}
+	//We need to update the LOD distance UI
+	RefreshCustomDetail();
 }
 
 void FFbxImportUIDetails::ImportMaterialsChanged()
 {
 	//We need to update the Base Material UI
-	if (CachedDetailBuilder)
-	{
-		CachedDetailBuilder->ForceRefreshDetails();
-	}
+	RefreshCustomDetail();
 }
 
 void FFbxImportUIDetails::MeshImportModeChanged()
 {
-	if(CachedDetailBuilder)
-	{
-		ImportUI->SetMeshTypeToImport();
-		CachedDetailBuilder->ForceRefreshDetails();
-	}
+	ImportUI->SetMeshTypeToImport();
+	RefreshCustomDetail();
 }
 
 void FFbxImportUIDetails::ImportMeshToggleChanged()
 {
-	if(CachedDetailBuilder)
+	if(ImportUI->bImportMesh)
 	{
-		if(ImportUI->bImportMesh)
-		{
-			ImportUI->SetMeshTypeToImport();
-		}
-		else
-		{
-			ImportUI->MeshTypeToImport = FBXIT_Animation;
-		}
-
-		CachedDetailBuilder->ForceRefreshDetails();
+		ImportUI->SetMeshTypeToImport();
 	}
+	else
+	{
+		ImportUI->MeshTypeToImport = FBXIT_Animation;
+	}
+	RefreshCustomDetail();
 }
 
-void FFbxImportUIDetails::BaseMaterialChanged() {
-	if (CachedDetailBuilder)
-	{
-		CachedDetailBuilder->ForceRefreshDetails();
-	}
+void FFbxImportUIDetails::BaseMaterialChanged()
+{
+	RefreshCustomDetail();
 }
 
 void FFbxImportUIDetails::OnBaseColor(TSharedPtr<FString> Selection, ESelectInfo::Type SelectInfo) {

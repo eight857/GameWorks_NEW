@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,7 +11,7 @@
 #include "Curves/CurveInterface.h"
 #include "UObject/StructOnScope.h"
 #include "Engine/Engine.h"
-#include "StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "MovieSceneEventSection.generated.h"
 
 struct EventData;
@@ -84,8 +84,8 @@ struct MOVIESCENETRACKS_API FMovieSceneEventParameters
 
 private:
 
-	/** String asset reference to the type of this parameter payload */
-	FStringAssetReference StructType;
+	/** Soft object path to the type of this parameter payload */
+	FSoftObjectPath StructType;
 
 	/** Serialized bytes that represent the payload. Serialized internally with FEventParameterArchive */
 	TArray<uint8> StructBytes;
@@ -108,26 +108,6 @@ struct FEventPayload
 
 	FEventPayload() {}
 	FEventPayload(FName InEventName) : EventName(InEventName) {}
-
-	FEventPayload(const FEventPayload&) = default;
-	FEventPayload& operator=(const FEventPayload&) = default;
-
-#if PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
-	FEventPayload(FEventPayload&&) = default;
-	FEventPayload& operator=(FEventPayload&&) = default;
-#else
-	FEventPayload(FEventPayload&& RHS)
-		: EventName(MoveTemp(RHS.EventName))
-		, Parameters(MoveTemp(RHS.Parameters))
-	{
-	}
-	FEventPayload& operator=(FEventPayload&& RHS)
-	{
-		EventName = MoveTemp(RHS.EventName);
-		Parameters = MoveTemp(RHS.Parameters);
-		return *this;
-	}
-#endif
 
 	/** The name of the event to trigger */
 	UPROPERTY(EditAnywhere, Category=Event)

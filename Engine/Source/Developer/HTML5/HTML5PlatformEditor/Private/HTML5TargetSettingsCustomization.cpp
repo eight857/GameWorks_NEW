@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HTML5TargetSettingsCustomization.h"
 #include "HTML5TargetSettings.h"
@@ -44,8 +44,9 @@ void FHTML5TargetSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 			.ToolTip(FEngineBuildSettings::IsSourceDistribution() ? PropertyHandle->GetToolTipText() : FHTML5TargetSettingsCustomizationConstants::DisabledTip); \
 	}
 
-	SETUP_SOURCEONLY_PROP(TargetAsmjs, EmscriptenCategory);
 	SETUP_SOURCEONLY_PROP(EnableIndexedDB, EmscriptenCategory);
+
+	AudioPluginWidgetManager.BuildAudioCategory(DetailLayout, EAudioPlatform::HTML5);
 }
 
 //////////////////////////////////////////////////////////////////////////

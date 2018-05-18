@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -7,9 +7,12 @@
 #include "UObject/ObjectMacros.h"
 #include "EngineDefines.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "DelegateCombinations.h"
 #include "DebugSkelMeshComponent.generated.h"
 
 class Error;
+
+DECLARE_DELEGATE_RetVal(FText, FGetExtendedViewportText);
 
 USTRUCT()
 struct FSelectedSocketInfo
@@ -64,6 +67,7 @@ namespace EPersonaTurnTableMode
 // FDebugSkelMeshSceneProxy
 
 class UDebugSkelMeshComponent;
+class FSkeletalMeshRenderData;
 
 class FDebugSkelMeshDynamicData
 {
@@ -99,11 +103,13 @@ public:
 class FDebugSkelMeshSceneProxy : public FSkeletalMeshSceneProxy
 {
 public:
+	SIZE_T GetTypeHash() const override;
+
 	/**
 	* Constructor.
 	* @param	Component - skeletal mesh primitive being added
 	*/
-	FDebugSkelMeshSceneProxy(const UDebugSkelMeshComponent* InComponent, FSkeletalMeshResource* InSkelMeshResource, const FColor& InWireframeOverlayColor = FColor::White);
+	FDebugSkelMeshSceneProxy(const UDebugSkelMeshComponent* InComponent, FSkeletalMeshRenderData* InSkelMeshRenderData, const FColor& InWireframeOverlayColor = FColor::White);
 
 	virtual ~FDebugSkelMeshSceneProxy()
 	{}
@@ -123,8 +129,8 @@ public:
 	}
 };
 
-UCLASS(transient, MinimalAPI)
-class UDebugSkelMeshComponent : public USkeletalMeshComponent
+UCLASS(transient)
+class UNREALED_API UDebugSkelMeshComponent : public USkeletalMeshComponent
 {
 	GENERATED_UCLASS_BODY()
 
@@ -223,6 +229,9 @@ class UDebugSkelMeshComponent : public USkeletalMeshComponent
 	UPROPERTY(transient)
 	bool bClothCullBackface;
 
+	/* Bounds computed from cloth. */
+	FBoxSphereBounds CachedClothBounds;
+
 	/** Non Compressed SpaceBases for when bDisplayRawAnimation == true **/
 	TArray<FTransform> UncompressedSpaceBases;
 
@@ -296,49 +305,55 @@ class UDebugSkelMeshComponent : public USkeletalMeshComponent
 	//~ End SkeletalMeshComponent Interface
 	// Preview.
 	// @todo document
-	UNREALED_API bool IsPreviewOn() const;
+	bool IsPreviewOn() const;
 
 	// @todo document
-	UNREALED_API FString GetPreviewText() const;
+	FString GetPreviewText() const;
 
 	// @todo anim : you still need to give asset, so that we know which one to disable
 	// we can disable per asset, so that if some other window disabled before me, I don't accidently turn it off
-	UNREALED_API void EnablePreview(bool bEnable, class UAnimationAsset * PreviewAsset);
+	void EnablePreview(bool bEnable, class UAnimationAsset * PreviewAsset);
 
 	/**
 	 * Update material information depending on color render mode 
 	 * Refresh/replace materials 
 	 */
-	UNREALED_API void SetShowBoneWeight(bool bNewShowBoneWeight);
+	void SetShowBoneWeight(bool bNewShowBoneWeight);
 
 	/**
 	* Update material information depending on color render mode
 	* Refresh/replace materials
 	*/
-	UNREALED_API void SetShowMorphTargetVerts(bool bNewShowMorphTargetVerts);
+	void SetShowMorphTargetVerts(bool bNewShowMorphTargetVerts);
 
 	/**
 	 * Does it use in-game bounds or bounds calculated from bones
 	 */
-	UNREALED_API bool IsUsingInGameBounds() const;
+	bool IsUsingInGameBounds() const;
 
 	/**
 	 * Set to use in-game bounds or bounds calculated from bones
 	 */
-	UNREALED_API void UseInGameBounds(bool bUseInGameBounds);
+	void UseInGameBounds(bool bUseInGameBounds);
 
 	/**
 	 * Test if in-game bounds are as big as preview bounds
 	 */
-	UNREALED_API bool CheckIfBoundsAreCorrrect();
+	bool CheckIfBoundsAreCorrrect();
 
 	/** 
 	 * Update components position based on animation root motion
 	 */
-	UNREALED_API void ConsumeRootMotion(const FVector& FloorMin, const FVector& FloorMax);
+	void ConsumeRootMotion(const FVector& FloorMin, const FVector& FloorMax);
 
 	/** Sets the flag used to determine whether or not the current active cloth sim mesh should be rendered */
-	UNREALED_API void SetShowClothProperty(bool bState);
+	void SetShowClothProperty(bool bState);
+
+	/** Get whether we should be previewing root motion */
+	bool GetPreviewRootMotion() const;
+
+	/** Set whether we should be previewing root motion. Note: disabling root motion preview resets transform. */
+	void SetPreviewRootMotion(bool bInPreviewRootMotion);
 
 #if WITH_EDITOR
 	//TODO - This is a really poor way to post errors to the user. Work out a better way.
@@ -353,35 +368,35 @@ class UDebugSkelMeshComponent : public USkeletalMeshComponent
 	TArray<FAnimNotifyErrors> AnimNotifyErrors;
 	virtual void ReportAnimNotifyError(const FText& Error, UObject* InSourceNotify) override;
 	virtual void ClearAnimNotifyErrors(UObject* InSourceNotify) override;
-#endif
 
-	enum ESectionDisplayMode
-	{
-		None = -1,
-		ShowAll,
-		ShowOnlyClothSections,
-		HideOnlyClothSections,
-		NumSectionDisplayMode
-	};
-	/** Draw All/ Draw only clothing sections/ Hide only clothing sections */
-	int32 SectionsDisplayMode;
+	/** 
+	 * Extended viewport text delegate handling. Registering a delegate allows external
+	 * objects to place custom text in the anim tools viewports.
+	 */
+	FDelegateHandle RegisterExtendedViewportTextDelegate(const FGetExtendedViewportText& InDelegate);
+	void UnregisterExtendedViewportTextDelegate(const FDelegateHandle& InDelegateHandle);
+	const TArray<FGetExtendedViewportText>& GetExtendedViewportTextDelegates() const { return ExtendedViewportTextDelegates; }
+
+private:
+	TArray<FGetExtendedViewportText> ExtendedViewportTextDelegates;
+public:
+
+#endif
 
 	/** 
 	 * toggle visibility between cloth sections and non-cloth sections for all LODs
 	 * if bShowOnlyClothSections is true, shows only cloth sections. On the other hand, 
 	 * if bShowOnlyClothSections is false, hides only cloth sections.
 	 */
-	UNREALED_API void ToggleClothSectionsVisibility(bool bShowOnlyClothSections);
+	void ToggleClothSectionsVisibility(bool bShowOnlyClothSections);
 	/** Restore all section visibilities to original states for all LODs */
-	UNREALED_API void RestoreClothSectionsVisibility();
+	void RestoreClothSectionsVisibility();
 
 	/** 
 	 * To normal game/runtime code we don't want to expose a non-const pointer to the simulation, so we can only get
 	 * one from this editor-only component. Intended for debug options/visualisations/editor-only code to poke the sim
 	 */
-	UNREALED_API IClothingSimulation* GetMutableClothingSimulation();
-
-	int32 FindCurrentSectionDisplayMode();
+	IClothingSimulation* GetMutableClothingSimulation();
 
 	/** to avoid clothing reset while modifying properties in Persona */
 	virtual void CheckClothTeleport() override;
@@ -395,15 +410,16 @@ class UDebugSkelMeshComponent : public USkeletalMeshComponent
 	/** The currently selected mask inside the above LOD to be painted */
 	int32 SelectedClothingLodMaskForPainting;
 
-	UNREALED_API void ToggleMeshSectionForCloth(FGuid InClothGuid);
+	/** Find a section using a clothing asset with the given GUID and set its visiblity */
+	void SetMeshSectionVisibilityForCloth(FGuid InClothGuid, bool bVisibility);
 
 	// fixes up the disabled flags so clothing is enabled and originals are disabled as
 	// ToggleMeshSectionForCloth will make these get out of sync
-	UNREALED_API void ResetMeshSectionVisibility();
+	void ResetMeshSectionVisibility();
 
 	// Rebuilds the fixed parameter on the mesh to mesh data, to be used if the editor has
 	// changed a vert to be fixed or unfixed otherwise the simulation will not work
-	UNREALED_API void RebuildClothingSectionsFixedVerts();
+	void RebuildClothingSectionsFixedVerts();
 
 	TArray<FVector> SkinnedSelectedClothingPositions;
 	TArray<FVector> SkinnedSelectedClothingNormals;
@@ -417,6 +433,8 @@ private:
 	// Helper function to enable overlay material
 	void EnableOverlayMaterial(bool bEnable);
 
+	// Rebuilds the cloth bounds for the asset.
+	void RebuildCachedClothBounds();
 protected:
 
 	// Overridden to support single clothing ticks
@@ -432,7 +450,7 @@ public:
 	
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override;
 
-	void UNREALED_API RefreshSelectedClothingSkinnedPositions();
+	void RefreshSelectedClothingSkinnedPositions();
 
 	virtual void GetUsedMaterials(TArray<UMaterialInterface *>& OutMaterials, bool bGetDebugMaterials = false) const override;
 

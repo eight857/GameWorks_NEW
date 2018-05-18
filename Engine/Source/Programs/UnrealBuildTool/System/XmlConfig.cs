@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
+
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,6 +10,7 @@ using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Schema;
 using System.Xml.Serialization;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -626,7 +629,7 @@ namespace UnrealBuildTool
 
 			// Get the current engine version for versioning the page
 			BuildVersion Version;
-			if(!BuildVersion.TryRead(out Version))
+			if(!BuildVersion.TryRead(BuildVersion.GetDefaultFileName(), out Version))
 			{
 				throw new BuildException("Unable to read the current build version");
 			}

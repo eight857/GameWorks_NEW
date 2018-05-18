@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PostProcessBufferInspector.h: Post processing pixel inspector
@@ -25,5 +25,6 @@ public:
 	virtual void Release() override { delete this; }
 	virtual FPooledRenderTargetDesc ComputeOutputDesc(EPassOutputId InPassOutputId) const override;
 private:
-	FShader* SetShaderTempl(const FRenderingCompositePassContext& Context);
+	template <typename TRHICmdList>
+	FShader* SetShaderTempl(TRHICmdList& RHICmdList, const FRenderingCompositePassContext& Context);
 };

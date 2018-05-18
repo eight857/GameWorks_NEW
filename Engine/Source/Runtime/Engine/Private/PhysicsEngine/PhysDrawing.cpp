@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "EngineDefines.h"
@@ -30,9 +30,10 @@ static const int32 DrawConeLimitSides = 40;
 static const float DebugJointPosSize = 5.0f;
 static const float DebugJointAxisSize = 20.0f;
 
-static const float JointRenderThickness = 0.3f;
-static const float JointRenderSize = 10.f;
-static const float LimitRenderSize = 16.0f;
+static const float JointRenderThickness = 0.1f;
+static const float UnselectedJointRenderSize = 4.f;
+static const float SelectedJointRenderSize = 10.f;
+static const float LimitRenderSize = 0.16f;
 
 static const FColor JointUnselectedColor(255, 0, 255);
 static const FColor JointRed(FColor::Red);
@@ -216,8 +217,8 @@ void FKSphylElem::GetElemSolid(const FTransform& ElemTM, const FVector& Scale3D,
 			SpherePos
 			);
 
-		ArcVert->TextureCoordinate.X = 0.0f;
-		ArcVert->TextureCoordinate.Y = ((float)RingIdx / NumRings);
+		ArcVert->TextureCoordinate[0].X = 0.0f;
+		ArcVert->TextureCoordinate[0].Y = ((float)RingIdx / NumRings);
 	}
 
 	// Then rotate this arc NumSides+1 times.
@@ -239,12 +240,12 @@ void FKSphylElem::GetElemSolid(const FTransform& ElemTM, const FVector& Scale3D,
 				ArcRot.TransformVector(ArcVerts[VertIdx].TangentZ)
 				);
 
-			Verts[VIx].TextureCoordinate.X = XTexCoord;
-			Verts[VIx].TextureCoordinate.Y = ArcVerts[VertIdx].TextureCoordinate.Y;
+			Verts[VIx].TextureCoordinate[0].X = XTexCoord;
+			Verts[VIx].TextureCoordinate[0].Y = ArcVerts[VertIdx].TextureCoordinate[0].Y;
 		}
 	}
 
-	FDynamicMeshBuilder MeshBuilder;
+	FDynamicMeshBuilder MeshBuilder(Collector.GetFeatureLevel());
 	{
 		// Add all of the vertices to the mesh.
 		for (int32 VertIdx = 0; VertIdx < NumVerts; VertIdx++)
@@ -319,8 +320,8 @@ void FKSphylElem::DrawElemSolid(FPrimitiveDrawInterface* PDI, const FTransform& 
 			SpherePos
 			);
 
-		ArcVert->TextureCoordinate.X = 0.0f;
-		ArcVert->TextureCoordinate.Y = ((float)RingIdx / NumRings);
+		ArcVert->TextureCoordinate[0].X = 0.0f;
+		ArcVert->TextureCoordinate[0].Y = ((float)RingIdx / NumRings);
 	}
 
 	// Then rotate this arc NumSides+1 times.
@@ -342,12 +343,12 @@ void FKSphylElem::DrawElemSolid(FPrimitiveDrawInterface* PDI, const FTransform& 
 				ArcRot.TransformVector(ArcVerts[VertIdx].TangentZ)
 				);
 
-			Verts[VIx].TextureCoordinate.X = XTexCoord;
-			Verts[VIx].TextureCoordinate.Y = ArcVerts[VertIdx].TextureCoordinate.Y;
+			Verts[VIx].TextureCoordinate[0].X = XTexCoord;
+			Verts[VIx].TextureCoordinate[0].Y = ArcVerts[VertIdx].TextureCoordinate[0].Y;
 		}
 	}
 
-	FDynamicMeshBuilder MeshBuilder;
+	FDynamicMeshBuilder MeshBuilder(PDI->View->GetFeatureLevel());
 	{
 		// Add all of the vertices to the mesh.
 		for (int32 VertIdx = 0; VertIdx < NumVerts; VertIdx++)
@@ -379,12 +380,6 @@ void FKSphylElem::DrawElemSolid(FPrimitiveDrawInterface* PDI, const FTransform& 
 /////////////////////////////////////////////////////////////////////////////////////
 // FKConvexElem
 /////////////////////////////////////////////////////////////////////////////////////
-
-
-void FKConvexElem::DrawElemWire(FPrimitiveDrawInterface* PDI, const FTransform& ElemTM, const FColor Color) const
-{
-	DrawElemWire(PDI, ElemTM, 1.f, Color);
-}
 
 void FKConvexElem::DrawElemWire(FPrimitiveDrawInterface* PDI, const FTransform& ElemTM, const float Scale, const FColor Color) const
 {
@@ -423,7 +418,7 @@ void FKConvexElem::DrawElemWire(FPrimitiveDrawInterface* PDI, const FTransform& 
 			{
 				// Get the verts that make up this line.
 				int32 I0 = PIndices[j];
-				int32 I1 = PIndices[j+1];
+				int32 I1 = (j == Data.mNbVerts - 1) ? PIndices[0] : PIndices[j + 1];
 
 				// Loop back last and first vertices
 				if(j==Data.mNbVerts - 1)
@@ -442,7 +437,7 @@ void FKConvexElem::DrawElemWire(FPrimitiveDrawInterface* PDI, const FTransform& 
 #endif // WITH_PHYSX
 }
 
-void FKConvexElem::AddCachedSolidConvexGeom(TArray<FDynamicMeshVertex>& VertexBuffer, TArray<int32>& IndexBuffer, const FColor VertexColor) const
+void FKConvexElem::AddCachedSolidConvexGeom(TArray<FDynamicMeshVertex>& VertexBuffer, TArray<uint32>& IndexBuffer, const FColor VertexColor) const
 {
 #if WITH_PHYSX
 	// We always want to generate 'non-mirrored geometry', so if all we have is flipped, we have to un-flip it in this function
@@ -530,63 +525,6 @@ void FKConvexElem::AddCachedSolidConvexGeom(TArray<FDynamicMeshVertex>& VertexBu
 // FKAggregateGeom
 /////////////////////////////////////////////////////////////////////////////////////
 
-
-void FConvexCollisionVertexBuffer::InitRHI()
-{
-	FRHIResourceCreateInfo CreateInfo;
-	void* VertexBufferData = nullptr;
-	VertexBufferRHI = RHICreateAndLockVertexBuffer(Vertices.Num() * sizeof(FDynamicMeshVertex), BUF_Static, CreateInfo, VertexBufferData);
-
-	// Copy the vertex data into the vertex buffer.	
-	FMemory::Memcpy(VertexBufferData,Vertices.GetData(),Vertices.Num() * sizeof(FDynamicMeshVertex));
-	RHIUnlockVertexBuffer(VertexBufferRHI);
-}
-
-void FConvexCollisionIndexBuffer::InitRHI()
-{
-	FRHIResourceCreateInfo CreateInfo;
-	void* Buffer = nullptr;
-	IndexBufferRHI = RHICreateAndLockIndexBuffer(sizeof(int32),Indices.Num() * sizeof(int32),BUF_Static,CreateInfo, Buffer);
-
-	// Write the indices to the index buffer.	
-	FMemory::Memcpy(Buffer,Indices.GetData(),Indices.Num() * sizeof(int32));
-	RHIUnlockIndexBuffer(IndexBufferRHI);
-}
-
-void FConvexCollisionVertexFactory::InitConvexVertexFactory(const FConvexCollisionVertexBuffer* VertexBuffer)
-{
-	if(IsInRenderingThread())
-	{
-		// Initialize the vertex factory's stream components.
-		FDataType NewData;
-		NewData.PositionComponent = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer,FDynamicMeshVertex,Position,VET_Float3);
-		NewData.TextureCoordinates.Add(
-			FVertexStreamComponent(VertexBuffer,STRUCT_OFFSET(FDynamicMeshVertex,TextureCoordinate),sizeof(FDynamicMeshVertex),VET_Float2)
-			);
-		NewData.TangentBasisComponents[0] = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer,FDynamicMeshVertex,TangentX,VET_PackedNormal);
-		NewData.TangentBasisComponents[1] = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer,FDynamicMeshVertex,TangentZ,VET_PackedNormal);
-		SetData(NewData);
-	}
-	else
-	{
-		ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
-			InitConvexCollisionVertexFactory,
-			FConvexCollisionVertexFactory*,VertexFactory,this,
-			const FConvexCollisionVertexBuffer*,VertexBuffer,VertexBuffer,
-			{
-				// Initialize the vertex factory's stream components.
-				FDataType NewData;
-				NewData.PositionComponent = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer,FDynamicMeshVertex,Position,VET_Float3);
-				NewData.TextureCoordinates.Add(
-					FVertexStreamComponent(VertexBuffer,STRUCT_OFFSET(FDynamicMeshVertex,TextureCoordinate),sizeof(FDynamicMeshVertex),VET_Float2)
-					);
-				NewData.TangentBasisComponents[0] = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer,FDynamicMeshVertex,TangentX,VET_PackedNormal);
-				NewData.TangentBasisComponents[1] = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer,FDynamicMeshVertex,TangentZ,VET_PackedNormal);
-				VertexFactory->SetData(NewData);
-			});
-	}
-}
-
 void FKAggregateGeom::GetAggGeom(const FTransform& Transform, const FColor Color, const FMaterialRenderProxy* MatInst, bool bPerHullColor, bool bDrawSolid, bool bUseEditorDepthTest, int32 ViewIndex, FMeshElementCollector& Collector) const
 {
 	const FVector Scale3D = Transform.GetScale3D();
@@ -639,24 +577,28 @@ void FKAggregateGeom::GetAggGeom(const FTransform& Transform, const FColor Color
 				//@todo - parallelrendering, remove const cast
 				FKAggregateGeom& ThisGeom = const_cast<FKAggregateGeom&>(*this);
 				ThisGeom.RenderInfo = new FKConvexGeomRenderInfo();
-				ThisGeom.RenderInfo->VertexBuffer = new FConvexCollisionVertexBuffer();
-				ThisGeom.RenderInfo->IndexBuffer = new FConvexCollisionIndexBuffer();
+				ThisGeom.RenderInfo->VertexBuffers = new FStaticMeshVertexBuffers();
+				ThisGeom.RenderInfo->IndexBuffer = new FDynamicMeshIndexBuffer32();
 
+				TArray<FDynamicMeshVertex> OutVerts;
 				for(int32 i=0; i<ConvexElems.Num(); i++)
 				{
 					// Get vertices/triangles from this hull.
-					ConvexElems[i].AddCachedSolidConvexGeom(ThisGeom.RenderInfo->VertexBuffer->Vertices, ThisGeom.RenderInfo->IndexBuffer->Indices, FColor::White);
+					ConvexElems[i].AddCachedSolidConvexGeom(OutVerts, ThisGeom.RenderInfo->IndexBuffer->Indices, FColor::White);
 				}
 
 				// Only continue if we actually got some valid geometry
 				// Will crash if we try to init buffers with no data
-				if(ThisGeom.RenderInfo->HasValidGeometry())
+				if(ThisGeom.RenderInfo->VertexBuffers
+					&& ThisGeom.RenderInfo->IndexBuffer
+					&& OutVerts.Num() > 0
+					&& ThisGeom.RenderInfo->IndexBuffer->Indices.Num() > 0)
 				{
-					ThisGeom.RenderInfo->VertexBuffer->InitResource();
 					ThisGeom.RenderInfo->IndexBuffer->InitResource();
 
-					ThisGeom.RenderInfo->CollisionVertexFactory = new FConvexCollisionVertexFactory(RenderInfo->VertexBuffer);
-					ThisGeom.RenderInfo->CollisionVertexFactory->InitResource();
+					ThisGeom.RenderInfo->CollisionVertexFactory = new FLocalVertexFactory(Collector.GetFeatureLevel(), "FKAggregateGeom");
+					ThisGeom.RenderInfo->VertexBuffers->InitFromDynamicVertex(ThisGeom.RenderInfo->CollisionVertexFactory, OutVerts);
+
 				}
 			}
 
@@ -680,7 +622,7 @@ void FKAggregateGeom::GetAggGeom(const FTransform& Transform, const FColor Color
 				BatchElement.FirstIndex = 0;
 				BatchElement.NumPrimitives = RenderInfo->IndexBuffer->Indices.Num() / 3;
 				BatchElement.MinVertexIndex = 0;
-				BatchElement.MaxVertexIndex = RenderInfo->VertexBuffer->Vertices.Num() - 1;
+				BatchElement.MaxVertexIndex = RenderInfo->VertexBuffers->PositionVertexBuffer.GetNumVertices() - 1;
 				Mesh.ReverseCulling = LocalToWorld.GetDeterminant() < 0.0f ? true : false;
 				Mesh.Type = PT_TriangleList;
 				Mesh.DepthPriorityGroup = SDPG_World;
@@ -708,11 +650,13 @@ void FKAggregateGeom::FreeRenderInfo()
 	if(RenderInfo)
 	{
 		// Should always have these if RenderInfo exists
-		check(RenderInfo->VertexBuffer);
+		check(RenderInfo->VertexBuffers);
 		check(RenderInfo->IndexBuffer);
 
 		// Fire off commands to free these resources
-		BeginReleaseResource(RenderInfo->VertexBuffer);
+		BeginReleaseResource(&RenderInfo->VertexBuffers->ColorVertexBuffer);
+		BeginReleaseResource(&RenderInfo->VertexBuffers->StaticMeshVertexBuffer);
+		BeginReleaseResource(&RenderInfo->VertexBuffers->PositionVertexBuffer);
 		BeginReleaseResource(RenderInfo->IndexBuffer);
 
 		// May not exist if no geometry was available
@@ -727,7 +671,7 @@ void FKAggregateGeom::FreeRenderInfo()
 		Fence.Wait();
 
 		// Release memory.
-		delete RenderInfo->VertexBuffer;
+		delete RenderInfo->VertexBuffers;
 		delete RenderInfo->IndexBuffer;
 
 		if (RenderInfo->CollisionVertexFactory != NULL)
@@ -765,9 +709,12 @@ void UPhysicsAsset::GetCollisionMesh(int32 ViewIndex, FMeshElementCollector& Col
 		FColor* BoneColor = (FColor*)( &SkeletalBodySetups[i] );
 
 		FTransform BoneTransform = GetSkelBoneTransform(BoneIndex, SpaceBases, LocalToWorld);
-		BoneTransform.SetScale3D(Scale3D);
-		SkeletalBodySetups[i]->CreatePhysicsMeshes();
-		SkeletalBodySetups[i]->AggGeom.GetAggGeom(BoneTransform, *BoneColor, NULL, false, false, false, ViewIndex, Collector);
+		// SkelBoneTransform should have the appropriate scale baked in from Component and Import Transform.
+		// BoneTransform.SetScale3D(Scale3D);
+		if (SkeletalBodySetups[i]->bCreatedPhysicsMeshes)
+		{
+			SkeletalBodySetups[i]->AggGeom.GetAggGeom(BoneTransform, *BoneColor, NULL, false, false, false, ViewIndex, Collector);
+		}
 	}
 }
 
@@ -904,7 +851,7 @@ void FConstraintInstance::DrawConstraintImp(const FPDIOrCollector& PDIOrCollecto
 	return;
 #endif
 
-	const ESceneDepthPriorityGroup Layer = ESceneDepthPriorityGroup::SDPG_Foreground;
+	const ESceneDepthPriorityGroup Layer = ESceneDepthPriorityGroup::SDPG_World;
 	FPrimitiveDrawInterface* PDI = PDIOrCollector.GetPDI();
 
 	check((GEngine->ConstraintLimitMaterialX != nullptr) && (GEngine->ConstraintLimitMaterialY != nullptr) && (GEngine->ConstraintLimitMaterialZ != nullptr));
@@ -919,22 +866,14 @@ void FConstraintInstance::DrawConstraintImp(const FPDIOrCollector& PDIOrCollecto
 	FVector Con1Pos = Con1Frame.GetTranslation();
 	FVector Con2Pos = Con2Frame.GetTranslation();
 
-	float Length = JointRenderSize;
-	float Thickness = LimitDrawScale * JointRenderThickness;
+	float Length = (bDrawSelected ? SelectedJointRenderSize : UnselectedJointRenderSize) * Scale;
+	float Thickness = JointRenderThickness;
 
 	// Special mode for drawing joints just as points..
-	if(bDrawAsPoint)
+	if(bDrawAsPoint && !bDrawSelected)
 	{
-		if(bDrawSelected)
-		{
-			PDI->DrawPoint( Con1Frame.GetTranslation(), JointRed, 3.f, Layer );
-			PDI->DrawPoint( Con2Frame.GetTranslation(), JointBlue, 3.f, Layer );
-		}
-		else
-		{
-			PDI->DrawPoint( Con1Frame.GetTranslation(), JointUnselectedColor, 3.f, Layer );
-			PDI->DrawPoint( Con2Frame.GetTranslation(), JointUnselectedColor, 3.f, Layer );
-		}
+		PDI->DrawPoint( Con1Frame.GetTranslation(), JointUnselectedColor, 4.f, ESceneDepthPriorityGroup::SDPG_Foreground );
+		PDI->DrawPoint( Con2Frame.GetTranslation(), JointUnselectedColor, 4.f, ESceneDepthPriorityGroup::SDPG_Foreground );
 
 		// do nothing else in this mode.
 		return;

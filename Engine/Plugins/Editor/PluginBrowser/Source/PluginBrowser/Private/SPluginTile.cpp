@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SPluginTile.h"
 #include "HAL/PlatformFilemanager.h"
@@ -54,6 +54,12 @@ void SPluginTile::RecreateWidgets()
 	// @todo plugedit: Maybe we should do the FileExists check ONCE at plugin load time and not at query time
 
 	const FPluginDescriptor& PluginDescriptor = Plugin->GetDescriptor();
+
+	// Disable Enterprise plugins if project is not an Enterprise project
+	if (Plugin->GetType() == EPluginType::Enterprise && !IProjectManager::Get().IsEnterpriseProject())
+	{
+		SetEnabled(false);
+	}
 
 	// Plugin thumbnail image
 	FString Icon128FilePath = Plugin->GetBaseDir() / TEXT("Resources/Icon128.png");
@@ -495,7 +501,7 @@ void SPluginTile::OnEnablePluginCheckboxChanged(ECheckBoxState NewCheckedState)
 		for (const FString& DependentPluginName : DependentPluginNames)
 		{
 			FText FailureMessage;
-			if (!IProjectManager::Get().SetPluginEnabled(DependentPluginName, false, FailureMessage, NameToPlugin[DependentPluginName]->GetDescriptor().MarketplaceURL))
+			if (!IProjectManager::Get().SetPluginEnabled(DependentPluginName, false, FailureMessage))
 			{
 				FMessageDialog::Open(EAppMsgType::Ok, FailureMessage);
 			}
@@ -510,7 +516,7 @@ void SPluginTile::OnEnablePluginCheckboxChanged(ECheckBoxState NewCheckedState)
 
 	// Finally, enable the plugin we selected
 	FText FailMessage;
-	if (!IProjectManager::Get().SetPluginEnabled(Plugin->GetName(), bNewEnabledState, FailMessage, PluginDescriptor.MarketplaceURL))
+	if (!IProjectManager::Get().SetPluginEnabled(Plugin->GetName(), bNewEnabledState, FailMessage))
 	{
 		FMessageDialog::Open(EAppMsgType::Ok, FailMessage);
 	}
@@ -535,7 +541,7 @@ EVisibility SPluginTile::GetAuthoringButtonsVisibility() const
 	{
 		return EVisibility::Hidden;
 	}
-	if (FApp::IsInstalled() && Plugin->GetLoadedFrom() == EPluginLoadedFrom::GameProject && !Plugin->GetDescriptor().bIsMod)
+	if (FApp::IsInstalled() && Plugin->GetType() != EPluginType::Mod)
 	{
 		return EVisibility::Hidden;
 	}
@@ -614,9 +620,9 @@ FReply SPluginTile::OnEditPluginFinished(UPluginMetadataObject* MetadataObject)
 
 	// Write both to strings
 	FString OldText;
-	OldDescriptor.Write(OldText, Plugin->GetLoadedFrom() == EPluginLoadedFrom::GameProject);
+	OldDescriptor.Write(OldText);
 	FString NewText;
-	NewDescriptor.Write(NewText, Plugin->GetLoadedFrom() == EPluginLoadedFrom::GameProject);
+	NewDescriptor.Write(NewText);
 	if(OldText.Compare(NewText, ESearchCase::CaseSensitive) != 0)
 	{
 		FString DescriptorFileName = Plugin->GetDescriptorFileName();
@@ -666,7 +672,7 @@ void SPluginTile::OnPackagePlugin()
 	FString DescriptorFilename = Plugin->GetDescriptorFileName();
 	FString DescriptorFullPath = FPaths::ConvertRelativePathToFull(DescriptorFilename);
 	OutputDirectory = FPaths::Combine(OutputDirectory, Plugin->GetName());
-	FString CommandLine = FString::Printf(TEXT("BuildPlugin -Rocket -Plugin=\"%s\" -Package=\"%s\" -CreateSubFolder"), *DescriptorFullPath, *OutputDirectory);
+	FString CommandLine = FString::Printf(TEXT("BuildPlugin -Plugin=\"%s\" -Package=\"%s\" -CreateSubFolder"), *DescriptorFullPath, *OutputDirectory);
 
 #if PLATFORM_WINDOWS
 	FText PlatformName = LOCTEXT("PlatformName_Windows", "Windows");

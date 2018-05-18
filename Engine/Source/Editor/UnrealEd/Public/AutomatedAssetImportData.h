@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -59,6 +59,10 @@ public:
 	/** Pointer to the factory currently being sued */
 	UPROPERTY(BlueprintReadWrite, Category = "Asset Import Data")
 	UFactory* Factory;
+
+	/** Full path to level to load before importing this group (only matters if importing assets into a level) */
+	UPROPERTY(BlueprintReadWrite, Category = "Asset Import Data")
+	FString LevelToLoad;
 
 	/** Json data to be read when importing this group */
 	TSharedPtr<FJsonObject> ImportGroupJsonData;

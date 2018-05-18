@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -15,8 +15,8 @@
 class FBlueprintActionDatabaseRegistrar;
 class FKismetCompilerContext;
 
-UCLASS(MinimalAPI)
-class UK2Node_InputAction : public UK2Node
+UCLASS()
+class BLUEPRINTGRAPH_API UK2Node_InputAction : public UK2Node
 {
 	GENERATED_UCLASS_BODY()
 
@@ -58,10 +58,10 @@ class UK2Node_InputAction : public UK2Node
 	//~ End UK2Node Interface
 
 	/** Get the 'pressed' input pin */
-	BLUEPRINTGRAPH_API UEdGraphPin* GetPressedPin() const;
+	UEdGraphPin* GetPressedPin() const;
 
 	/** Get the 'released' input pin */
-	BLUEPRINTGRAPH_API UEdGraphPin* GetReleasedPin() const;
+	UEdGraphPin* GetReleasedPin() const;
 
 private:
 	/** Constructing FText strings can be costly, so we cache the node's title/tooltip */

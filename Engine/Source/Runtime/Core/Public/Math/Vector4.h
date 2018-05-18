@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -122,6 +122,14 @@ public:
 	 * @return The result of vector subtraction.
 	 */
 	FORCEINLINE FVector4 operator-(const FVector4& V) const;
+
+	/**
+	 * Subtracts another vector to this one.
+	 *
+	 * @param V The other vector to subtract.
+	 * @return Copy of the vector after subtraction.
+	 */
+	FORCEINLINE FVector4 operator-=(const FVector4& V);
 
 	/**
 	 * Gets the result of scaling this vector.
@@ -252,6 +260,14 @@ public:
 	float& Component(int32 Index);
 
 	/**
+	* Gets a specific component of the vector.
+	*
+	* @param Index The index of the component.
+	* @return Reference to the component.
+	*/
+	const float& Component(int32 Index) const;
+
+	/**
 	 * Error tolerant comparison.
 	 *
 	 * @param V Vector to compare against.
@@ -292,18 +308,12 @@ public:
 	 */
 	FORCEINLINE FVector4 GetSafeNormal(float Tolerance = SMALL_NUMBER) const;
 
-	DEPRECATED(4.7, "Deprecated due to unclear name, use GetSafeNormal instead.")
-	FORCEINLINE FVector4 SafeNormal(float Tolerance=SMALL_NUMBER) const;
-
 	/**
 	 * Calculates normalized version of vector without checking if it is non-zero.
 	 *
 	 * @return Normalized version of vector.
 	 */
 	FORCEINLINE FVector4 GetUnsafeNormal3() const;
-
-	DEPRECATED(4.7, "Deprecated due to unclear name, use GetUnsafeNormal3 instead.")
-	FORCEINLINE FVector4 UnsafeNormal3() const;
 
 	/**
 	 * Return the FRotator orientation corresponding to the direction in which the vector points.
@@ -533,6 +543,14 @@ FORCEINLINE FVector4 FVector4::operator-(const FVector4& V) const
 }
 
 
+FORCEINLINE FVector4 FVector4::operator-=(const FVector4& V)
+{
+	X -= V.X; Y -= V.Y; Z -= V.Z; W -= V.W;
+	DiagnosticCheckNaN();
+	return *this;
+}
+
+
 FORCEINLINE FVector4 FVector4::operator*(float Scale) const
 {
 	return FVector4(X * Scale, Y * Scale, Z * Scale, W * Scale);
@@ -568,6 +586,10 @@ FORCEINLINE float& FVector4::Component(int32 Index)
 	return (&X)[Index];
 }
 
+FORCEINLINE const float& FVector4::Component(int32 Index) const
+{
+	return (&X)[Index];
+}
 
 FORCEINLINE bool FVector4::operator==(const FVector4& V) const
 {
@@ -620,22 +642,10 @@ FORCEINLINE FVector4 FVector4::GetSafeNormal(float Tolerance) const
 }
 
 
-FORCEINLINE FVector4 FVector4::SafeNormal(float Tolerance) const
-{
-	return GetSafeNormal(Tolerance);
-}
-
-
 FORCEINLINE FVector4 FVector4::GetUnsafeNormal3() const
 {
 	const float Scale = FMath::InvSqrt(X*X+Y*Y+Z*Z);
 	return FVector4(X*Scale, Y*Scale, Z*Scale, 0.0f);
-}
-
-
-FORCEINLINE FVector4 FVector4::UnsafeNormal3() const
-{
-	return GetUnsafeNormal3();
 }
 
 

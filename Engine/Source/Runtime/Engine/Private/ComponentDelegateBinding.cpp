@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/ComponentDelegateBinding.h"
 #include "UObject/Class.h"
@@ -16,7 +16,7 @@ FMulticastScriptDelegate* UComponentDelegateBinding::FindComponentTargetDelegate
 	if(ObjProp != nullptr)
 	{
 		// ..see if there is actually a component assigned
-		UObject* Component = Cast<UObject>(ObjProp->GetObjectPropertyValue_InContainer(InInstance));
+		UObject* Component = ObjProp->GetObjectPropertyValue_InContainer(InInstance);
 		if(Component != nullptr)
 		{
 			// If there is, find and return the delegate property on it

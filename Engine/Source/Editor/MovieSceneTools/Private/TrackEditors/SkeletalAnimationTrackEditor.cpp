@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TrackEditors/SkeletalAnimationTrackEditor.h"
 #include "Rendering/DrawElements.h"
@@ -144,6 +144,27 @@ void FSkeletalAnimationSection::ResizeSection(ESequencerSectionResizeMode Resize
 	}
 
 	ISequencerSection::ResizeSection(ResizeMode, ResizeTime);
+}
+
+void FSkeletalAnimationSection::BeginSlipSection()
+{
+	BeginResizeSection();
+}
+
+void FSkeletalAnimationSection::SlipSection(float SlipTime)
+{
+	float StartOffset = (SlipTime - InitialStartTimeDuringResize) * Section.Params.PlayRate;
+	StartOffset += InitialStartOffsetDuringResize;
+
+	// Ensure start offset is not less than 0
+	if (StartOffset < 0)
+	{
+		StartOffset = 0.f;
+	}
+
+	Section.Params.StartOffset = StartOffset;
+
+	ISequencerSection::SlipSection(SlipTime);
 }
 
 FSkeletalAnimationTrackEditor::FSkeletalAnimationTrackEditor( TSharedRef<ISequencer> InSequencer )

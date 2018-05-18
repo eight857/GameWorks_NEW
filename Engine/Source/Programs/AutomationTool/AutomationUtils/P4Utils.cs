@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -968,8 +968,7 @@ namespace AutomationTool
 		static internal void InitP4Environment()
 		{
 			// Temporary connection - will use only the currently set env vars to connect to P4
-			var DefaultConnection = new P4Connection(User: null, Client: null);
-			PerforceEnvironment = (Automation.IsBuildMachine && !GlobalCommandLine.ForceLocal) ? new P4Environment(DefaultConnection, CmdEnv) : new LocalP4Environment(DefaultConnection, CmdEnv);
+			PerforceEnvironment = new P4Environment(CmdEnv);
 		}
 
 		/// <summary>
@@ -977,7 +976,7 @@ namespace AutomationTool
 		/// </summary>
 		static internal void InitDefaultP4Connection()
 		{
-			PerforceConnection = new P4Connection(User: P4Env.User, Client: P4Env.Client, ServerAndPort: P4Env.P4Port);
+			PerforceConnection = new P4Connection(User: P4Env.User, Client: P4Env.Client, ServerAndPort: P4Env.ServerAndPort);
 		}
 
 		#endregion
@@ -1905,6 +1904,48 @@ namespace AutomationTool
         public void Sync(string CommandLine, bool AllowSpew = true, bool SpewIsVerbose = false)
 		{
 			LogP4("sync " + CommandLine, null, AllowSpew, SpewIsVerbose:SpewIsVerbose);
+		}
+
+		/// <summary>
+		/// Invokes p4 preview sync command and gets a list of preview synced files.
+		/// </summary>
+		/// <param name="FilesPreviewSynced">Files that have been preview synced with the command</param>
+		/// <param name="CommandLine">CommandLine to pass on to the command.</param>
+		/// <returns>Whether preview sync is successful</returns>
+		public bool PreviewSync(out List<string> FilesPreviewSynced, string CommandLine, bool AllowSpew = true, bool SpewIsVerbose = false)
+		{
+			FilesPreviewSynced = new List<string>();
+
+			try
+			{
+				string Output;
+				LogP4Output(out Output, "sync -n " + CommandLine, null, AllowSpew, SpewIsVerbose: SpewIsVerbose);
+
+				string UpToDateOutput = String.Format("{0} - file(s) up-to-date.\r\n", CommandLine);
+				if (Output == UpToDateOutput)
+				{
+					return true;
+				}
+
+				var Lines = Output.Split(new string[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+				foreach(var line in Lines)
+				{
+					// Line example: //Fortnite/Main/FortniteGame/Content/Backend/Calendars/athena-sales.ics#11 - updating D:\Build\UE4-Fortnite\FortniteGame\Content\Backend\Calendars\athena-sales.ics
+					var splittedLine = line.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+					if(splittedLine.Length > 3)
+					{
+						FilesPreviewSynced.Add(splittedLine[3]);
+					}
+				}
+			}
+			catch (Exception Ex)
+			{
+				CommandUtils.LogWarning("Unable to preview sync P4 changes with {0}", CommandLine);
+				CommandUtils.LogWarning(" Exception was {0}", LogUtils.FormatException(Ex));
+				return false;
+			}
+
+			return true;
 		}
 
 		/// <summary>
@@ -3364,6 +3405,7 @@ namespace AutomationTool
 		/// <returns>List of files in the specified directory.</returns>
 		public List<string> Files(string CommandLine)
 		{
+			List<string> DeleteActions = new List<string> { "delete", "move/delete", "archive", "purge" };
 			string FilesCmdLine = String.Format("files {0}", CommandLine);
 			IProcessResult P4Result = P4(FilesCmdLine, AllowSpew: false);
 			if (P4Result.ExitCode != 0)
@@ -3372,7 +3414,7 @@ namespace AutomationTool
 			}
 			List<string> Result = new List<string>();
 			string[] Lines = P4Result.Output.Split(new string[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-			Regex OutputSplitter = new Regex(@"(?<filename>.+)#\d+ \- (?<action>[a-zA-Z]+) .+");
+			Regex OutputSplitter = new Regex(@"(?<filename>.+)#\d+ \- (?<action>[a-zA-Z/]+) .+");
 			foreach (string Line in Lines)
 			{
 				if (!Line.Contains("no such file") && OutputSplitter.IsMatch(Line))
@@ -3380,7 +3422,7 @@ namespace AutomationTool
 					Match RegexMatch = OutputSplitter.Match(Line);
 					string Filename = RegexMatch.Groups["filename"].Value;
 					string Action = RegexMatch.Groups["action"].Value;
-					if (Action != "delete")
+					if (!DeleteActions.Contains(Action))
 					{
 						Result.Add(Filename);
 					}

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -20,6 +20,15 @@ namespace UnrealBuildTool.Rules
 					"Runtime/Projects/Private",
 				}
 			);
+
+			if (Target.bIncludePluginsForTargetPlatforms)
+			{
+				PublicDefinitions.Add("LOAD_PLUGINS_FOR_TARGET_PLATFORMS=1");
+			}
+			else
+			{
+				PublicDefinitions.Add("LOAD_PLUGINS_FOR_TARGET_PLATFORMS=0");
+			}
 		}
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ParticleVertexFactory.cpp: Particle vertex factory implementation.
@@ -6,7 +6,7 @@
 
 #include "ParticleVertexFactory.h"
 #include "ParticleHelper.h"
-#include "Particles/ParticleResources.h"
+#include "ParticleResources.h"
 #include "ShaderParameterUtils.h"
 
 IMPLEMENT_UNIFORM_BUFFER_STRUCT(FParticleSpriteUniformParameters,TEXT("SpriteVF"));
@@ -27,8 +27,11 @@ public:
 		VertexBufferRHI = RHICreateAndLockVertexBuffer(sizeof(FVector2D) * 4, BUF_Static | BUF_ShaderResource, CreateInfo, BufferData);
 		FMemory::Memzero(BufferData, sizeof(FVector2D) * 4);
 		RHIUnlockVertexBuffer(VertexBufferRHI);
-		
-		VertexBufferSRV = RHICreateShaderResourceView(VertexBufferRHI, sizeof(FVector2D), PF_G32R32F);
+
+		if (GSupportsResourceView)
+		{
+			VertexBufferSRV = RHICreateShaderResourceView(VertexBufferRHI, sizeof(FVector2D), PF_G32R32F);
+		}
 	}
 	
 	virtual void ReleaseRHI() override
@@ -111,9 +114,9 @@ public:
 	FVertexDeclarationRHIRef VertexDeclarationRHI;
 
 	// Constructor.
-	FParticleSpriteVertexDeclaration(bool bInInstanced, int32 InNumVertsInInstanceBuffer) :
+	FParticleSpriteVertexDeclaration(bool bInInstanced, bool bInUsesDynamicParameter) :
 		bInstanced(bInInstanced),
-		NumVertsInInstanceBuffer(InNumVertsInInstanceBuffer)
+		bUsesDynamicParameter(bInUsesDynamicParameter)
 	{
 
 	}
@@ -124,7 +127,7 @@ public:
 	virtual void FillDeclElements(FVertexDeclarationElementList& Elements, int32& Offset)
 	{
 		uint32 InitialStride = sizeof(float) * 2;
-		uint32 PerParticleStride = (sizeof(float) * 4) * NumVertsInInstanceBuffer;
+		uint32 PerParticleStride = sizeof(FParticleSpriteVertex);
 
 		/** The stream to read the texture coordinates from. */
 		check( Offset == 0 );
@@ -160,7 +163,7 @@ public:
 		// the chance of an error being introduced if this code is modified.
 		Offset = 0;  //-V519
 		Stride = sizeof(float) * 4;
-		Elements.Add(FVertexElement(bInstanced ? 2 : 1, Offset, VET_Float4, 5, Stride, bInstanced));
+		Elements.Add(FVertexElement(bInstanced ? 2 : 1, Offset, VET_Float4, 5, bUsesDynamicParameter ? Stride : 0, bInstanced));
 		Offset += sizeof(float) * 4;
 	}
 
@@ -183,31 +186,45 @@ public:
 	}
 
 private:
-
 	bool bInstanced;
+	bool bUsesDynamicParameter;
 	int32 NumVertsInInstanceBuffer;
 };
 
 /** The simple element vertex declaration. */
-static TGlobalResource<FParticleSpriteVertexDeclaration> GParticleSpriteVertexDeclarationInstanced(true, 4);
-static TGlobalResource<FParticleSpriteVertexDeclaration> GParticleSpriteEightVertexDeclarationInstanced(true, 8);
-static TGlobalResource<FParticleSpriteVertexDeclaration> GParticleSpriteVertexDeclarationNonInstanced(false, 4);
-static TGlobalResource<FParticleSpriteVertexDeclaration> GParticleSpriteEightVertexDeclarationNonInstanced(false, 8);
+static TGlobalResource<FParticleSpriteVertexDeclaration> GParticleSpriteVertexDeclarationInstanced(true, false);
+static TGlobalResource<FParticleSpriteVertexDeclaration> GParticleSpriteVertexDeclarationNonInstanced(false, false);
+static TGlobalResource<FParticleSpriteVertexDeclaration> GParticleSpriteVertexDeclarationInstancedDynamic(true, true);
+static TGlobalResource<FParticleSpriteVertexDeclaration> GParticleSpriteVertexDeclarationNonInstancedDynamic(false, true);
 
-inline TGlobalResource<FParticleSpriteVertexDeclaration>& GetParticleSpriteVertexDeclaration(bool SupportsInstancing, int32 NumVertsInInstanceBuffer)
+static inline TGlobalResource<FParticleSpriteVertexDeclaration>& GetParticleSpriteVertexDeclaration(bool bSupportsInstancing, int32 NumVertsInInstanceBuffer, bool bUsesDynamicParameter)
 {
 	check(NumVertsInInstanceBuffer == 4 || NumVertsInInstanceBuffer == 8);
-	if (SupportsInstancing)
+	if (bUsesDynamicParameter)
 	{
-		return NumVertsInInstanceBuffer == 4 ? GParticleSpriteVertexDeclarationInstanced : GParticleSpriteEightVertexDeclarationInstanced;
+		if (bSupportsInstancing)
+		{
+			return GParticleSpriteVertexDeclarationInstancedDynamic;
+		}
+		else
+		{
+			return GParticleSpriteVertexDeclarationNonInstancedDynamic;
+		}
 	}
 	else
 	{
-		return NumVertsInInstanceBuffer == 4 ? GParticleSpriteVertexDeclarationNonInstanced : GParticleSpriteEightVertexDeclarationNonInstanced;
+		if (bSupportsInstancing)
+		{
+			return GParticleSpriteVertexDeclarationInstanced;
+		}
+		else
+		{
+			return GParticleSpriteVertexDeclarationNonInstanced;
+		}
 	}
 }
 
-bool FParticleSpriteVertexFactory::ShouldCache(EShaderPlatform Platform, const class FMaterial* Material, const class FShaderType* ShaderType)
+bool FParticleSpriteVertexFactory::ShouldCompilePermutation(EShaderPlatform Platform, const class FMaterial* Material, const class FShaderType* ShaderType)
 {
 	return Material->IsUsedWithParticleSprites() || Material->IsSpecialEngineMaterial();
 }
@@ -229,12 +246,12 @@ void FParticleSpriteVertexFactory::ModifyCompilationEnvironment(EShaderPlatform 
 void FParticleSpriteVertexFactory::InitRHI()
 {
 	InitStreams();
-	SetDeclaration(GetParticleSpriteVertexDeclaration(GRHISupportsInstancing, NumVertsInInstanceBuffer).VertexDeclarationRHI);
+	SetDeclaration(GetParticleSpriteVertexDeclaration(GRHISupportsInstancing, NumVertsInInstanceBuffer, bUsesDynamicParameter).VertexDeclarationRHI);
 }
 
 void FParticleSpriteVertexFactory::InitStreams()
 {
-    const bool bInstanced = GRHISupportsInstancing;
+	const bool bInstanced = GRHISupportsInstancing;
 
 	check(Streams.Num() == 0);
 	if(bInstanced) 
@@ -246,6 +263,7 @@ void FParticleSpriteVertexFactory::InitStreams()
 	}
 	FVertexStream* InstanceStream = new(Streams) FVertexStream;
 	FVertexStream* DynamicParameterStream = new(Streams) FVertexStream;
+	DynamicParameterStream->Stride = bUsesDynamicParameter ? DynamicParameterStride : 0;
 }
 
 void FParticleSpriteVertexFactory::SetInstanceBuffer(const FVertexBuffer* InInstanceBuffer, uint32 StreamOffset, uint32 Stride, bool bInstanced)
@@ -269,14 +287,16 @@ void FParticleSpriteVertexFactory::SetDynamicParameterBuffer(const FVertexBuffer
 	FVertexStream& DynamicParameterStream = Streams[bInstanced ? 2 : 1];
 	if (InDynamicParameterBuffer)
 	{
+		ensure(bUsesDynamicParameter);
 		DynamicParameterStream.VertexBuffer = InDynamicParameterBuffer;
-		DynamicParameterStream.Stride = Stride;
+		ensure(DynamicParameterStream.Stride == Stride);
 		DynamicParameterStream.Offset = StreamOffset;
 	}
 	else
 	{
+		ensure(!bUsesDynamicParameter);
 		DynamicParameterStream.VertexBuffer = &GNullDynamicParameterVertexBuffer;
-		DynamicParameterStream.Stride = 0;
+		ensure(DynamicParameterStream.Stride == 0);
 		DynamicParameterStream.Offset = 0;
 	}
 }

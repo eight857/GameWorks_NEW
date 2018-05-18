@@ -1,8 +1,6 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
-
-#if PLATFORM_HTML5_BROWSER
 
 #include "SaveGameSystem.h"
 
@@ -47,4 +45,3 @@ private:
 	 */
 	const char* GetSaveGamePath(const TCHAR* Name, const int32 UserIndex);
 };
-#endif

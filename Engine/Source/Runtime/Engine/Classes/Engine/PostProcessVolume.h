@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * PostProcessVolume:  a post process settings volume
@@ -46,8 +46,8 @@ class APostProcessVolume : public AVolume, public IInterface_PostProcessVolume
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=PostProcessVolumeSettings)
 	uint32 bEnabled:1;
 
-	/** Whether this volume bounds are used or it affects the whole world.								*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=PostProcessVolumeSettings)
+	/** Whether this volume covers the whole world, or just the area inside its bounds.								*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=PostProcessVolumeSettings, meta=(DisplayName = "Infinite Extent (Unbound)"))
 	uint32 bUnbound:1;
 
 	//~ Begin IInterface_PostProcessVolume Interface

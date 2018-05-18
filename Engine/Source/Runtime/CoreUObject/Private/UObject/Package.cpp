@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UObject/Package.h"
 #include "HAL/FileManager.h"
@@ -37,7 +37,9 @@ void UPackage::PostInitProperties()
 		bDirty = false;
 	}
 
-	MetaData = NULL;
+#if WITH_EDITORONLY_DATA
+	MetaData = nullptr;
+#endif
 	LinkerPackageVersion = GPackageFileUE4Version;
 	LinkerLicenseeVersion = GPackageFileLicenseeUE4Version;
 	PIEInstanceID = INDEX_NONE;
@@ -92,7 +94,9 @@ void UPackage::Serialize( FArchive& Ar )
 
 	if ( Ar.IsTransacting() )
 	{
-		Ar << bDirty;
+		bool bTempDirty = bDirty;
+		Ar << bTempDirty;
+		bDirty = bTempDirty;
 	}
 	if (Ar.IsCountingMemory())
 	{		
@@ -126,6 +130,7 @@ UMetaData* UPackage::GetMetaData()
 {
 	checkf(!FPlatformProperties::RequiresCookedData(), TEXT("MetaData is only allowed in the Editor."));
 
+#if WITH_EDITORONLY_DATA
 	// If there is no MetaData, try to find it.
 	if (MetaData == NULL)
 	{
@@ -146,6 +151,9 @@ UMetaData* UPackage::GetMetaData()
 	}
 
 	return MetaData;
+#else
+	return nullptr;
+#endif
 }
 
 /**
@@ -154,20 +162,13 @@ UMetaData* UPackage::GetMetaData()
 void UPackage::FullyLoad()
 {
 	// Make sure we're a topmost package.
-	checkf(GetOuter()==NULL, TEXT("Package is not topmost. Name:%s Path: %s"), *GetName(), *GetPathName());
+	checkf(GetOuter()==nullptr, TEXT("Package is not topmost. Name:%s Path: %s"), *GetName(), *GetPathName());
 
 	// Only perform work if we're not already fully loaded.
-	if( !IsFullyLoaded() )
+	if(!IsFullyLoaded())
 	{
-		// Mark package so exports are found in memory first instead of being clobbered.
-		bool bSavedState = ShouldFindExportsInMemoryFirst();
-		FindExportsInMemoryFirst( true );
-
 		// Re-load this package.
-		LoadPackage( NULL, *GetName(), LOAD_None );
-
-		// Restore original state.
-		FindExportsInMemoryFirst( bSavedState );
+		LoadPackage(nullptr, *GetName(), LOAD_None);
 	}
 }
 
@@ -176,10 +177,12 @@ void UPackage::TagSubobjects(EObjectFlags NewFlags)
 {
 	Super::TagSubobjects(NewFlags);
 
+#if WITH_EDITORONLY_DATA
 	if (MetaData)
 	{
 		MetaData->SetFlags(NewFlags);
 	}
+#endif
 }
 
 /**
@@ -195,10 +198,11 @@ bool UPackage::IsFullyLoaded() const
 	if( !bHasBeenFullyLoaded && !HasAnyInternalFlags(EInternalObjectFlags::AsyncLoading) )
 	{
 		FString DummyFilename;
-		// Try to find matching package in package file cache.
+		FString SourcePackageName = FileName != NAME_None ? FileName.ToString() : GetName();
+		// Try to find matching package in package file cache. We use the source package name here as it may be loaded into a temporary package
 		if (	!GetConvertedDynamicPackageNameToTypeName().Contains(GetFName()) &&
 				(
-					!FPackageName::DoesPackageExist( *GetName(), NULL, &DummyFilename ) || 
+					!FPackageName::DoesPackageExist(*SourcePackageName, NULL, &DummyFilename ) ||
 					(GIsEditor && IFileManager::Get().FileSize(*DummyFilename) < 0) 
 				)
 			)
@@ -248,10 +252,17 @@ void UPackage::SetLoadedByEditorPropertiesOnly(bool bIsEditorOnly, bool bRecursi
 }
 #endif
 
-
+#if WITH_EDITORONLY_DATA
 IMPLEMENT_CORE_INTRINSIC_CLASS(UPackage, UObject,
 	{
 		Class->ClassAddReferencedObjects = &UPackage::AddReferencedObjects;
 		Class->EmitObjectReference(STRUCT_OFFSET(UPackage, MetaData), TEXT("MetaData"));
 	}
 );
+#else
+IMPLEMENT_CORE_INTRINSIC_CLASS(UPackage, UObject,
+	{
+		Class->ClassAddReferencedObjects = &UPackage::AddReferencedObjects;
+	}
+);
+#endif

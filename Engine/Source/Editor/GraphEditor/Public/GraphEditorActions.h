@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -89,11 +89,7 @@ public:
 	TSharedPtr< FUICommandInfo > FindReferences;
 	TSharedPtr< FUICommandInfo > FindAndReplaceReferences;
 
-	// Goto native code actions
-	TSharedPtr< FUICommandInfo > GotoNativeFunctionDefinition;
-	TSharedPtr< FUICommandInfo > GotoNativeVariableDefinition;
-
-	// Jumps to a call function node's graph
+	// Jumps to the definition of the selected node (or otherwise focuses something interesting about that node, e.g., the inner graph for a collapsed graph)
 	TSharedPtr< FUICommandInfo > GoToDefinition;
 
 	// Pin-specific actions

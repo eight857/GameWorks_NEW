@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /** 
  * This is the definition for a Rig that is used for retargeting animations
@@ -72,8 +72,9 @@ namespace EControlConstraint
 		Orientation,
 		/** Translation constraint. */
 		Translation,
+
 		/** Max Number. */
-		Max
+		MAX
 	};
 }
 
@@ -130,7 +131,7 @@ struct FTransformBase
 	FName					Node;
 
 	UPROPERTY(EditAnywhere, Category="FTransformBase")
-	FTransformBaseConstraint	Constraints[EControlConstraint::Type::Max];
+	FTransformBaseConstraint	Constraints[EControlConstraint::Type::MAX];
 };
 
 DECLARE_DELEGATE_RetVal_OneParam(int32, FGetParentIndex, FName);

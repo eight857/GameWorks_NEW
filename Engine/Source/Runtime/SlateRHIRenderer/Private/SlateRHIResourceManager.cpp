@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SlateRHIResourceManager.h"
 #include "RenderingThread.h"
@@ -16,7 +16,8 @@
 #include "Engine/Engine.h"
 #include "Slate/SlateTextures.h"
 #include "SlateRHITextureAtlas.h"
-#include "Interfaces/IImageWrapperModule.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
 #include "SlateNativeTextureResource.h"
 #include "SlateUTextureResource.h"
 #include "SlateMaterialResource.h"
@@ -79,7 +80,7 @@ void FDynamicResourceMap::AddUTextureResource( UTexture* TextureObject, TSharedR
 		check(TextureObject == InResource->TextureObject);
 		TextureMap.Add(TextureObject, InResource);
 
-		TextureMemorySincePurge += TextureObject->GetResourceSizeBytes(EResourceSizeMode::Inclusive);
+		TextureMemorySincePurge += TextureObject->GetResourceSizeBytes(EResourceSizeMode::Exclusive);
 	}
 }
 
@@ -99,7 +100,7 @@ void FDynamicResourceMap::RemoveUTextureResource( UTexture* TextureObject )
 	if(TextureObject)
 	{
 		TextureMap.Remove(TextureObject);
-		TextureMemorySincePurge -= TextureObject->GetResourceSizeBytes(EResourceSizeMode::Inclusive);
+		TextureMemorySincePurge -= TextureObject->GetResourceSizeBytes(EResourceSizeMode::Exclusive);
 	}
 }
 
@@ -390,7 +391,7 @@ bool FSlateRHIResourceManager::LoadTexture( const FName& TextureName, const FStr
 	if( FFileHelper::LoadFileToArray( RawFileData, *ResourcePath ) )
 	{
 		IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>( FName("ImageWrapper") );
-		IImageWrapperPtr ImageWrapper = ImageWrapperModule.CreateImageWrapper( EImageFormat::PNG );
+		TSharedPtr<IImageWrapper> ImageWrapper = ImageWrapperModule.CreateImageWrapper( EImageFormat::PNG );
 		if ( ImageWrapper.IsValid() && ImageWrapper->SetCompressed( RawFileData.GetData(), RawFileData.Num() ) )
 		{
 			Width = ImageWrapper->GetWidth();
@@ -521,6 +522,7 @@ FSlateShaderResourceProxy* FSlateRHIResourceManager::GetShaderResource( const FS
 
 	UObject* ResourceObject = InBrush.GetResourceObject();
 	FSlateShaderResourceProxy* Resource = nullptr;
+
 	if(ResourceObject != nullptr && (ResourceObject->IsPendingKill() || ResourceObject->IsUnreachable() || ResourceObject->HasAnyFlags(RF_BeginDestroyed)))
 	{
 		UE_LOG(LogSlate, Warning, TEXT("Attempted to access resource for %s which is pending kill, unreachable or pending destroy"), *ResourceObject->GetName());
@@ -533,7 +535,7 @@ FSlateShaderResourceProxy* FSlateRHIResourceManager::GetShaderResource( const FS
 		}
 		else if(ResourceObject && ResourceObject->IsA<UMaterialInterface>())
 		{
-			FSlateMaterialResource* MaterialResource = GetMaterialResource(ResourceObject, InBrush.ImageSize, nullptr, 0);
+			FSlateMaterialResource* MaterialResource = GetMaterialResource(ResourceObject, &InBrush, nullptr, 0);
 			Resource = MaterialResource->SlateProxy;
 		}
 		else if(InBrush.IsDynamicallyLoaded() || (InBrush.HasUObject()))
@@ -559,7 +561,7 @@ FSlateShaderResource* FSlateRHIResourceManager::GetFontShaderResource( int32 InT
 	}
 	else
 	{
-		return GetMaterialResource( FontMaterial, FVector2D::ZeroVector, FontTextureAtlas, InTextureAtlasIndex );
+		return GetMaterialResource( FontMaterial, nullptr, FontTextureAtlas, InTextureAtlasIndex );
 	}
 }
 
@@ -767,13 +769,14 @@ FSlateShaderResourceProxy* FSlateRHIResourceManager::FindOrCreateDynamicTextureR
 	return nullptr;
 }
 
-FSlateMaterialResource* FSlateRHIResourceManager::GetMaterialResource(const UObject* InMaterial, FVector2D ImageSize, FSlateShaderResource* TextureMask, int32 InMaskKey )
+FSlateMaterialResource* FSlateRHIResourceManager::GetMaterialResource(const UObject* InMaterial, const FSlateBrush* InBrush, FSlateShaderResource* TextureMask, int32 InMaskKey )
 {
 	checkSlow(IsThreadSafeForSlateRendering());
 
 	const UMaterialInterface* Material = CastChecked<UMaterialInterface>(InMaterial);
 
-	FMaterialKey Key(Material, InMaskKey);
+	FVector2D ImageSize = InBrush ? InBrush->ImageSize : FVector2D::ZeroVector;
+	FMaterialKey Key(Material, ImageSize, InMaskKey);
 
 	TSharedPtr<FSlateMaterialResource> MaterialResource = DynamicResourceMap.GetMaterialResource(Key);
 	if (!MaterialResource.IsValid())
@@ -847,7 +850,7 @@ void FSlateRHIResourceManager::ReleaseDynamicResource( const FSlateBrush& InBrus
 			{
 				UMaterialInterface* Material = Cast<UMaterialInterface>(ResourceObject);
 
-				FMaterialKey Key(Material, 0);
+				FMaterialKey Key(Material, InBrush.ImageSize, 0);
 
 				TSharedPtr<FSlateMaterialResource> MaterialResource = DynamicResourceMap.GetMaterialResource(Key);
 				

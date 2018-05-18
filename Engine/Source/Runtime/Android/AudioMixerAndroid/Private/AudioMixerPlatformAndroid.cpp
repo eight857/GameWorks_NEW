@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AudioMixerPlatformAndroid.h"
 #include "ModuleManager.h"
@@ -327,6 +327,30 @@ namespace Audio
 		return PlatformSettings;
 	}
 
+	static bool bSuspended = false;
+
+	void FMixerPlatformAndroid::SuspendContext()
+	{
+		if (!bSuspended)
+		{
+			bSuspended = true;
+			// set the player's state to paused
+			SLresult result = (*SL_PlayerPlayInterface)->SetPlayState(SL_PlayerPlayInterface, SL_PLAYSTATE_PAUSED);
+			check(SL_RESULT_SUCCESS == result);
+		}
+	}
+
+	void FMixerPlatformAndroid::ResumeContext()
+	{
+		// set the player's state to paused
+		if (bSuspended)
+		{
+			bSuspended = false;
+			SLresult result = (*SL_PlayerPlayInterface)->SetPlayState(SL_PlayerPlayInterface, SL_PLAYSTATE_PLAYING);
+			check(SL_RESULT_SUCCESS == result);
+		}
+	}
+
 	void FMixerPlatformAndroid::SubmitBuffer(const uint8* Buffer)
 	{
 		SLresult Result = (*SL_PlayerBufferQueue)->Enqueue(SL_PlayerBufferQueue, Buffer, AudioStreamInfo.NumOutputFrames * AudioStreamInfo.DeviceInfo.NumChannels * sizeof(int16));
@@ -350,45 +374,54 @@ namespace Audio
 
 	bool FMixerPlatformAndroid::HasCompressedAudioInfoClass(USoundWave* InSoundWave)
 	{
-		return true;
+#if WITH_OGGVORBIS
+		if (InSoundWave->bStreaming)
+		{
+			return true;
+		}
+
+		static FName NAME_OGG(TEXT("OGG"));
+		if (InSoundWave->HasCompressedData(NAME_OGG))
+		{
+			return true;
+		}
+#endif
+
+		if (InSoundWave->bStreaming)
+		{
+			return true;
+		}
+
+		static FName NAME_ADPCM(TEXT("ADPCM"));
+		if (InSoundWave->HasCompressedData(NAME_ADPCM))
+		{
+			return true;
+		}
+
+		return false;
 	}
 
 	ICompressedAudioInfo* FMixerPlatformAndroid::CreateCompressedAudioInfo(USoundWave* InSoundWave)
 	{
 #if WITH_OGGVORBIS
 		static FName NAME_OGG(TEXT("OGG"));
-		if (InSoundWave->HasCompressedData(NAME_OGG))
+		if (InSoundWave->bStreaming || InSoundWave->HasCompressedData(NAME_OGG))
 		{
 			return new FVorbisAudioInfo();
 		}
 #endif
-
 		static FName NAME_ADPCM(TEXT("ADPCM"));
+		if (InSoundWave->bStreaming || InSoundWave->HasCompressedData(NAME_ADPCM))
+		{
+			return new FADPCMAudioInfo();
+		}
 
-		return new FADPCMAudioInfo();
+		return nullptr;
 	}
 
 	FString FMixerPlatformAndroid::GetDefaultDeviceName()
 	{
 		return FString();
-	}
-
-	void FMixerPlatformAndroid::ResumeContext()
-	{
-		if (bSuspended)
-		{
-			UE_LOG(LogAudioMixerAndroid, Display, TEXT("Resuming Audio"));
-			bSuspended = false;
-		}
-	}
-	
-	void FMixerPlatformAndroid::SuspendContext()
-	{
-		if (!bSuspended)
-		{
-			UE_LOG(LogAudioMixerAndroid, Display, TEXT("Suspending Audio"));
-			bSuspended = true;
-		}
 	}
 
 	void FMixerPlatformAndroid::OpenSLBufferQueueCallback(SLAndroidSimpleBufferQueueItf InQueueInterface, void* pContext)

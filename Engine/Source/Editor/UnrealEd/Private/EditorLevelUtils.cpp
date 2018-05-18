@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 EditorLevelUtils.cpp: Editor-specific level management routines
@@ -46,6 +46,9 @@ EditorLevelUtils.cpp: Editor-specific level management routines
 #include "Engine/LevelStreamingVolume.h"
 #include "Components/ModelComponent.h"
 #include "Misc/RuntimeErrors.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "IAssetTools.h"
+#include "AssetToolsModule.h"
 
 DEFINE_LOG_CATEGORY(LogLevelTools);
 
@@ -68,7 +71,7 @@ int32 UEditorLevelUtils::MoveActorsToLevel(const TArray<AActor*>& ActorsToMove, 
 		// Backup the current contents of the clipboard string as we'll be using cut/paste features to move actors
 		// between levels and this will trample over the clipboard data.
 		FString OriginalClipboardContent;
-		FPlatformMisc::ClipboardPaste(OriginalClipboardContent);
+		FPlatformApplicationMisc::ClipboardPaste(OriginalClipboardContent);
 
 		// The final list of actors to move after invalid actors were removed
 		TArray<AActor*> FinalMoveList;
@@ -111,12 +114,14 @@ int32 UEditorLevelUtils::MoveActorsToLevel(const TArray<AActor*>& ActorsToMove, 
 
 		if (FinalMoveList.Num() > 0)
 		{
+			TMap<FSoftObjectPath, FSoftObjectPath> ActorPathMapping;
 			GEditor->SelectNone(false, true, false);
 
 			USelection* ActorSelection = GEditor->GetSelectedActors();
 			ActorSelection->BeginBatchSelectOperation();
 			for (AActor* Actor : FinalMoveList)
 			{
+				ActorPathMapping.Add(FSoftObjectPath(Actor), FSoftObjectPath());
 				GEditor->SelectActor(Actor, true, false);
 			}
 			ActorSelection->EndBatchSelectOperation(false);
@@ -130,7 +135,7 @@ int32 UEditorLevelUtils::MoveActorsToLevel(const TArray<AActor*>& ActorsToMove, 
 				ULevel* OldCurrentLevel = OwningWorld->GetCurrentLevel();
 
 				// Copy the actors we have selected to the clipboard
-				GEditor->CopySelectedActorsToClipboard(OwningWorld, true);
+				GEditor->CopySelectedActorsToClipboard(OwningWorld, true, true);
 
 				// Set the new level and force it visible while we do the paste
 				OwningWorld->SetCurrentLevel(DestLevel);
@@ -142,6 +147,70 @@ int32 UEditorLevelUtils::MoveActorsToLevel(const TArray<AActor*>& ActorsToMove, 
 
 				// Paste the actors into the new level
 				GEditor->edactPasteSelected(OwningWorld, false, false, false);
+
+				// Build a remapping of old to new names so we can do a fixup
+				for (FSelectionIterator It(GEditor->GetSelectedActorIterator()); It; ++It)
+				{
+					AActor* Actor = static_cast<AActor*>(*It);
+					FSoftObjectPath NewPath = FSoftObjectPath(Actor);
+
+					bool bFoundMatch = false;
+
+					// First try exact match
+					for (TPair<FSoftObjectPath, FSoftObjectPath>& Pair : ActorPathMapping)
+					{
+						if (Pair.Value.IsNull() && NewPath.GetSubPathString() == Pair.Key.GetSubPathString())
+						{
+							bFoundMatch = true;
+							Pair.Value = NewPath;
+							break;
+						}
+					}
+
+					if (!bFoundMatch)
+					{
+						// Remove numbers from end as it may have had to add some to disambiguate
+						FString PartialPath = NewPath.GetSubPathString();
+						int32 IgnoreNumber;
+						FActorLabelUtilities::SplitActorLabel(PartialPath, IgnoreNumber);
+
+						for (TPair<FSoftObjectPath, FSoftObjectPath>& Pair : ActorPathMapping)
+						{
+							if (Pair.Value.IsNull())
+							{
+								FString KeyPartialPath = Pair.Key.GetSubPathString();
+								FActorLabelUtilities::SplitActorLabel(KeyPartialPath, IgnoreNumber);
+								if (PartialPath == KeyPartialPath)
+								{
+									bFoundMatch = true;
+									Pair.Value = NewPath;
+									break;
+								}
+							}
+						}
+					}
+
+					if (!bFoundMatch)
+					{
+						UE_LOG(LogLevelTools, Error, TEXT("Cannot find remapping for moved actor ID %s, any soft references pointing to it will be broken!"), *Actor->GetPathName());
+					}
+				}
+
+				FAssetToolsModule& AssetToolsModule = FModuleManager::GetModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+				TArray<FAssetRenameData> RenameData;
+
+				for (TPair<FSoftObjectPath, FSoftObjectPath>& Pair : ActorPathMapping)
+				{
+					if (Pair.Value.IsValid())
+					{
+						RenameData.Add(FAssetRenameData(Pair.Key, Pair.Value, true));
+					}
+				}
+					
+				if (RenameData.Num() > 0)
+				{
+					AssetToolsModule.Get().RenameAssetsWithDialog(RenameData);
+				}
 
 				// Restore new level visibility to previous state
 				if (!bLevelVisible)
@@ -158,7 +227,7 @@ int32 UEditorLevelUtils::MoveActorsToLevel(const TArray<AActor*>& ActorsToMove, 
 		}
 
 		// Restore the original clipboard contents
-		FPlatformMisc::ClipboardCopy(*OriginalClipboardContent);
+		FPlatformApplicationMisc::ClipboardCopy(*OriginalClipboardContent);
 	}
 
 	return NumMovedActors;
@@ -549,6 +618,7 @@ bool UEditorLevelUtils::RemoveLevelFromWorld(ULevel* InLevel)
 			MakeLevelCurrent(OwningWorld->PersistentLevel);
 		}
 
+		FEditorSupportDelegates::PrepareToCleanseEditorObject.Broadcast(InLevel);
 
 		EditorDestroyLevel(InLevel);
 
@@ -707,7 +777,57 @@ void UEditorLevelUtils::DeselectAllSurfacesInLevel(ULevel* InLevel)
 	}
 }
 
-void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible, bool bForceLayersVisible)
+void UEditorLevelUtils::SetLevelVisibilityTemporarily(ULevel* Level, bool bShouldBeVisible)
+{
+	// Nothing to do
+	if (Level == NULL)
+	{
+		return;
+	}
+
+	// Set the visibility of each actor in the p-level
+	for (TArray<AActor*>::TIterator ActorIter(Level->Actors); ActorIter; ++ActorIter)
+	{
+		AActor* CurActor = *ActorIter;
+		if (CurActor && !FActorEditorUtils::IsABuilderBrush(CurActor) && CurActor->bHiddenEdLevel == bShouldBeVisible)
+		{
+			CurActor->bHiddenEdLevel = !bShouldBeVisible;
+			CurActor->MarkComponentsRenderStateDirty();
+		}
+	}
+
+	// Set the visibility of each BSP surface in the p-level
+	UModel* CurLevelModel = Level->Model;
+	if (CurLevelModel)
+	{
+		for (TArray<FBspSurf>::TIterator SurfaceIterator(CurLevelModel->Surfs); SurfaceIterator; ++SurfaceIterator)
+		{
+			FBspSurf& CurSurf = *SurfaceIterator;
+			CurSurf.bHiddenEdLevel = !bShouldBeVisible;
+		}
+	}
+
+	// Add/remove model components from the scene
+	for (int32 ComponentIndex = 0; ComponentIndex < Level->ModelComponents.Num(); ComponentIndex++)
+	{
+		UModelComponent* CurLevelModelCmp = Level->ModelComponents[ComponentIndex];
+		if (CurLevelModelCmp)
+		{
+			CurLevelModelCmp->MarkRenderStateDirty();
+		}
+	}
+
+	Level->GetWorld()->SendAllEndOfFrameUpdates();
+
+	Level->bIsVisible = bShouldBeVisible;
+
+	if (Level->bIsLightingScenario)
+	{
+		Level->OwningWorld->PropagateLightingScenarioChange();
+	}
+}
+
+void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible, bool bForceLayersVisible, ELevelVisibilityDirtyMode ModifyMode)
 {
 	// Nothing to do
 	if (Level == NULL)
@@ -722,7 +842,7 @@ void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible,
 	{
 		//create a transaction so we can undo the visibilty toggle
 		const FScopedTransaction Transaction(LOCTEXT("ToggleLevelVisibility", "Toggle Level Visibility"));
-		if (Level->bIsVisible != bShouldBeVisible)
+		if (Level->bIsVisible != bShouldBeVisible && ModifyMode == ELevelVisibilityDirtyMode::ModifyOnChange)
 		{
 			Level->Modify();
 		}
@@ -732,7 +852,11 @@ void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible,
 			AActor* CurActor = *PLevelActorIter;
 			if (CurActor && !FActorEditorUtils::IsABuilderBrush(CurActor) && CurActor->bHiddenEdLevel == bShouldBeVisible)
 			{
-				CurActor->Modify();
+				if (ModifyMode == ELevelVisibilityDirtyMode::ModifyOnChange)
+				{
+					CurActor->Modify();
+				}
+				
 				CurActor->bHiddenEdLevel = !bShouldBeVisible;
 				CurActor->RegisterAllComponents();
 				CurActor->MarkComponentsRenderStateDirty();
@@ -743,7 +867,11 @@ void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible,
 		UModel* CurLevelModel = Level->Model;
 		if (CurLevelModel)
 		{
-			CurLevelModel->Modify();
+			if (ModifyMode == ELevelVisibilityDirtyMode::ModifyOnChange)
+			{
+				CurLevelModel->Modify();
+			}
+
 			for (TArray<FBspSurf>::TIterator SurfaceIterator(CurLevelModel->Surfs); SurfaceIterator; ++SurfaceIterator)
 			{
 				FBspSurf& CurSurf = *SurfaceIterator;
@@ -785,11 +913,14 @@ void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible,
 		// Handle the case of a streaming level
 		if (StreamingLevel)
 		{
-			// We need to set the RF_Transactional to make a streaming level serialize itself. so store the original ones, set the flag, and put the original flags back when done
-			EObjectFlags cachedFlags = StreamingLevel->GetFlags();
-			StreamingLevel->SetFlags(RF_Transactional);
-			StreamingLevel->Modify();
-			StreamingLevel->SetFlags(cachedFlags);
+			if (ModifyMode == ELevelVisibilityDirtyMode::ModifyOnChange)
+			{
+				// We need to set the RF_Transactional to make a streaming level serialize itself. so store the original ones, set the flag, and put the original flags back when done
+				EObjectFlags cachedFlags = StreamingLevel->GetFlags();
+				StreamingLevel->SetFlags(RF_Transactional);
+				StreamingLevel->Modify();
+				StreamingLevel->SetFlags(cachedFlags);
+			}
 
 			// Set the visibility state for this streaming level.  
 			StreamingLevel->bShouldBeVisibleInEditor = bShouldBeVisible;
@@ -801,7 +932,7 @@ void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible,
 		}
 
 		// UpdateLevelStreaming sets Level->bIsVisible directly, so we need to make sure it gets saved to the transaction buffer.
-		if (Level->bIsVisible != bShouldBeVisible)
+		if (Level->bIsVisible != bShouldBeVisible && ModifyMode == ELevelVisibilityDirtyMode::ModifyOnChange)
 		{
 			Level->Modify();
 		}
@@ -855,7 +986,11 @@ void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible,
 					// Make the actor layer visible, if it's not already.
 					if (Actor->bHiddenEdLayer)
 					{
-						bModified = Actor->Modify();
+						if (ModifyMode == ELevelVisibilityDirtyMode::ModifyOnChange)
+						{
+							bModified = Actor->Modify();
+						}
+						
 						Actor->bHiddenEdLayer = false;
 					}
 
@@ -866,7 +1001,7 @@ void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible,
 				// Set the visibility of each actor in the streaming level
 				if (!FActorEditorUtils::IsABuilderBrush(Actor) && Actor->bHiddenEdLevel == bShouldBeVisible)
 				{
-					if (!bModified)
+					if (!bModified && ModifyMode == ELevelVisibilityDirtyMode::ModifyOnChange)
 					{
 						bModified = Actor->Modify();
 					}
@@ -891,7 +1026,7 @@ void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible,
 	GEngine->BroadcastLevelActorListChanged();
 
 	// If the level is being hidden, deselect actors and surfaces that belong to this level.
-	if (!bShouldBeVisible)
+	if (!bShouldBeVisible && ModifyMode == ELevelVisibilityDirtyMode::ModifyOnChange)
 	{
 		USelection* SelectedActors = GEditor->GetSelectedActors();
 		SelectedActors->Modify();
@@ -915,7 +1050,7 @@ void UEditorLevelUtils::SetLevelVisibility(ULevel* Level, bool bShouldBeVisible,
 
 	if (Level->bIsLightingScenario)
 	{
-		Level->OwningWorld->PropagateLightingScenarioChange(bShouldBeVisible);
+		Level->OwningWorld->PropagateLightingScenarioChange();
 	}
 }
 

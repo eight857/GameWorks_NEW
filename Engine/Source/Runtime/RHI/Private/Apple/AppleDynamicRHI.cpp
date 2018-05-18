@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "RHI.h"
 #include "Misc/ConfigCacheIni.h"
@@ -101,7 +101,7 @@ FDynamicRHI* PlatformCreateDynamicRHI()
 			{
 				RequestedFeatureLevel = ERHIFeatureLevel::SM4;
 			}
-			else if (FParse::Param(FCommandLine::Get(),TEXT("metalsm5")))
+			else if (FParse::Param(FCommandLine::Get(),TEXT("metalsm5")) || FParse::Param(FCommandLine::Get(),TEXT("metalmrt")))
 			{
 				RequestedFeatureLevel = ERHIFeatureLevel::SM5;
 			}
@@ -112,7 +112,7 @@ FDynamicRHI* PlatformCreateDynamicRHI()
 			}
 			else if (FParse::Param(FCommandLine::Get(),TEXT("metalmrt")))
 			{
-				RequestedFeatureLevel = ERHIFeatureLevel::SM4;
+				RequestedFeatureLevel = ERHIFeatureLevel::SM5;
 			}
 #endif
 		}

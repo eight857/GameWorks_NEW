@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 #include "ISteamVRPlugin.h"
@@ -11,14 +11,19 @@
 #include "SteamVRSplash.h"
 #include "IStereoLayers.h"
 #include "StereoLayerManager.h"
+#include "XRRenderTargetManager.h"
 
 #if PLATFORM_WINDOWS
 #include "AllowWindowsPlatformTypes.h"
 #include <d3d11.h>
 #include "HideWindowsPlatformTypes.h"
+#elif PLATFORM_MAC
+#include <IOSurface/IOSurface.h>
 #endif
 
+#if !PLATFORM_MAC // No OpenGL on Mac anymore
 #include "OpenGLDrv.h"
+#endif
 
 #include "SceneViewExtension.h"
 #include "SteamVRAssetManager.h"
@@ -58,60 +63,113 @@ struct FSteamVRLayer
 };
 
 /**
- * SteamVR Head Mounted Display
+ * Render target swap chain
  */
-class FSteamVRHMD : public FHeadMountedDisplayBase, public ISceneViewExtension, public FSteamVRAssetManager, public TSharedFromThis<FSteamVRHMD, ESPMode::ThreadSafe>, public TStereoLayerManager<FSteamVRLayer>
+class FRHITextureSet2D : public FRHITexture2D
 {
 public:
-	/** IHeadMountedDisplay interface */
-	virtual FName GetDeviceName() const override
+	
+	FRHITextureSet2D(const uint32 TextureSetSize, EPixelFormat Format, uint32 SizeX, uint32 SizeY, uint32 NumMips, uint32 NumSamples, uint32 Flags, const FClearValueBinding& InClearValue)
+	: FRHITexture2D(SizeX, SizeY, NumMips, NumSamples, Format, Flags, InClearValue)
+	, TextureIndex(0)
 	{
-		static FName DefaultName(TEXT("SteamVR"));
-		return DefaultName;
+		TextureSet.AddZeroed(TextureSetSize);
+	}
+	
+	virtual ~FRHITextureSet2D()
+	{}
+	
+	void AddTexture(FTexture2DRHIRef& Texture, const uint32 Index)
+	{
+		check(Index < static_cast<uint32>(TextureSet.Num()));
+		// todo: Check texture format to ensure it matches the set
+		TextureSet[Index] = Texture;
+	}
+	
+	void Advance()
+	{
+		TextureIndex = (TextureIndex + 1) % static_cast<uint32>(TextureSet.Num());
+	}
+	
+	virtual void* GetTextureBaseRHI() override
+	{
+		check(TextureSet[TextureIndex].IsValid());
+		return TextureSet[TextureIndex]->GetTextureBaseRHI();
+	}
+	
+	virtual void* GetNativeResource() const override
+	{
+		check(TextureSet[TextureIndex].IsValid());
+		return TextureSet[TextureIndex]->GetNativeResource();
+	}
+	
+private:
+	TArray<FTexture2DRHIRef> TextureSet;
+	uint32 TextureIndex;
+};
+
+/**
+ * SteamVR Head Mounted Display
+ */
+class FSteamVRHMD : public FHeadMountedDisplayBase, public FXRRenderTargetManager, public FSteamVRAssetManager, public TSharedFromThis<FSteamVRHMD, ESPMode::ThreadSafe>, public TStereoLayerManager<FSteamVRLayer>, public IHeadMountedDisplayVulkanExtensions
+{
+public:
+	static const FName SteamSystemName;
+
+	/** IXRTrackingSystem interface */
+	virtual FName GetSystemName() const override
+	{
+		return SteamSystemName;
+	}
+	virtual FString GetVersionString() const override;
+
+
+	virtual class IHeadMountedDisplay* GetHMDDevice() override
+	{
+		return this;
 	}
 
-	virtual bool OnStartGameFrame( FWorldContext& WorldContext ) override;
+	virtual class TSharedPtr< class IStereoRendering, ESPMode::ThreadSafe > GetStereoRenderingDevice() override
+	{
+		return AsShared();
+	}
 
-	virtual bool IsHMDConnected() override;
-	virtual bool IsHMDEnabled() const override;
-	virtual EHMDWornState::Type GetHMDWornState() override;
-	virtual void EnableHMD(bool allow = true) override;
-	virtual EHMDDeviceType::Type GetHMDDeviceType() const override;
-	virtual bool GetHMDMonitorInfo(MonitorInfo&) override;
-
-	virtual void GetFieldOfView(float& OutHFOVInDegrees, float& OutVFOVInDegrees) const override;
-
+	virtual bool OnStartGameFrame(FWorldContext& WorldContext) override;
 	virtual bool DoesSupportPositionalTracking() const override;
 	virtual bool HasValidTrackingPosition() override;
-	virtual uint32 GetNumOfTrackingSensors() const override;
-	virtual bool GetTrackingSensorProperties(uint8 InSensorIndex, FVector& OutOrigin, FQuat& OutOrientation, float& OutLeftFOV, float& OutRightFOV, float& OutTopFOV, float& OutBottomFOV, float& OutCameraDistance, float& OutNearPlane, float& OutFarPlane) const override;
-	virtual void RebaseObjectOrientationAndPosition(FVector& OutPosition, FQuat& OutOrientation) const override;
+	virtual bool EnumerateTrackedDevices(TArray<int32>& TrackedIds, EXRTrackedDeviceType DeviceType = EXRTrackedDeviceType::Any) override;
 
-	virtual void SetInterpupillaryDistance(float NewInterpupillaryDistance) override;
-	virtual float GetInterpupillaryDistance() const override;
-
-	virtual void GetCurrentOrientationAndPosition(FQuat& CurrentOrientation, FVector& CurrentPosition) override;
-	virtual class TSharedPtr<ISceneViewExtension, ESPMode::ThreadSafe> GetViewExtension() override;
-	virtual void ApplyHmdRotation(APlayerController* PC, FRotator& ViewRotation) override;
-	virtual bool UpdatePlayerCamera(FQuat& CurrentOrientation, FVector& CurrentPosition) override;
-
-	virtual bool IsChromaAbCorrectionEnabled() const override;
-
-	virtual bool IsPositionalTrackingEnabled() const override { return true; }
-
-	virtual bool IsHeadTrackingAllowed() const override;
+	virtual bool GetTrackingSensorProperties(int32 InDeviceId, FQuat& OutOrientation, FVector& OutOrigin, FXRSensorProperties& OutSensorProperties) override;
+	virtual bool GetCurrentPose(int32 DeviceId, FQuat& CurrentOrientation, FVector& CurrentPosition) override;
+	virtual bool GetRelativeEyePose(int32 DeviceId, EStereoscopicPass Eye, FQuat& OutOrientation, FVector& OutPosition) override;
+	virtual bool IsTracking(int32 DeviceId) override;
 
 	virtual void ResetOrientationAndPosition(float yaw = 0.f) override;
 	virtual void ResetOrientation(float Yaw = 0.f) override;
 	virtual void ResetPosition() override;
 
-	virtual void SetClippingPlanes(float NCP, float FCP) override;
-
 	virtual void SetBaseRotation(const FRotator& BaseRot) override;
 	virtual FRotator GetBaseRotation() const override;
-
 	virtual void SetBaseOrientation(const FQuat& BaseOrient) override;
 	virtual FQuat GetBaseOrientation() const override;
+
+	virtual void OnEndPlay(FWorldContext& InWorldContext) override;
+	virtual void RecordAnalytics() override;
+public:
+	/** IHeadMountedDisplay interface */
+
+	virtual bool IsHMDConnected() override;
+	virtual bool IsHMDEnabled() const override;
+	virtual EHMDWornState::Type GetHMDWornState() override;
+	virtual void EnableHMD(bool allow = true) override;
+	virtual bool GetHMDMonitorInfo(MonitorInfo&) override;
+
+	virtual void GetFieldOfView(float& OutHFOVInDegrees, float& OutVFOVInDegrees) const override;
+
+	virtual void SetInterpupillaryDistance(float NewInterpupillaryDistance) override;
+	virtual float GetInterpupillaryDistance() const override;
+
+	virtual bool IsChromaAbCorrectionEnabled() const override;
 
 	virtual bool HasHiddenAreaMesh() const override { return HiddenAreaMeshes[0].IsValid() && HiddenAreaMeshes[1].IsValid(); }
 	virtual void DrawHiddenAreaMesh_RenderThread(FRHICommandList& RHICmdList, EStereoscopicPass StereoPass) const override;
@@ -123,56 +181,56 @@ public:
 
 	virtual void UpdateScreenSettings(const FViewport* InViewport) override {}
 
-	virtual void OnEndPlay(FWorldContext& InWorldContext) override;
-
-	virtual FString GetVersionString() const override;
-
 	virtual void SetTrackingOrigin(EHMDTrackingOrigin::Type NewOrigin) override;
 	virtual EHMDTrackingOrigin::Type GetTrackingOrigin() override;
+	
+	virtual bool AllocateRenderTargetTexture(uint32 Index, uint32 SizeX, uint32 SizeY, uint8 Format, uint32 NumMips, uint32 InTexFlags, uint32 InTargetableTextureFlags, FTexture2DRHIRef& OutTargetableTexture, FTexture2DRHIRef& OutShaderResourceTexture, uint32 NumSamples = 1) override;
 
-	virtual void RecordAnalytics() override;
+	virtual bool GetHMDDistortionEnabled(EShadingPath ShadingPath) const override;
+
+	virtual void OnBeginRendering_GameThread() override;
+	virtual void OnBeginRendering_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneViewFamily& ViewFamily) override;
+
+	virtual float GetPixelDenity() const override { return PixelDensity; }
+	virtual void SetPixelDensity(const float NewDensity) override { PixelDensity = NewDensity; }
+	virtual FIntPoint GetIdealRenderTargetSize() const override { return IdealRenderTargetSize; }
 
 	/** IStereoRendering interface */
 	virtual bool IsStereoEnabled() const override;
 	virtual bool EnableStereo(bool stereo = true) override;
 	virtual void AdjustViewRect(EStereoscopicPass StereoPass, int32& X, int32& Y, uint32& SizeX, uint32& SizeY) const override;
-	virtual void CalculateStereoViewOffset(const EStereoscopicPass StereoPassType, const FRotator& ViewRotation, const float MetersToWorld, FVector& ViewLocation) override;
-	virtual FMatrix GetStereoProjectionMatrix(const EStereoscopicPass StereoPassType, const float FOV) const override;
-	virtual void InitCanvasFromView(FSceneView* InView, UCanvas* Canvas) override;
-	virtual void RenderTexture_RenderThread(FRHICommandListImmediate& RHICmdList, FTexture2DRHIParamRef BackBuffer, FTexture2DRHIParamRef SrcTexture) const override;
+	virtual void CalculateStereoViewOffset(const EStereoscopicPass StereoPassType, FRotator& ViewRotation, const float MetersToWorld, FVector& ViewLocation) override;
+	virtual FMatrix GetStereoProjectionMatrix(const enum EStereoscopicPass StereoPassType) const override;
+	virtual void RenderTexture_RenderThread(FRHICommandListImmediate& RHICmdList, FTexture2DRHIParamRef BackBuffer, FTexture2DRHIParamRef SrcTexture, FVector2D WindowSize) const override;
 	virtual void GetOrthoProjection(int32 RTWidth, int32 RTHeight, float OrthoDistance, FMatrix OrthoProjection[2]) const override;
 	virtual void GetEyeRenderParams_RenderThread(const FRenderingCompositePassContext& Context, FVector2D& EyeToSrcUVScaleValue, FVector2D& EyeToSrcUVOffsetValue) const override;
-	virtual void CalculateRenderTargetSize(const class FViewport& Viewport, uint32& InOutSizeX, uint32& InOutSizeY) override;
-	virtual bool NeedReAllocateViewportRenderTarget(const FViewport& Viewport) override;
+	virtual IStereoRenderTargetManager* GetRenderTargetManager() override { return this; }
+	virtual IStereoLayers* GetStereoLayers() override;
+
+	/** FXRRenderTargetManager interface */
+	virtual void UpdateViewportRHIBridge(bool bUseSeparateRenderTarget, const class FViewport& Viewport, FRHIViewport* const ViewportRHI) override;
 	virtual bool ShouldUseSeparateRenderTarget() const override
 	{
 		check(IsInGameThread());
 		return IsStereoEnabled();
 	}
-	virtual void UpdateViewport(bool bUseSeparateRenderTarget, const FViewport& Viewport, SViewport*) override;
-	virtual IStereoLayers* GetStereoLayers () override;
-
-	/** ISceneViewExtension interface */
-	virtual void SetupViewFamily(FSceneViewFamily& InViewFamily) override;
-	virtual void SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView) override;
-	virtual void BeginRenderViewFamily(FSceneViewFamily& InViewFamily) override {}
-	virtual void PreRenderView_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneView& InView) override;
-	virtual void PreRenderViewFamily_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneViewFamily& InViewFamily) override;
-	virtual void PostInitViewFamily_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneViewFamily& InViewFamily) override;
-	virtual void PostInitView_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneView& InView) override;
-	virtual bool UsePostInitView() const override;
+	virtual void CalculateRenderTargetSize(const class FViewport& Viewport, uint32& InOutSizeX, uint32& InOutSizeY) override;
+	virtual bool NeedReAllocateViewportRenderTarget(const class FViewport& Viewport) override;
 
 	// IStereoLayers interface
 	// Create/Set/Get/Destroy inherited from TStereoLayerManager
 	virtual void UpdateSplashScreen() override;
 
+	/** IHeadMountedDisplayVulkanExtensions */
+	virtual bool GetVulkanInstanceExtensionsRequired( TArray<const ANSICHAR*>& Out ) override;
+	virtual bool GetVulkanDeviceExtensionsRequired( VkPhysicalDevice_T *pPhysicalDevice, TArray<const ANSICHAR*>& Out ) override;
+
 	// SpectatorScreen
 private:
 	void CreateSpectatorScreenController();
 public:
-	virtual FIntRect GetFullFlatEyeRect(FTexture2DRHIRef EyeTexture) const override;
+	virtual FIntRect GetFullFlatEyeRect_RenderThread(FTexture2DRHIRef EyeTexture) const override;
 	virtual void CopyTexture_RenderThread(FRHICommandListImmediate& RHICmdList, FTexture2DRHIParamRef SrcTexture, FIntRect SrcRect, FTexture2DRHIParamRef DstTexture, FIntRect DstRect, bool bClearBlack) const override;
-
 
 	class BridgeBaseImpl : public FRHICustomPresent
 	{
@@ -190,14 +248,15 @@ public:
 		virtual void FinishRendering() = 0;
 		virtual void UpdateViewport(const FViewport& Viewport, FRHIViewport* InViewportRHI) = 0;
 		virtual void SetNeedReinitRendererAPI() { bNeedReinitRendererAPI = true; }
+        virtual bool NeedsNativePresent() override;
 
 		virtual void Reset() = 0;
 		virtual void Shutdown() = 0;
-
+		
 	protected:
-		FSteamVRHMD*		Plugin;
-		bool				bNeedReinitRendererAPI;
-		bool				bInitialized;
+		FSteamVRHMD*			Plugin;
+		bool					bNeedReinitRendererAPI;
+		bool					bInitialized;
 	};
 
 #if PLATFORM_WINDOWS
@@ -222,8 +281,9 @@ public:
 	protected:
 		ID3D11Texture2D* RenderTargetTexture = NULL;
 	};
-#endif
+#endif // PLATFORM_WINDOWS
 
+#if !PLATFORM_MAC
 	class VulkanBridge : public BridgeBaseImpl
 	{
 	public:
@@ -269,18 +329,39 @@ public:
 		GLuint RenderTargetTexture = 0;
 
 	};
+	
+#elif PLATFORM_MAC
+
+	class MetalBridge : public BridgeBaseImpl
+	{
+	public:
+		MetalBridge(FSteamVRHMD* plugin);
+		
+		virtual void OnBackBufferResize() override;
+		virtual bool Present(int& SyncInterval) override;
+		virtual void PostPresent() override;
+		
+		virtual void BeginRendering() override;
+		void FinishRendering();
+		virtual void UpdateViewport(const FViewport& Viewport, FRHIViewport* InViewportRHI) override;
+		virtual void Reset() override;
+		virtual void Shutdown() override
+		{
+			Reset();
+		}
+		
+		IOSurfaceRef GetSurface(const uint32 SizeX, const uint32 SizeY);
+		
+		FTexture2DRHIRef TextureSet;
+	};
+#endif // PLATFORM_MAC
 
 	BridgeBaseImpl* GetActiveRHIBridgeImpl();
 	void ShutdownRendering();
 
 	/** Motion Controllers */
-	ESteamVRTrackedDeviceType GetTrackedDeviceType(uint32 DeviceId) const;
-	void GetTrackedDeviceIds(ESteamVRTrackedDeviceType DeviceType, TArray<int32>& TrackedIds) const;
-	bool GetTrackedObjectOrientationAndPosition(uint32 DeviceId, FQuat& CurrentOrientation, FVector& CurrentPosition);
-	ETrackingStatus GetControllerTrackingStatus(uint32 DeviceId) const;
-	STEAMVR_API bool GetControllerHandPositionAndOrientation( const int32 ControllerIndex, EControllerHand Hand, FVector& OutPosition, FQuat& OutOrientation);
-	STEAMVR_API ETrackingStatus GetControllerTrackingStatus(int32 ControllerIndex, EControllerHand DeviceHand) const;
-	bool IsTracking(uint32 DeviceId) const;
+	EXRTrackedDeviceType GetTrackedDeviceType(int32 DeviceId) const;
+	STEAMVR_API ETrackingStatus GetControllerTrackingStatus(int32 DeviceId) const;
 
 	/** Chaperone */
 	/** Returns whether or not the player is currently inside the bounds */
@@ -288,10 +369,8 @@ public:
 
 	/** Returns an array of the bounds as Unreal-scaled vectors, relative to the HMD calibration point (0,0,0).  The Z will always be at 0.f */
 	TArray<FVector> GetBounds() const;
-
-	/** Sets the map from Unreal controller id and hand index, to tracked device id. */
-	void SetUnrealControllerIdAndHandToDeviceIdMap(int32 InUnrealControllerIdAndHandToDeviceIdMap[ MAX_STEAMVR_CONTROLLER_PAIRS ][ vr::k_unMaxTrackedDeviceCount ]);
 	
+	void PoseToOrientationAndPosition(const vr::HmdMatrix34_t& InPose, const float WorldToMetersScale, FQuat& OutOrientation, FVector& OutPosition) const;
 public:
 	/** Constructor */
 	FSteamVRHMD(ISteamVRPlugin* SteamVRPlugin);
@@ -305,14 +384,12 @@ public:
 	vr::IVRSystem* GetVRSystem() const { return VRSystem; }
 	vr::IVRRenderModels* GetRenderModelManager() const { return VRRenderModels; }
 
-private:
+protected:
 
-	enum class EPoseRefreshMode
-	{
-		None,
-		GameRefresh,
-		RenderRefresh
-	};
+	virtual float GetWorldToMetersScale() const override;
+
+
+private:
 
 	/**
 	 * Starts up the OpenVR API. Returns true if initialization was successful, false if not.
@@ -328,10 +405,6 @@ private:
 
 	bool LoadOpenVRModule();
 	void UnloadOpenVRModule();
-
-	void PoseToOrientationAndPosition(const vr::HmdMatrix34_t& Pose, const float WorldToMetersScale, FQuat& OutOrientation, FVector& OutPosition) const;
-	void GetCurrentPose(FQuat& CurrentOrientation, FVector& CurrentPosition, uint32 DeviceID = vr::k_unTrackedDeviceIndex_Hmd, EPoseRefreshMode RefreshMode=EPoseRefreshMode::None, float ForceRefreshWorldToMetersScale = 0.0f);
-	float GetWorldToMetersScale() const;
 
 	void GetWindowBounds(int32* X, int32* Y, uint32* Width, uint32* Height);
 
@@ -387,8 +460,11 @@ private:
 	EHMDWornState::Type HmdWornState;
 	bool bStereoDesired;
 	bool bStereoEnabled;
-	mutable bool bHaveVisionTracking;
 
+	// Current world to meters scale. Should only be used when refreshing poses.
+	// Everywhere else, use the current tracking frame's WorldToMetersScale.
+	float GameWorldToMetersScale;
+ 	
  	struct FTrackingFrame
  	{
  		uint32 FrameNumber;
@@ -397,6 +473,7 @@ private:
  		bool bPoseIsValid[vr::k_unMaxTrackedDeviceCount];
  		FVector DevicePosition[vr::k_unMaxTrackedDeviceCount];
  		FQuat DeviceOrientation[vr::k_unMaxTrackedDeviceCount];
+		bool bHaveVisionTracking;
 
 		/** World units (UU) to Meters scale.  Read from the level, and used to transform positional tracking data */
 		float WorldToMetersScale;
@@ -404,16 +481,16 @@ private:
 		vr::HmdMatrix34_t RawPoses[vr::k_unMaxTrackedDeviceCount];
 
 		FTrackingFrame()
+			: FrameNumber(0)
+			, bHaveVisionTracking(false)
+			, WorldToMetersScale(100.0f)
 		{
-			FrameNumber = 0;
-
 			const uint32 MaxDevices = vr::k_unMaxTrackedDeviceCount;
 
 			FMemory::Memzero(bDeviceIsConnected, MaxDevices * sizeof(bool));
 			FMemory::Memzero(bPoseIsValid, MaxDevices * sizeof(bool));
 			FMemory::Memzero(DevicePosition, MaxDevices * sizeof(FVector));
 
-			WorldToMetersScale = 100.0f;
 
 			for (uint32 i = 0; i < vr::k_unMaxTrackedDeviceCount; ++i)
 			{
@@ -423,6 +500,11 @@ private:
 			FMemory::Memzero(RawPoses, MaxDevices * sizeof(vr::HmdMatrix34_t));
 		}
  	};
+
+	void UpdatePoses();
+
+	void ConvertRawPoses(FSteamVRHMD::FTrackingFrame& TrackingFrame) const;
+
 	FTrackingFrame GameTrackingFrame;
 	FTrackingFrame RenderTrackingFrame;
 
@@ -474,22 +556,15 @@ private:
 
 	uint32 WindowMirrorBoundsWidth;
 	uint32 WindowMirrorBoundsHeight;
+
+	FIntPoint IdealRenderTargetSize;
+	float PixelDensity;
+
 	/** How far the HMD has to move before it's considered to be worn */
 	float HMDWornMovementThreshold;
 
-	/** Player's orientation tracking */
-	mutable FQuat			CurHmdOrientation;
-
-	FRotator				DeltaControlRotation;    // same as DeltaControlOrientation but as rotator
-	FQuat					DeltaControlOrientation; // same as DeltaControlRotation but as quat
-
-	mutable FVector			CurHmdPosition;
-
 	/** used to check how much the HMD has moved for changing the Worn status */
 	FVector					HMDStartLocation;
-
-	mutable FQuat			LastHmdOrientation; // contains last APPLIED ON GT HMD orientation
-	FVector					LastHmdPosition;	// contains last APPLIED ON GT HMD position
 
 	// HMD base values, specify forward orientation and zero pos offset
 	FQuat					BaseOrientation;	// base orientation
@@ -501,9 +576,6 @@ private:
 
 	/**  True if the HMD sends an event that the HMD is being interacted with */
 	bool					bShouldCheckHMDPosition;
-
-	/** Mapping from Unreal Controller Id and Hand to a tracked device id.  Passed in from the controller plugin */
-	int32 UnrealControllerIdAndHandToDeviceIdMap[MAX_STEAMVR_CONTROLLER_PAIRS][vr::k_unMaxTrackedDeviceCount];
 
 	IRendererModule* RendererModule;
 	ISteamVRPlugin* SteamVRPlugin;

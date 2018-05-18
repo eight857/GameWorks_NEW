@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	UnMath.cpp: Unreal math routines
@@ -1945,8 +1945,12 @@ FVector FMath::ComputeBaryCentric2D(const FVector& Point, const FVector& A, cons
 	// Compute the normal of the triangle
 	const FVector TriNorm = (B-A) ^ (C-A);
 
-	//check collinearity of A,B,C
-	check(TriNorm.SizeSquared() > SMALL_NUMBER && "Collinear points in FMath::ComputeBaryCentric2D()");
+	// Check the size of the triangle is reasonable (TriNorm.Size() will be twice the triangle area)
+	if(TriNorm.SizeSquared() <= SMALL_NUMBER)
+	{
+		ensureMsgf(false, TEXT("Small triangle detected in FMath::ComputeBaryCentric2D(), can't compute valid barycentric coordinate."));
+		return FVector(0.0f, 0.0f, 0.0f);
+	}
 
 	const FVector N = TriNorm.GetSafeNormal();
 
@@ -2592,6 +2596,23 @@ FVector FMath::VRandCone(FVector const& Dir, float HorizontalConeHalfAngleRad, f
 	{
 		return Dir.GetSafeNormal();
 	}
+}
+
+FVector2D FMath::RandPointInCircle(float CircleRadius)
+{
+	FVector2D Point;
+	float L;
+
+	do
+	{
+		// Check random vectors in the unit circle so result is statistically uniform.
+		Point.X = FRand() * 2.f - 1.f;
+		Point.Y = FRand() * 2.f - 1.f;
+		L = Point.SizeSquared();
+	}
+	while (L > 1.0f);
+
+	return Point * CircleRadius;
 }
 
 FVector FMath::RandPointInBox(const FBox& Box)

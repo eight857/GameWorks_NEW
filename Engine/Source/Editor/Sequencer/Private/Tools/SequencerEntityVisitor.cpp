@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tools/SequencerEntityVisitor.h"
 #include "IKeyArea.h"
@@ -204,7 +204,7 @@ void FSequencerEntityWalker::HandleSingleNode(const ISequencerEntityVisitor& Vis
 				// Only handle grouped keys if we actually have children
 				if (InNode->GetChildNodes().Num() != 0 && Range.IntersectKeyArea(InNode, VirtualKeySize.X))
 				{
-					TSharedRef<IKeyArea> KeyArea = InNode->UpdateKeyGrouping(Section);
+					TSharedRef<IKeyArea> KeyArea = InNode->GetKeyGrouping(Section);
 					HandleKeyArea(Visitor, KeyArea, Section, InNode);
 				}
 			}

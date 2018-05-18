@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -25,7 +25,7 @@ private:
 	/** Malloc we're based on, aka using under the hood */
 	FMalloc* UsedMalloc;
 
-protected:
+private:
 
 	enum
 	{

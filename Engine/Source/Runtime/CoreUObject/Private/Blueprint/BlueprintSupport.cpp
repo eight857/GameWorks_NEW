@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Blueprint/BlueprintSupport.h"
 #include "Misc/ScopeLock.h"
@@ -130,6 +130,60 @@ bool FBlueprintSupport::IsDeferredDependencyPlaceholder(UObject* LoadedObj)
 	return LoadedObj && ( LoadedObj->IsA<ULinkerPlaceholderClass>() ||
 		LoadedObj->IsA<ULinkerPlaceholderFunction>() ||
 		LoadedObj->IsA<ULinkerPlaceholderExportObject>() );
+}
+
+void FBlueprintSupport::RegisterDeferredDependenciesInStruct(const UStruct* Struct, void* StructData)
+{
+#if USE_CIRCULAR_DEPENDENCY_LOAD_DEFERRING
+	if (GEventDrivenLoaderEnabled)
+	{
+		return;
+	}
+
+	for (TPropertyValueIterator<const UObjectProperty> It(Struct, StructData); It; ++It)
+	{
+		const UObjectProperty* Property = It.Key();
+		void* PropertyValue = (void*)It.Value();
+		UObject* ObjectValue = *((UObject**)PropertyValue);
+		
+		ULinkerPlaceholderExportObject* PlaceholderVal = Cast<ULinkerPlaceholderExportObject>(ObjectValue);
+		ULinkerPlaceholderClass* PlaceholderClass = Cast<ULinkerPlaceholderClass>(ObjectValue);
+
+		if (PlaceholderVal == nullptr && PlaceholderClass == nullptr)
+		{
+			continue;
+		}
+
+		// Create a stack of property trackers to deal with any outer Struct Properties
+		TArray<const UProperty*> PropertyChain;
+		It.GetPropertyChain(PropertyChain);
+		TIndirectArray<FScopedPlaceholderPropertyTracker> PlaceholderStack;
+
+		// Iterate property chain in reverse order as we need to start with parent
+		for (int32 PropertyIndex = PropertyChain.Num() - 1; PropertyIndex >= 0; PropertyIndex--)
+		{
+			if (const UStructProperty* StructProperty = Cast<UStructProperty>(PropertyChain[PropertyIndex]))
+			{
+				PlaceholderStack.Add(new FScopedPlaceholderPropertyTracker(StructProperty));
+			}
+		}
+		
+		if (PlaceholderVal)
+		{
+			PlaceholderVal->AddReferencingPropertyValue(Property, PropertyValue);
+		}
+		else 
+		{
+			PlaceholderClass->AddReferencingPropertyValue(Property, PropertyValue);
+		}
+
+		// Specifically destroy entries in reverse order they were added, to simulate unrolling a code stack
+		for (int32 StackIndex = PlaceholderStack.Num() - 1; StackIndex >= 0; StackIndex--)
+		{
+			PlaceholderStack.RemoveAt(StackIndex);
+		}
+	}
+#endif // USE_CIRCULAR_DEPENDENCY_LOAD_DEFERRING
 }
 
 bool FBlueprintSupport::IsInBlueprintPackage(UObject* LoadedObj)
@@ -395,7 +449,7 @@ TArray<UClass*> const& FScopedClassDependencyGather::GetCachedDependencies()
 // rather than littering the code with USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
 // checks, let's just define DEFERRED_DEPENDENCY_CHECK for the file
 #if USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
-	#define DEFERRED_DEPENDENCY_CHECK(CheckExpr) check(CheckExpr)
+	#define DEFERRED_DEPENDENCY_CHECK(CheckExpr) ensure(CheckExpr)
 #else  // USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
 	#define DEFERRED_DEPENDENCY_CHECK(CheckExpr)
 #endif // USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
@@ -848,7 +902,7 @@ private:
 	int32        TrackedExport;
 };
 
-bool FLinkerLoad::DeferExportCreation(const int32 Index)
+bool FLinkerLoad::DeferExportCreation(const int32 Index, UObject* Outer)
 {
 	FObjectExport& Export = ExportMap[Index];
 
@@ -858,13 +912,39 @@ bool FLinkerLoad::DeferExportCreation(const int32 Index)
 		return false;
 	}
 
-	if ((Export.Object != nullptr) || !Export.ClassIndex.IsImport())
+	if ((Export.Object != nullptr))
+	{
+		return false;
+	}
+	
+	UClass* LoadClass = GetExportLoadClass(Index);
+	
+	if (LoadClass == nullptr)
 	{
 		return false;
 	}
 
-	UClass* LoadClass = GetExportLoadClass(Index);
-	if (LoadClass == nullptr)
+	if(ULinkerPlaceholderExportObject* OuterPlaceholder = Cast<ULinkerPlaceholderExportObject>(Outer))
+	{
+		// we deferred the outer, so its constructor has not had a chance
+		// to create and initialize native subobjects. We must defer this subobject:
+		FString ClassName = LoadClass->GetName();
+		FName PlaceholderName(*FString::Printf(TEXT("PLACEHOLDER-INST_of_%s"), *ClassName));
+		UClass*   PlaceholderType  = ULinkerPlaceholderExportObject::StaticClass();
+		PlaceholderName = MakeUniqueObjectName(Outer, PlaceholderType, PlaceholderName);
+
+		ULinkerPlaceholderExportObject* Placeholder = NewObject<ULinkerPlaceholderExportObject>(Outer, PlaceholderType, PlaceholderName, RF_Public | RF_Transient);
+		Placeholder->PackageIndex = FPackageIndex::FromExport(Index);
+		
+		Export.Object = Placeholder;
+
+		// the subobject placeholder must be resolved after its outer has been resolved:
+		OuterPlaceholder->SetupPlaceholderSubobject(Placeholder);
+
+		return true;
+	}
+	
+	if (LoadClass->HasAnyClassFlags(CLASS_Native))
 	{
 		return false;
 	}
@@ -873,7 +953,9 @@ bool FLinkerLoad::DeferExportCreation(const int32 Index)
 	bool const bIsPlaceholderClass = (AsPlaceholderClass != nullptr);
 
 	FLinkerLoad* ClassLinker = LoadClass->GetLinker();
-	if ( !bIsPlaceholderClass && ((ClassLinker == nullptr) || !ClassLinker->IsBlueprintFinalizationPending()) )
+	if ( !bIsPlaceholderClass 
+		&& ((ClassLinker == nullptr) || !ClassLinker->IsBlueprintFinalizationPending())
+		&& (!LoadClass->ClassDefaultObject || LoadClass->ClassDefaultObject->HasAnyFlags(RF_LoadCompleted) || !LoadClass->ClassDefaultObject->HasAnyFlags(RF_WasLoaded)) )
 	{
 		return false;
 	}
@@ -1545,6 +1627,9 @@ void FLinkerLoad::FinalizeBlueprint(UClass* LoadClass)
 		TArray<UObject*> ClassInstances;
 		GetObjectsOfClass(LoadClass, ClassInstances, /*bIncludeDerivedClasses =*/true);
 
+		// Filter out instances that are part of this package, they were handled in ResolveDeferredExports:
+		ClassInstances.RemoveAllSwap([LoadClass](UObject* Obj){return Obj->GetOutermost() == LoadClass->GetOutermost();});
+
 		for (UObject* ClassInst : ClassInstances)
 		{
 			// in the case that we do end up with instances, use this to find 
@@ -1604,6 +1689,8 @@ void FLinkerLoad::ResolveDeferredExports(UClass* LoadClass)
 
 	UObject* BlueprintCDO = DeferredCDOIndex != INDEX_NONE ? ExportMap[DeferredCDOIndex].Object : LoadClass->ClassDefaultObject;
 	DEFERRED_DEPENDENCY_CHECK(BlueprintCDO != nullptr);
+	
+	TArray<int32> DeferredTemplateObjects;
 
 	if (!FBlueprintSupport::IsDeferredExportCreationDisabled())
 	{
@@ -1641,7 +1728,16 @@ void FLinkerLoad::ResolveDeferredExports(UClass* LoadClass)
 			FObjectExport& Export = ExportMap[ExportIndex];
 			if (ULinkerPlaceholderExportObject* PlaceholderExport = Cast<ULinkerPlaceholderExportObject>(Export.Object))
 			{
-				DEFERRED_DEPENDENCY_CHECK(Export.ClassIndex.IsImport());
+				if(Export.ClassIndex.IsExport())
+				{
+					DeferredTemplateObjects.Push(ExportIndex);
+					continue;
+				}
+
+				if(PlaceholderExport->IsDeferredSubobject())
+				{
+					continue;
+				}
 
 				UClass* ExportClass = GetExportLoadClass(ExportIndex);
 				// export class could be null... we create these placeholder 
@@ -1679,6 +1775,9 @@ void FLinkerLoad::ResolveDeferredExports(UClass* LoadClass)
 				//       part of the LoadAllObjects() pass (not for any specific 
 				//       container object).
 				PlaceholderExport->ResolveAllPlaceholderReferences(ExportObj);
+
+				ResolvedDeferredSubobjects(PlaceholderExport);
+
 				PlaceholderExport->MarkPendingKill();
 
 				// if we hadn't used a ULinkerPlaceholderExportObject in place of 
@@ -1699,12 +1798,6 @@ void FLinkerLoad::ResolveDeferredExports(UClass* LoadClass)
 	// between now and when DeferredCDOIndex is cleared (they won't be resolved,
 	// so that is a problem!)
 	FResolvingExportTracker::Get().FlagFullExportResolvePassComplete(this);
-
-	for (TObjectIterator<ULinkerPlaceholderExportObject> PlaceholderIt; PlaceholderIt; ++PlaceholderIt)
-	{
-		ULinkerPlaceholderExportObject* PlaceholderObj = *PlaceholderIt;
-		DEFERRED_DEPENDENCY_CHECK((PlaceholderObj->GetOuter() != LinkerRoot) || PlaceholderObj->IsPendingKill());
-	}
 #endif // USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
 
 	// the ExportMap loop above could have recursed back into "finalization" for  
@@ -1746,9 +1839,44 @@ void FLinkerLoad::ResolveDeferredExports(UClass* LoadClass)
 		for (int32 ExportIndex = 0; ExportIndex < ExportMap.Num(); ++ExportIndex)
 		{
 			FObjectExport& Export = ExportMap[ExportIndex];
-			if (Export.Object == nullptr && (Export.ObjectFlags & RF_DefaultSubObject) != 0 && Export.OuterIndex.IsExport() && Export.OuterIndex.ToExport() == DeferredCDOIndex)
+			if((Export.ObjectFlags & RF_DefaultSubObject) != 0 && Export.OuterIndex.ToExport() == DeferredCDOIndex)
 			{
-				CreateExport(ExportIndex);
+				if (Export.Object == nullptr && Export.OuterIndex.IsExport())
+				{
+					CreateExport(ExportIndex);
+				}
+
+				// In order to complete loading of the CDO we need to also preload its subobjects. Other CDOs 
+				// will use these subobjects as archetypes for their own subobjects when they run InitSubobjectProperties
+				if(Export.Object)
+				{
+					Preload(Export.Object);
+				}
+			}
+		}
+
+		{
+			// Create any objects that (non CDO) objects that were deferred in this package:
+			TGuardValue<int32> ClearDeferredCDOToPreventDeferExportCreation(DeferredCDOIndex, INDEX_NONE);
+			for(int32 ExportIndex : DeferredTemplateObjects)
+			{
+				FObjectExport& Export = ExportMap[ExportIndex];
+				ULinkerPlaceholderExportObject* PlaceholderExport = Cast<ULinkerPlaceholderExportObject>(Export.Object);
+				if (ensure(PlaceholderExport))
+				{
+					// replace the placeholder with the proper object instance
+					Export.Object = nullptr;
+					UObject* ExportObj = CreateExport(ExportIndex);
+
+					PlaceholderExport->ResolveAllPlaceholderReferences(ExportObj);
+					ResolvedDeferredSubobjects(PlaceholderExport);
+
+					PlaceholderExport->MarkPendingKill();
+					if (ExportObj != nullptr)
+					{
+						Preload(ExportObj);
+					}
+				}
 			}
 		}
 
@@ -1769,6 +1897,33 @@ void FLinkerLoad::ResolveDeferredExports(UClass* LoadClass)
 		DEFERRED_DEPENDENCY_CHECK(BlueprintCDO->HasAnyFlags(RF_LoadCompleted));
 	}
 #endif // USE_CIRCULAR_DEPENDENCY_LOAD_DEFERRING
+}
+
+void FLinkerLoad::ResolvedDeferredSubobjects(ULinkerPlaceholderExportObject* OwningPlaceholder)
+{
+#if USE_CIRCULAR_DEPENDENCY_LOAD_DEFERRING
+	ensure(OwningPlaceholder->IsMarkedResolved());
+	for(ULinkerPlaceholderExportObject* PlaceholderSubobject : OwningPlaceholder->GetSubobjectPlaceholders() )
+	{
+		int32 ExportIndex = PlaceholderSubobject->PackageIndex.ToExport();
+		FObjectExport& Export = ExportMap[ExportIndex];
+
+		Export.Object = nullptr;
+
+		UObject* ReplacementObject = CreateExport(ExportIndex);
+		PlaceholderSubobject->ResolveAllPlaceholderReferences(ReplacementObject);
+		PlaceholderSubobject->MarkPendingKill();
+
+		// recurse:
+		ResolvedDeferredSubobjects(PlaceholderSubobject);
+
+		// serialize:
+		if (ReplacementObject != nullptr)
+		{
+			Preload(ReplacementObject);
+		}
+	}
+#endif//USE_CIRCULAR_DEPENDENCY_LOAD_DEFERRING
 }
 
 void FLinkerLoad::ForceBlueprintFinalization()
@@ -1954,13 +2109,35 @@ void FLinkerLoad::CreateDynamicTypeLoader()
 	ensure(!ImportMap.Num());
 
 	// Create Imports
-	for (FBlueprintDependencyData& Import : DependencyData)
+	for (int32 DependencyIndex = 0; DependencyIndex < DependencyData.Num(); ++DependencyIndex)
 	{
+		FBlueprintDependencyData& Import = DependencyData[DependencyIndex];
+
 		FObjectImport* ObjectImport = new(ImportMap)FObjectImport(nullptr);
 		ObjectImport->ClassName = Import.ObjectRef.ClassName;
 		ObjectImport->ClassPackage = Import.ObjectRef.ClassPackageName;
 		ObjectImport->ObjectName = Import.ObjectRef.ObjectName;
-		ObjectImport->OuterIndex = FPackageIndex::FromImport(ImportMap.Num());
+
+		if(Import.ObjectRef.OuterName == NAME_None)
+		{
+			ObjectImport->OuterIndex = FPackageIndex::FromImport(ImportMap.Num());
+		}
+		else
+		{
+			// A subobject - look for our outer in the previously setup imports. Iterate backwards here as it will usually be found in a few iterations
+			for(int32 OuterSearchIndex = ImportMap.Num() - 2; OuterSearchIndex >= 0; --OuterSearchIndex)
+			{
+				FObjectImport& SearchImport = ImportMap[OuterSearchIndex];
+				if(SearchImport.ObjectName == Import.ObjectRef.OuterName)
+				{
+					ObjectImport->OuterIndex = FPackageIndex::FromImport(OuterSearchIndex);
+					break;
+				}
+			}
+
+			// We must find out outer in the above search or the import table will be invalid
+			check(!ObjectImport->OuterIndex.IsNull());
+		}
 
 		FObjectImport* OuterImport = new(ImportMap)FObjectImport(nullptr);
 		OuterImport->ClassName = NAME_Package;
@@ -2457,11 +2634,13 @@ FBlueprintDependencyObjectRef::FBlueprintDependencyObjectRef(const TCHAR* InPack
 	, const TCHAR* InShortPackageName
 	, const TCHAR* InObjectName
 	, const TCHAR* InClassPackageName
-	, const TCHAR* InClassName) 
+	, const TCHAR* InClassName
+	, const TCHAR* InOuterName)
 	: PackageName(*(FString(InPackageFolder) + TEXT("/") + InShortPackageName))
 	, ObjectName(InObjectName)
 	, ClassPackageName(InClassPackageName)
 	, ClassName(InClassName)
+	, OuterName(InOuterName)
 {}
 
 FConvertedBlueprintsDependencies& FConvertedBlueprintsDependencies::Get()
@@ -2543,6 +2722,17 @@ void FConvertedBlueprintsDependencies::FillUsedAssetsInDynamicClass(UDynamicClas
 			DynamicClass->UsedAssets.Add(nullptr);
 		}
 	}
+}
+
+UObject* FConvertedBlueprintsDependencies::LoadObjectForStructConstructor(UScriptStruct* ScriptStruct, const TCHAR* ObjectPath)
+{
+	if (GEventDrivenLoaderEnabled && EVENT_DRIVEN_ASYNC_LOAD_ACTIVE_AT_RUNTIME)
+	{
+		// Find Object should work here as the blueprints have scheduled it for load
+		return FindObject<UObject>(nullptr, ObjectPath);
+	}
+
+	return LoadObject<UObject>(nullptr, ObjectPath);
 }
 
 bool FBlueprintDependencyData::ContainsDependencyData(TArray<FBlueprintDependencyData>& Assets, int16 ObjectRefIndex)

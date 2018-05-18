@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SequencerHotspots.h"
 #include "DisplayNodes/SequencerObjectBindingNode.h"
@@ -45,6 +45,12 @@ TOptional<float> FSectionHotspot::GetTime() const
 {
 	UMovieSceneSection* ThisSection = Section.GetSectionObject();
 	return ThisSection ? ThisSection->GetStartTime() : TOptional<float>();
+}
+
+TOptional<float> FSectionHotspot::GetOffsetTime() const
+{
+	UMovieSceneSection* ThisSection = Section.GetSectionObject();
+	return ThisSection ? ThisSection->GetOffsetTime() : TOptional<float>();
 }
 
 void FSectionHotspot::UpdateOnHover(SSequencerTrackArea& InTrackArea, ISequencer& InSequencer) const
@@ -125,7 +131,8 @@ TSharedPtr<ISequencerEditToolDragOperation> FSectionResizeHotspot::InitiateDrag(
 		SectionHandles.Empty();
 		SectionHandles.Add(Section);
 	}
-	return MakeShareable( new FResizeSection(static_cast<FSequencer&>(Sequencer), SectionHandles, HandleType == Right) );
+	const bool bIsSlipping = false;
+	return MakeShareable( new FResizeSection(static_cast<FSequencer&>(Sequencer), SectionHandles, HandleType == Right, bIsSlipping) );
 }
 
 TOptional<float> FSectionEasingHandleHotspot::GetTime() const

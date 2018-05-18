@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SMontageEditor.h"
@@ -833,28 +833,34 @@ void SMontageEditor::ShowSectionInDetailsView(int32 SectionIndex)
 
 void SMontageEditor::RestartPreview()
 {
-	UAnimPreviewInstance * Preview = Cast<UAnimPreviewInstance>(GetPreviewScene()->GetPreviewMeshComponent() ? GetPreviewScene()->GetPreviewMeshComponent()->PreviewInstance:NULL);
-	if (Preview)
+	if (UDebugSkelMeshComponent* MeshComponent = GetPreviewScene()->GetPreviewMeshComponent())
 	{
-		Preview->MontagePreview_PreviewNormal(INDEX_NONE, Preview->IsPlaying());
+		if (UAnimPreviewInstance* Preview = MeshComponent->PreviewInstance)
+		{
+			Preview->MontagePreview_PreviewNormal(INDEX_NONE, Preview->IsPlaying());
+		}
 	}
 }
 
 void SMontageEditor::RestartPreviewFromSection(int32 FromSectionIdx)
 {
-	UAnimPreviewInstance * Preview = Cast<UAnimPreviewInstance>(GetPreviewScene()->GetPreviewMeshComponent() ? GetPreviewScene()->GetPreviewMeshComponent()->PreviewInstance:NULL);
-	if(Preview)
+	if (UDebugSkelMeshComponent* MeshComponent = GetPreviewScene()->GetPreviewMeshComponent())
 	{
-		Preview->MontagePreview_PreviewNormal(FromSectionIdx, Preview->IsPlaying());
+		if (UAnimPreviewInstance* Preview = MeshComponent->PreviewInstance)
+		{
+			Preview->MontagePreview_PreviewNormal(FromSectionIdx, Preview->IsPlaying());
+		}
 	}
 }
 
 void SMontageEditor::RestartPreviewPlayAllSections()
 {
-	UAnimPreviewInstance * Preview = Cast<UAnimPreviewInstance>(GetPreviewScene()->GetPreviewMeshComponent() ? GetPreviewScene()->GetPreviewMeshComponent()->PreviewInstance:NULL);
-	if(Preview)
+	if (UDebugSkelMeshComponent* MeshComponent = GetPreviewScene()->GetPreviewMeshComponent())
 	{
-		Preview->MontagePreview_PreviewAllSections(Preview->IsPlaying());
+		if (UAnimPreviewInstance* Preview = MeshComponent->PreviewInstance)
+		{
+			Preview->MontagePreview_PreviewAllSections(Preview->IsPlaying());
+		}
 	}
 }
 

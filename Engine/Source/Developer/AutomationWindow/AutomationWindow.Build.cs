@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -17,6 +17,7 @@ namespace UnrealBuildTool.Rules
 				new string[] {
                     "DesktopPlatform",
                     "InputCore",
+					"ApplicationCore",
                     "Slate",
                     "SlateCore",
                     "EditorStyle",
@@ -27,7 +28,7 @@ namespace UnrealBuildTool.Rules
 			);
 
             // Added more direct dependencies to the editor for testing functionality
-            if (UEBuildConfiguration.bBuildEditor)
+            if (Target.bBuildEditor)
             {
                 PrivateDependencyModuleNames.AddRange(
                     new string[] {

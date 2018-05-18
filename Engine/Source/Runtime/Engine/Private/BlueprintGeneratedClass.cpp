@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Misc/CoreMisc.h"
@@ -41,7 +41,6 @@ UBlueprintGeneratedClass::UBlueprintGeneratedClass(const FObjectInitializer& Obj
 	: Super(ObjectInitializer)
 {
 	NumReplicatedProperties = 0;
-	bHasInstrumentation = false;
 	bHasNativizedParent = false;
 	bCustomPropertyListForPostConstructionInitialized = false;
 }
@@ -59,6 +58,11 @@ void UBlueprintGeneratedClass::PostInitProperties()
 void UBlueprintGeneratedClass::PostLoad()
 {
 	Super::PostLoad();
+
+	if(GetAuthoritativeClass()!= this)
+	{
+		return;
+	}
 
 	UObject* ClassCDO = ClassDefaultObject;
 
@@ -104,7 +108,6 @@ void UBlueprintGeneratedClass::PostLoad()
 			ClassFlags |= CLASS_Deprecated;
 		}
 	}
-#endif // WITH_EDITORONLY_DATA
 
 #if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
 	// Patch the fast calls (needed as we can't bump engine version to serialize it directly in UFunction right now)
@@ -114,6 +117,7 @@ void UBlueprintGeneratedClass::PostLoad()
 		Pair.FunctionToPatch->EventGraphCallOffset = Pair.EventGraphCallOffset;
 	}
 #endif
+#endif // WITH_EDITORONLY_DATA
 
 	// Generate "fast path" instancing data for UCS/AddComponent node templates.
 	if (CookedComponentInstancingData.Num() > 0)
@@ -650,7 +654,11 @@ UInheritableComponentHandler* UBlueprintGeneratedClass::GetInheritableComponentH
 	
 	if (InheritableComponentHandler)
 	{
-		InheritableComponentHandler->PreloadAll();
+		if (!GEventDrivenLoaderEnabled || !EVENT_DRIVEN_ASYNC_LOAD_ACTIVE_AT_RUNTIME)
+		{
+			// This preload will not succeed in EDL
+			InheritableComponentHandler->PreloadAll();
+		}	
 	}
 
 	if (!InheritableComponentHandler && bCreateIfNecessary)
@@ -764,6 +772,14 @@ UObject* UBlueprintGeneratedClass::FindArchetype(UClass* ArchetypeClass, const F
 				if (ComponentKey.IsValid())
 				{
 					Archetype = ICH->GetOverridenComponentTemplate(ComponentKey);
+
+					if (GEventDrivenLoaderEnabled && EVENT_DRIVEN_ASYNC_LOAD_ACTIVE_AT_RUNTIME)
+					{
+						if (Archetype && Archetype->HasAnyFlags(RF_NeedLoad))
+						{
+							UE_LOG(LogClass, Fatal, TEXT("%s had RF_NeedLoad when searching for an archetype of %s named %s"), *GetFullNameSafe(Archetype), *GetFullNameSafe(ArchetypeClass), *ArchetypeName.ToString());
+						}
+					}
 				}
 			}
 
@@ -788,7 +804,7 @@ UObject* UBlueprintGeneratedClass::FindArchetype(UClass* ArchetypeClass, const F
 		}
 	}
 
-
+	ensure(!Archetype || ArchetypeClass->IsChildOf(Archetype->GetClass()));
 	return Archetype;
 }
 
@@ -1165,9 +1181,6 @@ void UBlueprintGeneratedClass::CheckAndApplyComponentTemplateOverrides(AActor* A
 									NativizedComponentSubobjectInstance->Serialize(OverrideDataLoader);
 								}
 							}
-
-							// There can only be a single match, so we can stop searching now.
-							break;
 						}
 					}
 				}
@@ -1239,6 +1252,18 @@ void UBlueprintGeneratedClass::CreatePersistentUberGraphFrame(UObject* Obj, bool
 					*GetPathNameSafe(UberGraphFunction), *GetPathNameSafe(Obj));
 			}
 			PointerToUberGraphFrame->RawPointer = FrameMemory;
+#if WITH_EDITOR
+			// Log out the frame address/size for CDOs (to assist with debugging UE-51952)
+			if (Obj->HasAnyFlags(RF_ClassDefaultObject))
+			{
+				// Note: intentionally using the LogUObjectGlobals channel here
+				UE_LOG(LogUObjectGlobals, Log, TEXT("Created PersistentFrame Addr=0x%016llx, Size=%d, %s %s"),
+					(int64)(PTRINT)FrameMemory,
+					UberGraphFunction->GetStructureSize(),
+					*Obj->GetName(),
+					*UberGraphFunction->GetFullName());
+			}
+#endif
 		}
 	}
 
@@ -1267,6 +1292,16 @@ void UBlueprintGeneratedClass::DestroyPersistentUberGraphFrame(UObject* Obj, boo
 			}
 			FMemory::Free(FrameMemory);
 			DEC_MEMORY_STAT_BY(STAT_PersistentUberGraphFrameMemory, UberGraphFunction->GetStructureSize());
+#if WITH_EDITOR
+			// Log out the frame address for CDOs (to assist with debugging UE-51952)
+			if (Obj->HasAnyFlags(RF_ClassDefaultObject))
+			{
+				// Note: intentionally using the LogUObjectGlobals channel here
+				UE_LOG(LogUObjectGlobals, Log, TEXT("Destroyed PersistentFrame Addr=0x%016llx, Size=%d"),
+					(int64)(PTRINT)FrameMemory,
+					UberGraphFunction->GetStructureSize());
+			}
+#endif
 		}
 		else
 		{
@@ -1305,6 +1340,16 @@ void UBlueprintGeneratedClass::GetPreloadDependencies(TArray<UObject*>& OutDeps)
 				OutDeps.Add(SubObj->GetArchetype());
 			}
 		});
+	}
+
+	if (InheritableComponentHandler)
+	{
+		OutDeps.Add(InheritableComponentHandler);
+	}
+
+	if (SimpleConstructionScript)
+	{
+		OutDeps.Add(SimpleConstructionScript);
 	}
 }
 
@@ -1363,28 +1408,6 @@ bool UBlueprintGeneratedClass::CanBeClusterRoot() const
 
 void UBlueprintGeneratedClass::Link(FArchive& Ar, bool bRelinkExistingProperties)
 {
-	// Ensure that function netflags equate to any super function in a parent BP prior to linking; it may have been changed by the user
-	// and won't be reflected in the child class until it is recompiled. Without this, UClass::Link() will assert if they are out of sync.
-	for(UField* Field = Children; Field; Field = Field->Next)
-	{
-		Ar.Preload(Field);
-
-		UFunction* Function = dynamic_cast<UFunction*>(Field);
-		if(Function != nullptr)
-		{
-			UFunction* ParentFunction = Function->GetSuperFunction();
-			if(ParentFunction != nullptr)
-			{
-				const EFunctionFlags ParentNetFlags = (ParentFunction->FunctionFlags & FUNC_NetFuncFlags);
-				if(ParentNetFlags != (Function->FunctionFlags & FUNC_NetFuncFlags))
-				{
-					Function->FunctionFlags &= ~FUNC_NetFuncFlags;
-					Function->FunctionFlags |= ParentNetFlags;
-				}
-			}
-		}
-	}
-
 	Super::Link(Ar, bRelinkExistingProperties);
 
 	if (UsePersistentUberGraphFrame() && UberGraphFunction)
@@ -1413,11 +1436,11 @@ void UBlueprintGeneratedClass::PurgeClass(bool bRecompilingOnLoad)
 	UberGraphFunction = NULL;
 #if WITH_EDITORONLY_DATA
 	OverridenArchetypeForCDO = NULL;
-#endif //WITH_EDITOR
 
 #if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
 	FastCallPairs_DEPRECATED.Empty();
 #endif
+#endif //WITH_EDITOR
 }
 
 void UBlueprintGeneratedClass::Bind()
@@ -1429,58 +1452,6 @@ void UBlueprintGeneratedClass::Bind()
 		ClassAddReferencedObjects = &UBlueprintGeneratedClass::AddReferencedObjectsInUbergraphFrame;
 	}
 }
-
-class FPersistentFrameCollectorArchive : public FSimpleObjectReferenceCollectorArchive
-{
-public:
-	FPersistentFrameCollectorArchive(const UObject* InSerializingObject, FReferenceCollector& InCollector)
-		: FSimpleObjectReferenceCollectorArchive(InSerializingObject, InCollector)
-	{}
-
-protected:
-	virtual FArchive& operator<<(UObject*& Object) override
-	{
-#if !(UE_BUILD_TEST || UE_BUILD_SHIPPING)
-		if (!ensureMsgf( (Object == nullptr) || Object->IsValidLowLevelFast()
-			, TEXT("Invalid object referenced by the PersistentFrame: 0x%016llx (Blueprint object: %s, ReferencingProperty: %s) - If you have a reliable repro for this, please contact the development team with it.")
-			, (int64)(PTRINT)Object
-			, SerializingObject ? *SerializingObject->GetFullName() : TEXT("NULL")
-			, GetSerializedProperty() ? *GetSerializedProperty()->GetFullName() : TEXT("NULL") ))
-		{
-			// clear the property value (it's garbage)... the ubergraph-frame
-			// has just lost a reference to whatever it was attempting to hold onto
-			Object = nullptr;
-		}
-#endif
-		if (Object)
-		{
-			bool bWeakRef = false;
-
-			// If the property that serialized us is not an object property we are in some native serializer, we have to treat these as strong
-			if (!Object->HasAnyFlags(RF_StrongRefOnFrame))
-			{
-				UObjectProperty* ObjectProperty = Cast<UObjectProperty>(GetSerializedProperty());
-
-				if (ObjectProperty)
-				{
-					// This was a raw UObject* serialized by UObjectProperty, so just save the address
-					bWeakRef = true;
-				}
-			}
-
-			// Try to handle it as a weak ref, if it returns false treat it as a strong ref instead
-			bWeakRef = bWeakRef && Collector.MarkWeakObjectReferenceForClearing(&Object);
-
-			if (!bWeakRef)
-			{
-				// This is a hard reference or we don't know what's serializing it, so serialize it normally
-				return FSimpleObjectReferenceCollectorArchive::operator<<(Object);
-			}
-		}
-
-		return *this;
-	}
-};
 
 void UBlueprintGeneratedClass::AddReferencedObjectsInUbergraphFrame(UObject* InThis, FReferenceCollector& Collector)
 {
@@ -1496,8 +1467,13 @@ void UBlueprintGeneratedClass::AddReferencedObjectsInUbergraphFrame(UObject* InT
 				if (PointerToUberGraphFrame->RawPointer)
 				{
 					checkSlow(BPGC->UberGraphFunction);
-					FPersistentFrameCollectorArchive ObjectReferenceCollector(InThis, Collector);
-					BPGC->UberGraphFunction->SerializeBin(ObjectReferenceCollector, PointerToUberGraphFrame->RawPointer);
+					FVerySlowReferenceCollectorArchiveScope CollectorScope(
+						Collector.GetInternalPersistentFrameReferenceCollectorArchive(),
+						BPGC->UberGraphFunction,
+						BPGC->UberGraphFramePointerProperty,
+						InThis,
+						PointerToUberGraphFrame->RawPointer);
+					BPGC->UberGraphFunction->SerializeBin(CollectorScope.GetArchive(), PointerToUberGraphFrame->RawPointer);
 				}
 			}
 		}

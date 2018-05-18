@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MallocProfilerEx.cpp: Extended memory profiling support.
@@ -12,6 +12,9 @@
 
 #include "MallocProfiler.h"
 #include "MemoryMisc.h"
+#include "Engine/World.h"
+#include "Engine/LevelStreaming.h"
+#include "UObject/Package.h"
 
 // These functions are here because FMallocProfiler is in the Core
 // project, and therefore can't access most of the classes needed by these functions.
@@ -25,8 +28,8 @@ FMallocProfilerEx::FMallocProfilerEx( FMalloc* InMalloc )
 	: FMallocProfiler( InMalloc )
 {
 	// Add callbacks for garbage collection
-	FCoreUObjectDelegates::PreGarbageCollect.AddStatic( FMallocProfiler::SnapshotMemoryGCStart );
-	FCoreUObjectDelegates::PostGarbageCollect.AddStatic( FMallocProfiler::SnapshotMemoryGCEnd );
+	FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddStatic( FMallocProfiler::SnapshotMemoryGCStart );
+	FCoreUObjectDelegates::GetPostGarbageCollect().AddStatic( FMallocProfiler::SnapshotMemoryGCEnd );
 }
 
 /** 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -20,7 +20,7 @@ class UAbilitySystemComponent;
 class UGameplayEffect;
 
 // meta =(RestrictedToClasses="GameplayAbility")
-UCLASS()
+UCLASS(meta=(ScriptName="AbilitySystemLibrary"))
 class GAMEPLAYABILITIES_API UAbilitySystemBlueprintLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_UCLASS_BODY()
@@ -312,6 +312,21 @@ class GAMEPLAYABILITIES_API UAbilitySystemBlueprintLibrary : public UBlueprintFu
 	UFUNCTION(BlueprintCallable, Category = "Ability|GameplayEffect")
 	static int32 GetActiveGameplayEffectStackLimitCount(FActiveGameplayEffectHandle ActiveHandle);
 
+	/** Returns the start time (time which the GE was added) for a given GameplayEffect */
+	UFUNCTION(BlueprintCallable, Category = "Ability|GameplayEffect")
+	static float GetActiveGameplayEffectStartTime(FActiveGameplayEffectHandle ActiveHandle);
+
+	/** Returns the expected end time (when we think the GE will expire) for a given GameplayEffect (note someone could remove or change it before that happens!) */
+	UFUNCTION(BlueprintCallable, Category = "Ability|GameplayEffect")
+	static float GetActiveGameplayEffectExpectedEndTime(FActiveGameplayEffectHandle ActiveHandle);
+
+	UFUNCTION(BlueprintCallable, Category = "Ability|GameplayEffect")
+	static float GetActiveGameplayEffectTotalDuration(FActiveGameplayEffectHandle ActiveHandle);
+
+	UFUNCTION(BlueprintCallable, Category = "Ability|GameplayEffect", meta = (WorldContext = "WorldContextObject"))
+	static float GetActiveGameplayEffectRemainingDuration(UObject* WorldContextObject, FActiveGameplayEffectHandle ActiveHandle);
+
 	UFUNCTION(BlueprintPure, Category = "Ability|GameplayEffect", Meta = (DisplayName = "Get Active GameplayEffect Debug String "))
 	static FString GetActiveGameplayEffectDebugString(FActiveGameplayEffectHandle ActiveHandle);
+
 };

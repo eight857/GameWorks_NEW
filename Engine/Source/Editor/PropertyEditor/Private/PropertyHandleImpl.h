@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -160,6 +160,16 @@ public:
 	 * Sets a delegate to call when the propery value of a child changes
 	 */
 	void SetOnChildPropertyValueChanged( const FSimpleDelegate& InOnChildPropertyValueChanged );
+
+	/**
+	* Sets a delegate to call when the property value is about to change
+	*/
+	void SetOnPropertyValuePreChange(const FSimpleDelegate& InOnPropertyValuePreChange);
+
+	/**
+	* Sets a delegate to call when the propery value of a child is about to change
+	*/
+	void SetOnChildPropertyValuePreChange(const FSimpleDelegate& InOnChildPropertyValuePreChange);
 
 	/**
 	 * Sets a delegate to call when children of the property node must be rebuilt
@@ -332,6 +342,11 @@ public:
 	void SwapChildren( TSharedPtr<FPropertyNode> FirstChildNode, TSharedPtr<FPropertyNode> SecondChildNode );
 
 	/**
+	* Moves the element at OriginalIndex to NewIndex
+	*/
+	void MoveElementTo(int32 OriginalIndex, int32 NewIndex);
+
+	/**
 	 * @return true if the property node is valid
 	 */
 	bool HasValidPropertyNode() const;
@@ -421,11 +436,12 @@ public:
 	/** IPropertyHandle interface */
 	virtual bool IsValidHandle() const override;
 	virtual FText GetPropertyDisplayName() const override;
+	virtual void SetPropertyDisplayName(FText InDisplayName) override;
 	virtual void ResetToDefault() override;
 	virtual bool DiffersFromDefault() const override;
 	virtual FText GetResetToDefaultLabel() const override;
 	virtual void MarkHiddenByCustomization() override;
-	virtual void MarkResetToDefaultCustomized() override;
+	virtual void MarkResetToDefaultCustomized(bool bCustomized = true) override;
 	virtual void ClearResetToDefaultCustomized() override;
 	virtual bool IsCustomized() const override;
 	virtual bool IsResetToDefaultCustomized() const override;
@@ -435,6 +451,8 @@ public:
 	virtual bool IsEditConst() const override;
 	virtual void SetOnPropertyValueChanged( const FSimpleDelegate& InOnPropertyValueChanged ) override;
 	virtual void SetOnChildPropertyValueChanged( const FSimpleDelegate& InOnPropertyValueChanged ) override;
+	virtual void SetOnPropertyValuePreChange(const FSimpleDelegate& InOnPropertyValuePreChange) override;
+	virtual void SetOnChildPropertyValuePreChange(const FSimpleDelegate& InOnPropertyValuePreChange) override;
 	virtual int32 GetIndexInArray() const override;
 	virtual FPropertyAccess::Result GetValueAsFormattedString( FString& OutValue, EPropertyPortFlags PortFlags = PPF_PropertyWindow ) const override;
 	virtual FPropertyAccess::Result GetValueAsDisplayString( FString& OutValue, EPropertyPortFlags PortFlags = PPF_PropertyWindow) const override;
@@ -651,6 +669,8 @@ public:
 	virtual void SetOnNumElementsChanged( FSimpleDelegate& InOnNumElementsChanged ) override;
 	virtual TSharedPtr<IPropertyHandleArray> AsArray() override;
 	virtual TSharedRef<IPropertyHandle> GetElement( int32 Index ) const override;
+	virtual FPropertyAccess::Result MoveElementTo(int32 OriginalIndex, int32 NewIndex) override;
+
 private:
 	/**
 	 * @return Whether or not the array can be modified

@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineVoiceOculus.h"
 #include "Voice.h"
@@ -14,6 +14,7 @@
 
 // Define the voice sample rate the default in OVR_VoipSampleRate
 #define OCULUS_VOICE_SAMPLE_RATE 48000
+#define OCULUS_NUM_VOICE_CHANNELS 1
 
 FRemoteTalkerDataOculus::FRemoteTalkerDataOculus() :
 	LastSeen(0.0),
@@ -206,7 +207,7 @@ void FOnlineVoiceOculus::ProcessRemoteVoicePackets()
 
 			if (QueuedData.AudioComponent == nullptr || QueuedData.AudioComponent->IsPendingKill())
 			{
-				QueuedData.AudioComponent = CreateVoiceAudioComponent(OCULUS_VOICE_SAMPLE_RATE);
+				QueuedData.AudioComponent = CreateVoiceAudioComponent(OCULUS_VOICE_SAMPLE_RATE, OCULUS_NUM_VOICE_CHANNELS);
 				if (QueuedData.AudioComponent)
 				{
 					QueuedData.AudioComponent->AddToRoot(); // make sure this doesn't get deleted by the GC

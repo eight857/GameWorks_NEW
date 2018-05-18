@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	VulkanSwapChain.h: Vulkan viewport RHI definitions.
@@ -21,7 +21,14 @@ public:
 
 	void Destroy();
 
-	bool Present(FVulkanQueue* Queue, FVulkanSemaphore* BackBufferRenderingDoneSemaphore);
+	// Has to be negative as we use this also on other callbacks as the acquired image index
+	enum class EStatus
+	{
+		Healthy = 0,
+		OutOfDate = -1,
+		SurfaceLost = -2,
+	};
+	EStatus Present(FVulkanQueue* GfxQueue, FVulkanQueue* PresentQueue, FVulkanSemaphore* BackBufferRenderingDoneSemaphore);
 
 protected:
 	VkSwapchainKHR SwapChain;
@@ -35,7 +42,9 @@ protected:
 	uint32 NumAcquireCalls;
 	VkInstance Instance;
 	TArray<FVulkanSemaphore*> ImageAcquiredSemaphore;
+#if VULKAN_USE_IMAGE_ACQUIRE_FENCES
 	TArray<VulkanRHI::FFence*> ImageAcquiredFences;
+#endif
 
 	int32 AcquireImageIndex(FVulkanSemaphore** OutSemaphore);
 

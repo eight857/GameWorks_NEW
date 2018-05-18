@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneTrackEditor.h"
 #include "CoreMinimal.h"
@@ -73,6 +73,10 @@ void FMovieSceneTrackEditor::AnimatablePropertyChanged( FOnKeyProperty OnKeyProp
 			else if (KeyPropertyResult.bTrackModified)
 			{
 				Sequencer.Pin()->NotifyMovieSceneDataChanged( EMovieSceneDataChangeType::MovieSceneStructureItemAdded );
+			}
+			else if (KeyPropertyResult.bKeyCreated)
+			{
+				Sequencer.Pin()->NotifyMovieSceneDataChanged( EMovieSceneDataChangeType::TrackValueChanged );
 			}
 
 			UpdatePlaybackRange();
@@ -151,13 +155,15 @@ TSharedPtr<SWidget> FMovieSceneTrackEditor::BuildOutlinerEditWidget(const FGuid&
 {
 	if (Track->GetSupportedBlendTypes().Num() > 0)
 	{
-		TSharedPtr<ISequencer> SequencerPtr = GetSequencer();
+		TWeakPtr<ISequencer> WeakSequencer = GetSequencer();
 
 		const int32 RowIndex = Params.TrackInsertRowIndex;
 		auto SubMenuCallback = [=]() -> TSharedRef<SWidget>
 		{
 			FMenuBuilder MenuBuilder(true, nullptr);
-			FSequencerUtilities::PopulateMenu_CreateNewSection(MenuBuilder, RowIndex, Track, SequencerPtr);
+
+			FSequencerUtilities::PopulateMenu_CreateNewSection(MenuBuilder, RowIndex, Track, WeakSequencer);
+
 			return MenuBuilder.MakeWidget();
 		};
 
@@ -182,6 +188,16 @@ void FMovieSceneTrackEditor::BuildTrackContextMenu( FMenuBuilder& MenuBuilder, U
 bool FMovieSceneTrackEditor::HandleAssetAdded(UObject* Asset, const FGuid& TargetObjectGuid) 
 { 
 	return false; 
+}
+
+bool FMovieSceneTrackEditor::OnAllowDrop(const FDragDropEvent& DragDropEvent, UMovieSceneTrack* Track)
+{
+	return false;
+}
+
+FReply FMovieSceneTrackEditor::OnDrop(const FDragDropEvent& DragDropEvent, UMovieSceneTrack* Track)
+{
+	return FReply::Unhandled();
 }
 
 void FMovieSceneTrackEditor::OnInitialize() 

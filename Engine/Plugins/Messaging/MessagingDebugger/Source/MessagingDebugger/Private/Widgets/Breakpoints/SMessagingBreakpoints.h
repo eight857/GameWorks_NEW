@@ -1,15 +1,19 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
-#include "IMessageTracerBreakpoint.h"
-#include "IMessageTracer.h"
-#include "Styling/ISlateStyle.h"
+#include "CoreTypes.h"
+#include "Containers/Array.h"
+#include "Templates/SharedPointer.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
-#include "Widgets/Views/STableViewBase.h"
-#include "Widgets/Views/STableRow.h"
+#include "Widgets/Views/SListView.h"
+
+class IMessageTracer;
+class IMessageTracerBreakpoint;
+class ISlateStyle;
+class STableViewBase;
+
 
 /**
  * Implements the message breakpoints panel.
@@ -25,7 +29,7 @@ public:
 public:
 
 	/**
-	 * Construct this widget
+	 * Construct this widget.
 	 *
 	 * @param InArgs The declaration data for this widget.
 	 * @param InStyle The visual style to use for this widget.

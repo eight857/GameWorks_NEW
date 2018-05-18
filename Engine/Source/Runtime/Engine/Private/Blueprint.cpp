@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/Blueprint.h"
 #include "Misc/CoreMisc.h"
@@ -376,6 +376,7 @@ UBlueprint::UBlueprint(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 #if WITH_EDITOR
 	, bRunConstructionScriptOnDrag(true)
+	, bRunConstructionScriptInSequencer(false)
 	, bGenerateConstClass(false)
 #endif
 #if WITH_EDITORONLY_DATA
@@ -615,6 +616,8 @@ extern COREUOBJECT_API bool GBlueprintUseCompilationManager;
 
 UClass* UBlueprint::RegenerateClass(UClass* ClassToRegenerate, UObject* PreviousCDO, TArray<UObject*>& ObjLoaded)
 {
+	LoadModulesRequiredForCompilation();
+
 	if(GBlueprintUseCompilationManager)
 	{
 		// ensure that we have UProperties for any properties declared in the blueprint:
@@ -626,14 +629,8 @@ UClass* UBlueprint::RegenerateClass(UClass* ClassToRegenerate, UObject* Previous
 		// tag ourself as bIsRegeneratingOnLoad so that any reentrance via ForceLoad calls doesn't recurse:
 		bIsRegeneratingOnLoad = true;
 		
-		UPackage* Package = Cast<UPackage>(GetOutermost());
+		UPackage* Package = GetOutermost();
 		bool bIsPackageDirty = Package ? Package->IsDirty() : false;
-
-		if( Package )
-		{
-			// Tell the linker to try to find exports in memory first, so that it gets the new, regenerated versions
-			Package->FindExportsInMemoryFirst(true);
-		}
 
 		UClass* GeneratedClassResolved = GeneratedClass;
 
@@ -660,6 +657,8 @@ UClass* UBlueprint::RegenerateClass(UClass* ClassToRegenerate, UObject* Previous
 		FBlueprintCompilationManager::NotifyBlueprintLoaded( this ); 
 		
 		FBlueprintEditorUtils::PreloadBlueprintSpecificData( this );
+
+		FBlueprintEditorUtils::UpdateOutOfDateAnimBlueprints(this);
 
 		// clear this now that we're not in a re-entrrant context - bHasBeenRegenerated will guard against 'real' 
 		// double regeneration calls:
@@ -781,9 +780,6 @@ void UBlueprint::PostLoad()
 	{
 		FBlueprintEditorUtils::ConformAllowDeletionFlag(this);
 	}
-
-	// Update old Anim Blueprints
-	FBlueprintEditorUtils::UpdateOutOfDateAnimBlueprints(this);
 
 #if WITH_EDITORONLY_DATA
 	// Ensure all the pin watches we have point to something useful
@@ -914,9 +910,9 @@ UWorld* UBlueprint::GetWorldBeingDebugged()
 void UBlueprint::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const
 {
 	// We use Generated instead of Skeleton because the CDO data is more accurate on Generated
-	if (UClass* GenClass = Cast<UClass>(GeneratedClass))
+	if (GeneratedClass)
 	{
-		if (UObject* CDO = GenClass->GetDefaultObject())
+		if (UObject* CDO = GeneratedClass->GetDefaultObject())
 		{
 			CDO->GetAssetRegistryTags(OutTags);
 		}
@@ -1017,9 +1013,9 @@ FPrimaryAssetId UBlueprint::GetPrimaryAssetId() const
 {
 	// Forward to our Class, which will forward to CDO if needed
 	// We use Generated instead of Skeleton because the CDO data is more accurate on Generated
-	if (UClass* GenClass = Cast<UClass>(GeneratedClass))
+	if (GeneratedClass)
 	{
-		return GenClass->GetPrimaryAssetId();
+		return GeneratedClass->GetPrimaryAssetId();
 	}
 
 	return FPrimaryAssetId();
@@ -1771,6 +1767,11 @@ void UBlueprint::ReplaceDeprecatedNodes()
 	}
 }
 
+void UBlueprint::ClearEditorReferences()
+{
+	FKismetEditorUtilities::OnBlueprintUnloaded.Broadcast(this);
+}
+
 UInheritableComponentHandler* UBlueprint::GetInheritableComponentHandler(bool bCreateIfNecessary)
 {
 	static const FBoolConfigValueHelper EnableInheritableComponents(TEXT("Kismet"), TEXT("bEnableInheritableComponents"), GEngineIni);
@@ -1788,9 +1789,12 @@ UInheritableComponentHandler* UBlueprint::GetInheritableComponentHandler(bool bC
 	return InheritableComponentHandler;
 }
 
-#endif
 
-#if WITH_EDITOR
+EDataValidationResult UBlueprint::IsDataValid(TArray<FText>& ValidationErrors)
+{
+	return GeneratedClass ? GeneratedClass->GetDefaultObject()->IsDataValid(ValidationErrors) : EDataValidationResult::Invalid;
+}
+
 FName UBlueprint::GetFunctionNameFromClassByGuid(const UClass* InClass, const FGuid FunctionGuid)
 {
 	return FBlueprintEditorUtils::GetFunctionNameFromClassByGuid(InClass, FunctionGuid);
@@ -1829,3 +1833,12 @@ UEdGraph* UBlueprint::GetLastEditedUberGraph() const
 }
 
 #endif //WITH_EDITOR
+
+#if WITH_EDITORONLY_DATA
+void UBlueprint::LoadModulesRequiredForCompilation()
+{
+	static const FName ModuleName(TEXT("KismetCompiler"));
+	FModuleManager::Get().LoadModule(ModuleName);
+}
+#endif //WITH_EDITORONLY_DATA
+

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -191,8 +191,7 @@ private:
 	static void SplitLink( const FString& Link, /*OUT*/ FString& Path, /*OUT*/ FString& QueryString, /*OUT*/ FString& Anchor )
 	{
 		FString CleanedLink = Link;
-		CleanedLink.Trim();
-		CleanedLink.TrimTrailing();
+		CleanedLink.TrimStartAndEndInline();
 
 		if ( CleanedLink == TEXT("%ROOT%") )
 		{

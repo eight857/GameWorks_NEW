@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UserInterface/PropertyEditor/SPropertyEditorEditInline.h"
 #include "Modules/ModuleManager.h"
@@ -89,7 +89,6 @@ void SPropertyEditorEditInline::Construct( const FArguments& InArgs, const TShar
 				.Image( this, &SPropertyEditorEditInline::GetDisplayValueIcon )
 			]
 			+SHorizontalBox::Slot()
-			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
 				SNew( STextBlock )

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -64,18 +64,14 @@ public:
 	
 	/** The preview primitive we are using. */
 	EThumbnailPrimType PreviewPrimType;
-	
-	/** If true, render background object in the preview scene. */
-	bool bShowBackground;
 
 	/** If true, render grid the preview scene. */
 	bool bShowGrid;
 	
-	FPreviewScene PreviewScene;
 	/** The material editor has been added to a tab */
 	void OnAddedToTab( const TSharedRef<SDockTab>& OwnerTab );
 
-
+	TSharedRef<class FAdvancedPreviewScene> GetPreviewScene() { return AdvancedPreviewScene.ToSharedRef(); }
 
 	/** Event handlers */
 	void OnSetPreviewPrimitive(EThumbnailPrimType PrimType, bool bInitialLoad = false);
@@ -86,6 +82,8 @@ public:
 	bool IsTogglePreviewGridChecked() const;
 	void TogglePreviewBackground();
 	bool IsTogglePreviewBackgroundChecked() const;
+	/** Call back for when the user changes preview scene settings in the UI */
+	void OnAssetViewerSettingsChanged(const FName& InPropertyName);
 
 	// ICommonEditorViewportToolbarInfoProvider interface
 	virtual TSharedRef<class SEditorViewport> GetViewportWidget() override;
@@ -101,6 +99,9 @@ protected:
 	virtual void BindCommands() override;
 	virtual void OnFocusViewportToSelection() override;
 private:
+
+	void OnPropertyChanged(UObject* ObjectBeingModified, FPropertyChangedEvent& PropertyChangedEvent);
+
 	/** The parent tab where this viewport resides */
 	TWeakPtr<SDockTab> ParentTab;
 
@@ -111,6 +112,18 @@ private:
 
 	/** Level viewport client */
 	TSharedPtr<class FMaterialEditorViewportClient> EditorViewportClient;
+
+	/** Preview Scene - uses advanced preview settings */
+	TSharedPtr<class FAdvancedPreviewScene> AdvancedPreviewScene;
+
+	/** Post process volume actor. */
+	class APostProcessVolume* PostProcessVolumeActor;
+
+	/** Property changed delegate. */
+	FCoreUObjectDelegates::FOnObjectPropertyChanged::FDelegate OnPropertyChangedHandle;
+
+	/** Handle to the registered OnPropertyChangedHandle delegate. */
+	FDelegateHandle OnPropertyChangedHandleDelegateHandle;
 };
 
 /**

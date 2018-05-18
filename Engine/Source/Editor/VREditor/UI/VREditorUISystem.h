@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -425,4 +425,3 @@ protected:
 	    Otherwise the panel will immediately start scaling because the user is using the analog stick to aim at the radial menu items. */
 	bool bPanelCanScale;
 };
-

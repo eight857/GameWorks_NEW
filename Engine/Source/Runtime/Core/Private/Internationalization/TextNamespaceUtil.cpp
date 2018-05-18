@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Internationalization/TextNamespaceUtil.h"
 
@@ -49,7 +49,7 @@ FString TextNamespaceUtil::StripPackageNamespace(const FString& InTextNamespace)
 	if (InTextNamespace.Len() > 0 && InTextNamespace[EndMarkerIndex] == PackageNamespaceEndMarker && InTextNamespace.FindLastChar(PackageNamespaceStartMarker, StartMarkerIndex))
 	{
 		FString StrippedNamespace = InTextNamespace.Left(StartMarkerIndex);
-		StrippedNamespace.TrimTrailing();
+		StrippedNamespace.TrimEndInline();
 
 		return StrippedNamespace;
 	}

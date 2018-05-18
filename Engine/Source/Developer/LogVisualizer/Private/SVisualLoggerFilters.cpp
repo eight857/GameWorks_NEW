@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SVisualLoggerFilters.h"
 #include "EngineGlobals.h"
@@ -43,7 +43,7 @@ void SVisualLoggerFilters::Construct(const FArguments& InArgs, const TSharedRef<
 		.ButtonContent()
 		[
 			SNew(STextBlock)
-			.TextStyle(FLogVisualizerStyle::Get(), "Filters.Text")
+			.TextStyle(FLogVisualizerStyle::Get(), "GenericFilters.TextStyle")
 			.Text(LOCTEXT("GraphFilters", "Graph Filters"))
 		];
 

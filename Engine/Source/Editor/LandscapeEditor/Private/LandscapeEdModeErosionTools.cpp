@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "LandscapeToolInterface.h"
@@ -245,7 +245,7 @@ public:
 				if (BrushValue > 0.0f)
 				{
 					FNoiseParameter NoiseParam(0, UISettings->ErosionNoiseScale, BrushValue * Thresh * UISettings->ToolStrength * BrushSizeAdjust);
-					float PaintAmount = ELandscapeToolNoiseMode::Conversion((ELandscapeToolNoiseMode::Type)UISettings->ErosionNoiseMode.GetValue(), NoiseParam.NoiseAmount, NoiseParam.Sample(X, Y));
+					float PaintAmount = NoiseModeConversion((ELandscapeToolNoiseMode)UISettings->ErosionNoiseMode, NoiseParam.NoiseAmount, NoiseParam.Sample(X, Y));
 					HeightData[(X - X1) + (Y - Y1)*(1 + X2 - X1)] = FLandscapeHeightCache::ClampValue(HeightData[(X - X1) + (Y - Y1)*(1 + X2 - X1)] + PaintAmount);
 				}
 			}
@@ -345,7 +345,7 @@ public:
 
 				if (BrushValue >= 1.0f)
 				{
-					float PaintAmount = ELandscapeToolNoiseMode::Conversion((ELandscapeToolNoiseMode::Type)UISettings->RainDistMode.GetValue(), NoiseParam.NoiseAmount, NoiseParam.Sample(X, Y));
+					float PaintAmount = NoiseModeConversion((ELandscapeToolNoiseMode)UISettings->RainDistMode, NoiseParam.NoiseAmount, NoiseParam.Sample(X, Y));
 					if (PaintAmount > 0) // Raining only for positive region...
 						WaterDataScanline[X] += PaintAmount;
 				}

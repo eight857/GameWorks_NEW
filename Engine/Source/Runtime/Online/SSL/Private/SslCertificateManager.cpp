@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SslCertificateManager.h"
 #include "Misc/ConfigCacheIni.h"
@@ -48,9 +48,9 @@ void FSslCertificateManager::BuildRootCertificateArray()
 
 	if (CertificateBundlePath.IsEmpty())
 	{
-		if (FPaths::FileExists(*(FPaths::GameContentDir() + TEXT("Certificates/cacert.pem"))))
+		if (FPaths::FileExists(*(FPaths::ProjectContentDir() + TEXT("Certificates/cacert.pem"))))
 		{
-			CertificateBundlePath = FPaths::GameContentDir() + TEXT("Certificates/cacert.pem");
+			CertificateBundlePath = FPaths::ProjectContentDir() + TEXT("Certificates/cacert.pem");
 		}
 		else if (FPaths::FileExists(*(FPaths::EngineContentDir() + TEXT("Certificates/ThirdParty/cacert.pem"))))
 		{

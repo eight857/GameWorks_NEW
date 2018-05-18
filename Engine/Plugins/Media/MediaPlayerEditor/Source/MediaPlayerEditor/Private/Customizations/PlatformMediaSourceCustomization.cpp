@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Customizations/PlatformMediaSourceCustomization.h"
 #include "MediaSource.h"
@@ -77,6 +77,11 @@ TSharedRef<SWidget> FPlatformMediaSourceCustomization::MakePlatformMediaSourcesV
 	{
 		if (PlatformInfo.IsVanilla() && (PlatformInfo.PlatformType == PlatformInfo::EPlatformType::Game) && (PlatformInfo.PlatformInfoName != TEXT("AllDesktop")))
 		{
+			if (PlatformInfo.PlatformInfoName == TEXT("TVOS"))
+			{
+				continue; // tvOS is just iOS for now
+			}
+
 			AvailablePlatforms.Add(&PlatformInfo);
 		}
 	}
@@ -118,9 +123,9 @@ TSharedRef<SWidget> FPlatformMediaSourceCustomization::MakePlatformMediaSourcesV
 				SNew(SObjectPropertyEntryBox)
 					.AllowedClass(UMediaSource::StaticClass())
 					.AllowClear(true)
-					.OnShouldFilterAsset(this, &FPlatformMediaSourceCustomization::HandleShouldFilterAsset)
-					.ObjectPath(this, &FPlatformMediaSourceCustomization::HandleMediaSourcePropertyEntryObjectPath, Platform->IniPlatformName)
-					.OnObjectChanged(this, &FPlatformMediaSourceCustomization::HandleMediaSourcePropertyEntryBoxChanged, Platform->IniPlatformName)
+					.ObjectPath(this, &FPlatformMediaSourceCustomization::HandleMediaSourceEntryBoxObjectPath, Platform->IniPlatformName)
+					.OnObjectChanged(this, &FPlatformMediaSourceCustomization::HandleMediaSourceEntryBoxChanged, Platform->IniPlatformName)
+					.OnShouldFilterAsset(this, &FPlatformMediaSourceCustomization::HandleMediaSourceEntryBoxShouldFilterAsset)
 			];
 	}
 
@@ -151,14 +156,7 @@ void FPlatformMediaSourceCustomization::SetPlatformMediaSourcesValue(FString Pla
 /* FPlatformMediaSourceCustomization callbacks
  *****************************************************************************/
 
-bool FPlatformMediaSourceCustomization::HandleShouldFilterAsset(const FAssetData& AssetData)
-{
-	// Don't allow nesting platform media sources.
-	UClass* AssetClass = FindObject<UClass>(ANY_PACKAGE, *AssetData.AssetClass.ToString());
-	return AssetClass->IsChildOf(UPlatformMediaSource::StaticClass());
-}
-
-void FPlatformMediaSourceCustomization::HandleMediaSourcePropertyEntryBoxChanged(const FAssetData& AssetData, FString PlatformName)
+void FPlatformMediaSourceCustomization::HandleMediaSourceEntryBoxChanged(const FAssetData& AssetData, FString PlatformName)
 {
 	TArray<UObject*> OuterObjects;
 	{
@@ -178,7 +176,7 @@ void FPlatformMediaSourceCustomization::HandleMediaSourcePropertyEntryBoxChanged
 }
 
 
-FString FPlatformMediaSourceCustomization::HandleMediaSourcePropertyEntryObjectPath(FString PlatformName) const
+FString FPlatformMediaSourceCustomization::HandleMediaSourceEntryBoxObjectPath(FString PlatformName) const
 {
 	TArray<UObject*> OuterObjects;
 	{
@@ -206,6 +204,14 @@ FString FPlatformMediaSourceCustomization::HandleMediaSourcePropertyEntryObjectP
 	}
 
 	return MediaSource->GetPathName();
+}
+
+
+bool FPlatformMediaSourceCustomization::HandleMediaSourceEntryBoxShouldFilterAsset(const FAssetData& AssetData)
+{
+	// Don't allow nesting platform media sources.
+	UClass* AssetClass = FindObject<UClass>(ANY_PACKAGE, *AssetData.AssetClass.ToString());
+	return AssetClass->IsChildOf(UPlatformMediaSource::StaticClass());
 }
 
 

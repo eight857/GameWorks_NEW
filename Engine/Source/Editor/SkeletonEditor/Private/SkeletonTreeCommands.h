@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -47,6 +47,9 @@ public:
 
 	/** Flatten hierarchy on filter */
 	TSharedPtr< FUICommandInfo > FilteringFlattensHierarchy;
+
+	/** Hide parents on filter */
+	TSharedPtr< FUICommandInfo > HideParentsWhenFiltering;
 
 	/** Add a socket to the skeleton */
 	TSharedPtr< FUICommandInfo > AddSocket;

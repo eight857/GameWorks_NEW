@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,7 +13,7 @@ class FPrimitiveDrawInterface;
 class FSceneView;
 
 /** Permitted spline point types for SplineComponent. */
-UENUM()
+UENUM(BlueprintType)
 namespace ESplinePointType
 {
 	enum Type
@@ -114,25 +114,25 @@ struct FSplinePoint
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	float InputKey;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	FVector Position;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	FVector ArriveTangent;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	FVector LeaveTangent;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	FRotator Rotation;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	FVector Scale;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	TEnumAsByte<ESplinePointType::Type> Type;
 
 	/** Default constructor */
@@ -330,9 +330,6 @@ public:
 
 	/** Get scale at the provided input key value */
 	FVector GetScaleAtSplineInputKey(float InKey) const;
-
-	DEPRECATED(4.9, "This has been replaced by GetNumberOfSplinePoints(), as it is a clearer name for Blueprint users.")
-	int32 GetNumSplinePoints() const { return GetNumberOfSplinePoints(); }
 
 	/** Specify unselected spline component segment color in the editor */
 	UFUNCTION(BlueprintCallable, Category = Editor)

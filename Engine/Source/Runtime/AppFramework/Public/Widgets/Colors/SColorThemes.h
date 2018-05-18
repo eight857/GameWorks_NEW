@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -546,6 +546,10 @@ private:
 	FReply DuplicateColorTheme();
 	FReply DeleteColorTheme();
 	FReply AcceptThemeName();
+	/** Rename theme if the user has pressed Enter in the RenameTextBox */
+	void CommitThemeName(const FText& InText, ETextCommit::Type InCommitType);
+	void UpdateThemeNameFromTextBox();
+	
 	bool CanAcceptThemeName() const;
 	void ChangeThemeName(const FText& InText);
 	EVisibility OnGetErrorTextVisibility() const;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -111,7 +111,7 @@ namespace PropertyTemplate
 	template<typename PropertyValueType, typename IntermediateType = PropertyValueType>
 	IntermediateType ConvertToIntermediateType(PropertyValueType&& NewValue)
 	{
-		return MoveTemp(NewValue);
+		return Forward<PropertyValueType>(NewValue);
 	}
 
 	template<typename T>
@@ -125,7 +125,7 @@ namespace PropertyTemplate
 	struct TCachedState : IMovieScenePreAnimatedToken
 	{
 		TCachedState(typename TCallTraits<IntermediateType>::ParamType InValue, const FTrackInstancePropertyBindings& InBindings)
-			: Value(MoveTemp(InValue))
+			: Value(MoveTempIfPossible(InValue))
 			, Bindings(InBindings)
 		{
 		}
@@ -245,10 +245,13 @@ struct TPropertyActuator : TMovieSceneBlendingActuator<PropertyType>
 
 	virtual void Actuate(UObject* InObject, typename TCallTraits<PropertyType>::ParamType InFinalValue, const TBlendableTokenStack<PropertyType>& OriginalStack, const FMovieSceneContext& Context, FPersistentEvaluationData& PersistentData, IMovieScenePlayer& Player) override
 	{
-		check(InObject);
+		ensureMsgf(InObject, TEXT("Attempting to evaluate a Property track with a null object."));
 
-		OriginalStack.SavePreAnimatedState(Player, *InObject, PropertyData.PropertyID, PropertyTemplate::FTokenProducer<PropertyType>(*PropertyData.PropertyBindings));
-		PropertyData.PropertyBindings->CallFunction<PropertyType>(*InObject, InFinalValue);
+		if (InObject)
+		{
+			OriginalStack.SavePreAnimatedState(Player, *InObject, PropertyData.PropertyID, PropertyTemplate::FTokenProducer<PropertyType>(*PropertyData.PropertyBindings));
+			PropertyData.PropertyBindings->CallFunction<PropertyType>(*InObject, InFinalValue);
+		}
 	}
 };
 

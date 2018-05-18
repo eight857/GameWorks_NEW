@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 InstancedFoliage.cpp: Instanced foliage implementation.
@@ -193,7 +193,7 @@ static void ConvertDeprecatedFoliageMeshes(
 	check(IFA->InstanceBaseCache.InstanceBaseLevelMap.Num() <= 1);
 	// populate WorldAsset->BasePtr map
 	IFA->InstanceBaseCache.InstanceBaseLevelMap.Empty();
-	auto& BaseList = IFA->InstanceBaseCache.InstanceBaseLevelMap.Add(TAssetPtr<UWorld>(Cast<UWorld>(IFA->GetLevel()->GetOuter())));
+	auto& BaseList = IFA->InstanceBaseCache.InstanceBaseLevelMap.Add(TSoftObjectPtr<UWorld>(Cast<UWorld>(IFA->GetLevel()->GetOuter())));
 	for (auto& BaseInfoPair : IFA->InstanceBaseCache.InstanceBaseMap)
 	{
 		BaseList.Add(BaseInfoPair.Value.BasePtr);
@@ -605,7 +605,10 @@ void UFoliageType::PostEditChangeProperty(struct FPropertyChangedEvent& Property
 	{
 		for (TObjectIterator<AInstancedFoliageActor> It(RF_ClassDefaultObject, /** bIncludeDerivedClasses */ true, /** InternalExcludeFalgs */ EInternalObjectFlags::PendingKill); It; ++It)
 		{
-			It->NotifyFoliageTypeChanged(this, bMeshChanged);
+			if (It->GetWorld() != nullptr)
+			{
+				It->NotifyFoliageTypeChanged(this, bMeshChanged);
+			}
 		}
 	}
 }
@@ -764,12 +767,13 @@ void FFoliageMeshInfo::CreateNewComponent(AInstancedFoliageActor* InIFA, const U
 	}
 
 	UFoliageInstancedStaticMeshComponent* FoliageComponent = NewObject<UFoliageInstancedStaticMeshComponent>(InIFA, ComponentClass, NAME_None, RF_Transactional);
+	FoliageComponent->KeepInstanceBufferCPUAccess = false;
+	FoliageComponent->InitPerInstanceRenderData(false);
 
 	Component = FoliageComponent;
 	Component->SetStaticMesh(InSettings->GetStaticMesh());
 	Component->bSelectable = true;
 	Component->bHasPerInstanceHitProxies = true;
-	Component->InstancingRandomSeed = FMath::Rand();
 
 	if (Component->GetStaticMesh() != nullptr)
 	{
@@ -932,6 +936,12 @@ void FFoliageMeshInfo::UpdateComponentSettings(const UFoliageType* InSettings)
 			bNeedsMarkRenderStateDirty = true;
 			bNeedsInvalidateLightingCache = true;
 		}
+		if (Component->LightmapType != FoliageType->LightmapType)
+		{
+			Component->LightmapType = FoliageType->LightmapType;
+			bNeedsMarkRenderStateDirty = true;
+			bNeedsInvalidateLightingCache = true;
+		}
 		if (Component->bUseAsOccluder != FoliageType->bUseAsOccluder)
 		{
 			Component->bUseAsOccluder = FoliageType->bUseAsOccluder;
@@ -1031,6 +1041,7 @@ void FFoliageMeshInfo::AddInstance(AInstancedFoliageActor* InIFA, const UFoliage
 	}
 	else
 	{
+		Component->InitPerInstanceRenderData(false);
 		Component->InvalidateLightingCache();
 	}
 
@@ -1282,7 +1293,7 @@ void FFoliageMeshInfo::ReapplyInstancesToComponent()
 		const bool bWasRegistered = Component->IsRegistered();
 		Component->UnregisterComponent();
 		Component->ClearInstances();
-		Component->InitPerInstanceRenderData();
+		Component->InitPerInstanceRenderData(false);
 
 		Component->bAutoRebuildTreeOnInstanceChanges = false;
 
@@ -2006,7 +2017,7 @@ void UpdateSettingsBounds(const UStaticMesh* InMesh, UFoliageType_InstancedStati
 
 	if (InMesh->RenderData)
 	{
-		FPositionVertexBuffer& PositionVertexBuffer = InMesh->RenderData->LODResources[0].PositionVertexBuffer;
+		FPositionVertexBuffer& PositionVertexBuffer = InMesh->RenderData->LODResources[0].VertexBuffers.PositionVertexBuffer;
 		for (uint32 Index = 0; Index < PositionVertexBuffer.GetNumVertices(); ++Index)
 		{
 			const FVector& Pos = PositionVertexBuffer.VertexPosition(Index);
@@ -2289,7 +2300,7 @@ void AInstancedFoliageActor::PreEditUndo()
 	{
 		FFoliageMeshInfo& MeshInfo = *MeshPair.Value;
 
-		if (MeshPair.Key->GetStaticMesh() != nullptr)
+		if (MeshPair.Key != nullptr && MeshPair.Key->GetStaticMesh() != nullptr)
 		{
 			MeshPair.Key->GetStaticMesh()->GetOnExtendedBoundsChanged().RemoveAll(&MeshInfo);
 		}
@@ -2641,6 +2652,9 @@ void AInstancedFoliageActor::PostLoad()
 				}
 			}
 		}
+
+		TArray<UFoliageType*> FoliageTypeToRemove;
+
 		for (auto& MeshPair : FoliageMeshes)
 		{
 			// Find the per-mesh info matching the mesh.
@@ -2700,8 +2714,9 @@ void AInstancedFoliageActor::PostLoad()
 			// Clean up case where embeded instances had their static mesh deleted
 			if (FoliageType->IsNotAssetOrBlueprint() && StaticMesh == nullptr)
 			{
-				OnFoliageTypeMeshChangedEvent.Broadcast(FoliageType);
-				RemoveFoliageType(&FoliageType, 1);
+				// We can't remove them here as we are within the loop itself so clean up after
+				FoliageTypeToRemove.Add(FoliageType);
+				
 				continue;
 			}
 
@@ -2725,15 +2740,27 @@ void AInstancedFoliageActor::PostLoad()
 
 		// Clean up dead cross-level references
 		FFoliageInstanceBaseCache::CompactInstanceBaseCache(this);
+
+		// Clean up invalid foliage type
+		for (UFoliageType* FoliageType : FoliageTypeToRemove)
+		{
+			OnFoliageTypeMeshChangedEvent.Broadcast(FoliageType);
+			RemoveFoliageType(&FoliageType, 1);
+		}
 	}
+
 #endif// WITH_EDITOR
 
 	if (!GIsEditor && CVarFoliageDiscardDataOnLoad.GetValueOnGameThread())
 	{
 		for (auto& MeshPair : FoliageMeshes)
 		{
-			MeshPair.Value->Component->ConditionalPostLoad();
-			MeshPair.Value->Component->DestroyComponent();
+			if (MeshPair.Value->Component != nullptr)
+			{
+				MeshPair.Value->Component->ConditionalPostLoad();
+				MeshPair.Value->Component->DestroyComponent();
+			}
+
 			MeshPair.Value = FFoliageMeshInfo();
 		}
 	}
@@ -2781,18 +2808,18 @@ void AInstancedFoliageActor::NotifyFoliageTypeChanged(UFoliageType* FoliageType,
 			// If the type's mesh has changed, the UI needs to be notified so it can update thumbnails accordingly
 			OnFoliageTypeMeshChangedEvent.Broadcast(FoliageType);
 
-			if (FoliageType->IsNotAssetOrBlueprint() && FoliageType->GetStaticMesh() == nullptr) //If the mesh has been deleted and we're a per foliage actor instance we must remove all instances of the mesh
-			{
-				RemoveFoliageType(&FoliageType, 1);
-			}
-
 			// Change bounds delegate bindings
-			if (TypeInfo->Component != nullptr && TypeInfo->Component->GetStaticMesh() != nullptr)
+			if (TypeInfo->Component != nullptr && TypeInfo->Component->GetStaticMesh() != nullptr && FoliageType->GetStaticMesh() != nullptr)
 			{
 				TypeInfo->Component->GetStaticMesh()->GetOnExtendedBoundsChanged().AddRaw(TypeInfo, &FFoliageMeshInfo::HandleComponentMeshBoundsChanged);
 
 				// Mesh changed, so we must update the occlusion tree
 				TypeInfo->Component->BuildTreeIfOutdated(true, false);
+			}
+
+			if (FoliageType->IsNotAssetOrBlueprint() && FoliageType->GetStaticMesh() == nullptr) //If the mesh has been deleted and we're a per foliage actor instance we must remove all instances of the mesh
+			{
+				RemoveFoliageType(&FoliageType, 1);
 			}
 		}
 	}

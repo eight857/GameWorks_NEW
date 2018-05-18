@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayTasksComponent.h"
 #include "UObject/Package.h"
@@ -78,6 +78,7 @@ void UGameplayTasksComponent::OnGameplayTaskActivated(UGameplayTask& Task)
 	{
 		check(SimulatedTasks.Contains(&Task) == false);
 		SimulatedTasks.Add(&Task);
+		bIsNetDirty = true;
 	}
 
 	IGameplayTaskOwnerInterface* TaskOwner = Task.GetTaskOwner();
@@ -113,12 +114,16 @@ void UGameplayTasksComponent::OnGameplayTaskDeactivated(UGameplayTask& Task)
 
 	if (bIsFinished)
 	{
-		KnownTasks.RemoveSingleSwap(&Task);
+		// using RemoveSwap rather than RemoveSingleSwap since a Task can be added
+		// to KnownTasks both when activating as well as unpausing
+		// while removal happens only once. It's cheaper to handle it here.
+		KnownTasks.RemoveSwap(&Task);
 	}
 
 	if (Task.IsSimulatedTask())
 	{
 		SimulatedTasks.RemoveSingleSwap(&Task);
+		bIsNetDirty = true;
 	}
 
 	// Resource-using task

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GenericPlatform/GenericPlatformStackWalk.h"
 #include "HAL/PlatformStackWalk.h"
@@ -11,9 +11,9 @@ FProgramCounterSymbolInfo::FProgramCounterSymbolInfo() :
 	OffsetInModule( 0 ),
 	ProgramCounter( 0 )
 {
-	FCStringAnsi::Strncpy( ModuleName, "", MAX_NAME_LENGHT );
-	FCStringAnsi::Strncpy( FunctionName, "", MAX_NAME_LENGHT );
-	FCStringAnsi::Strncpy( Filename, "", MAX_NAME_LENGHT );
+	FCStringAnsi::Strncpy( ModuleName, "", MAX_NAME_LENGTH );
+	FCStringAnsi::Strncpy( FunctionName, "", MAX_NAME_LENGTH );
+	FCStringAnsi::Strncpy( Filename, "", MAX_NAME_LENGTH );
 }
 
 /** Settings for stack walking */
@@ -47,11 +47,18 @@ bool FGenericPlatformStackWalk::ProgramCounterToHumanReadableString( int32 Curre
 bool FGenericPlatformStackWalk::SymbolInfoToHumanReadableString( const FProgramCounterSymbolInfo& SymbolInfo, ANSICHAR* HumanReadableString, SIZE_T HumanReadableStringSize )
 {
 	const int32 MAX_TEMP_SPRINTF = 256;
-	// Valid callstack line 
-	// ModuleName!FunctionName [Filename:LineNumber]
+
+	//
+	// Callstack lines should be written in this standard format
+	//
+	//	0xaddress module!func [file]
 	// 
-	// Invalid callstack line
-	// ModuleName!
+	// E.g. 0x045C8D01 OrionClient.self!UEngine::PerformError() [D:\Epic\Orion\Engine\Source\Runtime\Engine\Private\UnrealEngine.cpp:6481]
+	//
+	// Module may be omitted, everything else should be present, or substituted with a string that conforms to the expected type
+	//
+	// E.g 0x00000000 UnknownFunction []
+	//
 	// 
 	if( HumanReadableString && HumanReadableStringSize > 0 )
 	{
@@ -63,8 +70,12 @@ bool FGenericPlatformStackWalk::SymbolInfoToHumanReadableString( const FProgramC
 		const UPTRINT RealPos = FMath::Max( (UPTRINT)Pos0, (UPTRINT)Pos1 );
 		const ANSICHAR* StrippedModuleName = RealPos > 0 ? (const ANSICHAR*)(RealPos + 1) : SymbolInfo.ModuleName;
 
-		//FCStringAnsi::Sprintf( StackLine, "%s!%s [%s:%i]", StrippedModuleName, (const ANSICHAR*)SymbolInfo.FunctionName, (const ANSICHAR*)SymbolInfo.Filename, SymbolInfo.LineNumber );
-
+		// Start with address
+		ANSICHAR PCAddress[MAX_TEMP_SPRINTF] = { 0 };
+		FCStringAnsi::Snprintf(PCAddress, MAX_TEMP_SPRINTF, "0x%016X ", SymbolInfo.ProgramCounter);
+		FCStringAnsi::Strncat(StackLine, PCAddress, MAX_SPRINTF);
+		
+		// Module if it's present
 		const bool bHasValidModuleName = FCStringAnsi::Strlen(StrippedModuleName) > 0;
 		if (bHasValidModuleName)
 		{
@@ -72,6 +83,7 @@ bool FGenericPlatformStackWalk::SymbolInfoToHumanReadableString( const FProgramC
 			FCStringAnsi::Strncat(StackLine, "!", MAX_SPRINTF);
 		}
 
+		// Function if it's available, unknown if it's not
 		const bool bHasValidFunctionName = FCStringAnsi::Strlen( SymbolInfo.FunctionName ) > 0;
 		if( bHasValidFunctionName )
 		{
@@ -79,11 +91,10 @@ bool FGenericPlatformStackWalk::SymbolInfoToHumanReadableString( const FProgramC
 		}
 		else
 		{
-			ANSICHAR PCAddress[MAX_TEMP_SPRINTF] = {0};
-			FCStringAnsi::Snprintf(PCAddress, MAX_TEMP_SPRINTF, "0x%016X", SymbolInfo.ProgramCounter);
-			FCStringAnsi::Strncat(StackLine, PCAddress, MAX_SPRINTF);
+			FCStringAnsi::Strncat(StackLine, "UnknownFunction", MAX_SPRINTF);
 		}
 
+		// file info
 		const bool bHasValidFilename = FCStringAnsi::Strlen( SymbolInfo.Filename ) > 0 && SymbolInfo.LineNumber > 0;
 		if( bHasValidFilename )
 		{
@@ -91,7 +102,10 @@ bool FGenericPlatformStackWalk::SymbolInfoToHumanReadableString( const FProgramC
 			FCStringAnsi::Snprintf( FilenameAndLineNumber, MAX_TEMP_SPRINTF, " [%s:%i]", SymbolInfo.Filename, SymbolInfo.LineNumber );
 			FCStringAnsi::Strncat(StackLine, FilenameAndLineNumber, MAX_SPRINTF);
 		}
-
+		else
+		{
+			FCStringAnsi::Strncat(StackLine, " []", MAX_SPRINTF);
+		}
 
 		// Append the stack line.
 		FCStringAnsi::Strncat(HumanReadableString, StackLine, HumanReadableStringSize);
@@ -137,9 +151,9 @@ bool FGenericPlatformStackWalk::SymbolInfoToHumanReadableStringEx( const FProgra
 }
 
 
-void FGenericPlatformStackWalk::CaptureStackBackTrace( uint64* BackTrace, uint32 MaxDepth, void* Context )
+uint32 FGenericPlatformStackWalk::CaptureStackBackTrace( uint64* BackTrace, uint32 MaxDepth, void* Context )
 {
-
+	return 0;
 }
 
 void FGenericPlatformStackWalk::StackWalkAndDump( ANSICHAR* HumanReadableString, SIZE_T HumanReadableStringSize, int32 IgnoreCount, void* Context )
@@ -150,13 +164,11 @@ void FGenericPlatformStackWalk::StackWalkAndDump( ANSICHAR* HumanReadableString,
 	FMemory::Memzero( StackTrace );
 
 	// Capture stack backtrace.
-	FPlatformStackWalk::CaptureStackBackTrace( StackTrace, MAX_DEPTH, Context );
+	uint32 Depth = FPlatformStackWalk::CaptureStackBackTrace( StackTrace, MAX_DEPTH, Context );
 
 	// Skip the first two entries as they are inside the stack walking code.
-	int32 CurrentDepth = IgnoreCount;
-	// Allow the first entry to be NULL as the crash could have been caused by a call to a NULL function pointer,
-	// which would mean the top of the callstack is NULL.
-	while( CurrentDepth < ARRAY_COUNT( StackTrace ) && ( StackTrace[CurrentDepth] || ( CurrentDepth == IgnoreCount ) ) )
+	uint32 CurrentDepth = IgnoreCount;
+	while( CurrentDepth < Depth )
 	{
 		FPlatformStackWalk::ProgramCounterToHumanReadableString( CurrentDepth, StackTrace[CurrentDepth], HumanReadableString, HumanReadableStringSize, reinterpret_cast< FGenericCrashContext* >( Context ) );
 		FCStringAnsi::Strncat(HumanReadableString, LINE_TERMINATOR_ANSI, HumanReadableStringSize);
@@ -185,13 +197,11 @@ TArray<FProgramCounterSymbolInfo> FGenericPlatformStackWalk::GetStack(int32 Igno
 	MaxDepth = FMath::Min(MAX_DEPTH, IgnoreCount + MaxDepth);
 
 	// Capture stack backtrace.
-	FPlatformStackWalk::CaptureStackBackTrace(StackTrace, MaxDepth, Context);
+	uint32 Depth = FPlatformStackWalk::CaptureStackBackTrace(StackTrace, MaxDepth, Context);
 
 	// Skip the first two entries as they are inside the stack walking code.
-	int32 CurrentDepth = IgnoreCount;
-	// Allow the first entry to be NULL as the crash could have been caused by a call to a NULL function pointer,
-	// which would mean the top of the callstack is NULL.
-	while ( CurrentDepth < MaxDepth && ( StackTrace[CurrentDepth] || ( CurrentDepth == IgnoreCount ) ) )
+	uint32 CurrentDepth = IgnoreCount;
+	while ( CurrentDepth < Depth )
 	{
 		int32 NewIndex = Stack.AddDefaulted();
 		FPlatformStackWalk::ProgramCounterToSymbolInfo(StackTrace[CurrentDepth], Stack[NewIndex]);

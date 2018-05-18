@@ -1,14 +1,16 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
+#include "Engine/DeveloperSettings.h"
 #include "EditorPerformanceSettings.generated.h"
 
-UCLASS(minimalapi,config=EditorSettings)
-class UEditorPerformanceSettings : public UObject
+
+UCLASS(minimalapi, config=EditorSettings, meta=(DisplayName = "Performance", ToolTip="Settings to tweak the performance of the editor"))
+class UEditorPerformanceSettings : public UDeveloperSettings
 {
 	GENERATED_UCLASS_BODY()
 	
@@ -24,5 +26,20 @@ class UEditorPerformanceSettings : public UObject
 	UPROPERTY(EditAnywhere, config, Category=EditorPerformance)
 	uint32 bMonitorEditorPerformance:1;
 
+	/** 
+	 * By default the editor will adjust scene scaling (quality) for high DPI in order to ensure consistent performance with very large render targets.
+	 * Enabling this will disable automatic adjusting and render at the full resolution of the viewport
+	 */
+	UPROPERTY(EditAnywhere, config, Category=EditorPerformance, meta=(DisplayName="Disable DPI Based Editor Viewport Scaling", ConsoleVariable="Editor.OverrideDPIBasedEditorViewportScaling"))
+	bool bOverrideDPIBasedEditorViewportScaling;
+
+	/** When enabled, Shared Data Cache performance notifications may be displayed when not connected to a shared cache */
+	UPROPERTY(EditAnywhere, config, Category = EditorPerformance, meta = (DisplayName = "Enable Shared Data Cache Performance Notifications"))
+	uint32 bEnableSharedDDCPerformanceNotifications : 1;
+
+public:
+	/** UObject interface */
+	virtual void PostInitProperties() override;
+	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 };
 

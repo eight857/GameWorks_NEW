@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -22,6 +22,9 @@
 #include "ISkeletonTreeBuilder.h"
 #include "ISkeletonTreeItem.h"
 #include "SkeletonTreeBuilder.h"
+#include "SSearchBox.h"
+#include "EditorUndoClient.h"
+#include "GCObject.h"
 
 class FMenuBuilder;
 class FSkeletonTreeAttachedAssetItem;
@@ -29,17 +32,19 @@ class FSkeletonTreeBoneItem;
 class FSkeletonTreeSocketItem;
 class FSkeletonTreeVirtualBoneItem;
 class FTextFilterExpressionEvaluator;
-class FUICommandList;
+class FUICommandList_Pinnable;
 class IPersonaPreviewScene;
 class SBlendProfilePicker;
 class SComboButton;
 class UBlendProfile;
 struct FNotificationInfo;
+class IPinnedCommandList;
 
 //////////////////////////////////////////////////////////////////////////
 // SSkeletonTree
 
-class SSkeletonTree : public ISkeletonTree
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
+class SSkeletonTree : public ISkeletonTree, public FEditorUndoClient, public FGCObject
 {
 public:
 	SLATE_BEGIN_ARGS( SSkeletonTree )
@@ -63,13 +68,18 @@ public:
 	void Construct(const FArguments& InArgs, const TSharedRef<FEditableSkeleton>& InEditableSkeleton, const FSkeletonTreeArgs& InSkeletonTreeArgs);
 
 	/** ISkeletonTree interface */
+	virtual void Refresh() override;
+	virtual void RefreshFilter() override;
 	virtual TSharedRef<class IEditableSkeleton> GetEditableSkeleton() const override { return EditableSkeleton.Pin().ToSharedRef(); }
 	virtual TSharedPtr<class IPersonaPreviewScene> GetPreviewScene() const override { return PreviewScene.Pin(); }
 	virtual void SetSkeletalMesh(USkeletalMesh* NewSkeletalMesh) override;
 	virtual void SetSelectedSocket(const struct FSelectedSocketInfo& InSocketInfo) override;
 	virtual void SetSelectedBone(const FName& InBoneName) override;
 	virtual void DeselectAll() override;
+	virtual TArray<TSharedPtr<ISkeletonTreeItem>> GetSelectedItems() const override { return SkeletonTreeView->GetSelectedItems(); }
+	virtual void SelectItemsBy(TFunctionRef<bool(const TSharedRef<ISkeletonTreeItem>&, bool&)> Predicate) const override;
 	virtual void DuplicateAndSelectSocket(const FSelectedSocketInfo& SocketInfoToDuplicate, const FName& NewParentBoneName = FName()) override;
+
 	virtual void RegisterOnObjectSelected(const FOnObjectSelected& Delegate) override
 	{
 		OnObjectSelectedMulticast.Add(Delegate);
@@ -80,8 +90,27 @@ public:
 		OnObjectSelectedMulticast.RemoveAll(Widget);
 	}
 
+	virtual FDelegateHandle RegisterOnSelectionChanged(const FOnSkeletonTreeSelectionChanged& Delegate) override
+	{
+		return OnSelectionChangedMulticast.Add(Delegate);
+	}
+
+	virtual void UnregisterOnSelectionChanged(FDelegateHandle DelegateHandle) override
+	{
+		OnSelectionChangedMulticast.Remove(DelegateHandle);
+	}
+
 	virtual UBlendProfile* GetSelectedBlendProfile() override;
 	virtual void AttachAssets(const TSharedRef<ISkeletonTreeItem>& TargetItem, const TArray<FAssetData>& AssetData) override;
+	virtual TSharedPtr<SWidget> GetSearchWidget() const override { return NameFilterBox; }
+	virtual TSharedPtr<IPinnedCommandList> GetPinnedCommandList() const override { return PinnedCommands; }
+
+	/** FEditorUndoClient interface */
+	virtual void PostUndo(bool bSuccess) override;
+	virtual void PostRedo(bool bSuccess) override;
+
+	/** FGCObject interface */
+	virtual void AddReferencedObjects( FReferenceCollector& Collector ) override;
 
 	/** Creates the tree control and then populates */
 	void CreateTreeColumns();
@@ -92,8 +121,8 @@ public:
 	/** Apply filtering to the tree */
 	void ApplyFilter();
 
-	/** This triggers a rebuild of the tree after undo to make the UI consistent with the real data */
-	void PostUndo();
+	/** Set the initial expansion state of the tree items */
+	void SetInitialExpansionState();
 
 	/** Utility function to print notifications to the user */
 	void NotifyUser( FNotificationInfo& NotificationInfo );
@@ -156,11 +185,17 @@ private:
 	/** Function to copy selected sockets to the clipboard */
 	void OnCopySockets() const;
 
+	/** Whether we can copy sockets */
+	bool CanCopySockets() const;
+
 	/** Function to serialize a single socket to a string */
 	FString SerializeSocketToString( class USkeletalMeshSocket* Socket, ESocketParentType ParentType ) const;
 
 	/** Function to paste selected sockets from the clipboard */
 	void OnPasteSockets(bool bPasteToSelectedBone);
+
+	/** Whether we can paste sockets */
+	bool CanPasteSockets() const;
 
 	/** Function to add a socket to the selected bone (skeleton, not mesh) */
 	void OnAddSocket();
@@ -216,8 +251,8 @@ private:
 	/** Queries the bone filter */
 	bool IsSocketFilter(ESocketFilter InSocketFilter ) const;
 
-	/** Returns the current text for the filter button - "All", "Mesh" or "Weighted" etc. */
-	FText GetFilterMenuTitle() const;
+	/** Returns the current text for the filter button tooltip - "All", "Mesh" or "Weighted" etc. */
+	FText GetFilterMenuTooltip() const;
 
 	/** We can only add sockets in Active, Skeleton or All mode (otherwise they just disappear) */
 	bool IsAddingSocketsAllowed() const;
@@ -233,6 +268,9 @@ private:
 
 	/** Override OnKeyDown */
 	virtual FReply OnKeyDown( const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent );
+
+	/** Check whether we can delete all the selected sockets/assets */
+	bool CanDeleteSelectedRows() const;
 
 	/** Function to delete all the selected sockets/assets */
 	void OnDeleteSelectedRows();
@@ -255,14 +293,11 @@ private:
 	/** Submenu creator handler for the given skeleton */
 	static void CreateMenuForBoneReduction(FMenuBuilder& MenuBuilder, SSkeletonTree* SkeletonTree, int32 LODIndex, bool bIncludeSelected);
 
-	/** Vary the foreground color of the filter button based on hover state */
-	FSlateColor GetFilterComboButtonForegroundColor() const;
-
 	/** Handle focusing the camera on the current selection */
 	void HandleFocusCamera();
 
 	/** Handle filtering the tree  */
-	ESkeletonTreeFilterResult HandleFilterSkeletonTreeItem(const TSharedPtr<class ISkeletonTreeItem>& InItem);
+	ESkeletonTreeFilterResult HandleFilterSkeletonTreeItem(const FSkeletonTreeFilterArgs& InArgs, const TSharedPtr<class ISkeletonTreeItem>& InItem);
 
 	// Called when bone tree queries reference skeleton
 	const FReferenceSkeleton& OnGetReferenceSkeleton() const
@@ -304,7 +339,7 @@ private:
 	FText FilterText;
 
 	/** Commands that are bound to delegates*/
-	TSharedPtr<FUICommandList> UICommandList;
+	TSharedPtr<FUICommandList_Pinnable> UICommandList;
 
 	/** Current type of bones to show */
 	EBoneFilter BoneFilter;
@@ -320,7 +355,10 @@ private:
 	/** Last Cached Preview Mesh Component LOD */
 	int32 LastCachedLODForPreviewMeshComponent;
 
-	/** Delegate for when a socket is selected by clicking its hit point */
+	/** Delegate for when an item is selected */
+	FOnSkeletonTreeSelectionChangedMulticast OnSelectionChangedMulticast;
+
+	DEPRECATED(4.17, "Please use OnSelectionChangedMulticast")
 	FOnObjectSelectedMulticast OnObjectSelectedMulticast;
 
 	/** Selection recursion guard flags */
@@ -340,8 +378,30 @@ private:
 	/** Compiled filter search terms. */
 	TSharedPtr<class FTextFilterExpressionEvaluator> TextFilterPtr;
 
-	/** Proxy object used to display and edit bone transforms in details panels */
+	/** Proxy object used to display and edit bone transforms in details panels. Note this is only kept for backwards compatibility (used with OnObjectSelectedMulticast) */
 	class UBoneProxy* BoneProxy;
+
+	/** Whether to allow operations that modify the mesh */
+	bool bAllowMeshOperations;
+
+	/** Whether to allow operations that modify the mesh */
+	bool bAllowSkeletonOperations;
+
+	/** Extenders for menus */
+	TSharedPtr<FExtender> Extenders;
+
+	/** Delegate that allows custom filtering text to be shown on the filter button */
+	FOnGetFilterText OnGetFilterText;
+
+	/** The mode that this skeleton tree is in */
+	ESkeletonTreeMode Mode;
+
+	/** Pinned commands panel */
+	TSharedPtr<IPinnedCommandList> PinnedCommands;
+
+	/** Context name used to persist settings */
+	FName ContextName;
 
 	friend struct FScopedSavedSelection;
 }; 
+PRAGMA_ENABLE_DEPRECATION_WARNINGS

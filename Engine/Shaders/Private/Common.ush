@@ -1,14 +1,12 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PlatformCommon.usf: Common shader code
 =============================================================================*/
-  
+
 #pragma once
 
 #include "/Engine/Public/Platform.ush"
-
-
 // These types are used for material translator generated code, or any functions the translated code can call
 #if PIXELSHADER
 	#define MaterialFloat half
@@ -37,7 +35,7 @@
 #else
 #define SceneColorLayout float3
 #define CastFloat4ToSceneColorLayout(x) ((x).rgb)
-#define SetSceneColorLayoutToFloat4(dest,value) dest.rgb = (value)
+#define SetSceneColorLayoutToFloat4(dest,value) dest.rgb = (value).rgb
 #endif
 
 #if (!COMPILER_GLSL_ES2 && !COMPILER_GLSL_ES3_1)
@@ -58,12 +56,6 @@
 
 #ifndef MOBILE_FORCE_DEPTH_TEXTURE_READS
 #define MOBILE_FORCE_DEPTH_TEXTURE_READS 0
-#endif
-
-
-#if FLEX_FLUID_SURFACE_FACTORY
-Texture2D FlexFluidSurfaceThicknessTexture;
-SamplerState FlexFluidSurfaceThicknessTextureSampler;
 #endif
 
 // Using SV_ClipDistance has overhead (15% slower base pass in triangle bound test scene on PS4) so projects have to opt-in
@@ -159,6 +151,10 @@ MaterialFloat4 TextureExternalSample(TextureExternal Tex, SamplerState Sampler, 
 	return Tex.Sample(Sampler, UV);
 #endif
 }
+MaterialFloat4 TextureExternalSampleLevel(Texture2D Tex, SamplerState Sampler, float2 UV, MaterialFloat Mip)
+{
+	return Tex.SampleLevel(Sampler, UV, Mip);
+}
 
 //converts an input 1d to 2d position. Useful for locating z frames that have been laid out in a 2d grid like a flipbook.
 float2 Tile1Dto2D(float xsize, float idx)
@@ -220,10 +216,8 @@ float4 PseudoVolumeTexture(Texture2D Tex, SamplerState TexSampler, float3 inPos,
 	}
 #endif
 
-void Bicubic2DCatmullRom( in float2 UV, in float2 Size, out float2 Sample[3], out float2 Weight[3] )
+void Bicubic2DCatmullRom( in float2 UV, in float2 Size, in float2 InvSize, out float2 Sample[3], out float2 Weight[3] )
 {
-	const float2 InvSize = 1.0 / Size;
- 
 	UV *= Size;
 
 	float2 tc = floor( UV - 0.5 ) + 0.5;
@@ -249,42 +243,77 @@ void Bicubic2DCatmullRom( in float2 UV, in float2 Size, out float2 Sample[3], ou
 	Sample[2] *= InvSize;
 }
 
-MaterialFloat4 Texture2DSampleBicubic( Texture2D Tex, SamplerState Sampler, float2 UV, float2 Size )
+#define BICUBIC_CATMULL_ROM_SAMPLES 5
+
+struct FCatmullRomSamples
 {
+	// Constant number of samples (BICUBIC_CATMULL_ROM_SAMPLES)
+	uint Count;
+	
+	// Constant sign of the UV direction from master UV sampling location.
+	int2 UVDir[BICUBIC_CATMULL_ROM_SAMPLES];
+
+	// Bilinear sampling UV coordinates of the samples
+	float2 UV[BICUBIC_CATMULL_ROM_SAMPLES];
+
+	// Weights of the samples
+	float Weight[BICUBIC_CATMULL_ROM_SAMPLES];
+
+	// Final multiplier (it is faster to multiply 3 RGB values than reweights the 5 weights)
+	float FinalMultiplier;
+};
+
+FCatmullRomSamples GetBicubic2DCatmullRomSamples(float2 UV, float2 Size, in float2 InvSize)
+{
+	FCatmullRomSamples Samples;
+	Samples.Count = BICUBIC_CATMULL_ROM_SAMPLES;
+	
 	float2 Weight[3];
 	float2 Sample[3];
-	Bicubic2DCatmullRom( UV, Size, Sample, Weight );
+	Bicubic2DCatmullRom( UV, Size, InvSize, Sample, Weight );
 
-	MaterialFloat4 OutColor;
-#if 0
-	OutColor  = Tex.SampleLevel( Sampler, float2( Sample[0].x, Sample[0].y ), 0 ) * Weight[0].x * Weight[0].y;
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[1].x, Sample[0].y ), 0 ) * Weight[1].x * Weight[0].y;
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[2].x, Sample[0].y ), 0 ) * Weight[2].x * Weight[0].y;
-
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[0].x, Sample[1].y ), 0 ) * Weight[0].x * Weight[1].y;
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[1].x, Sample[1].y ), 0 ) * Weight[1].x * Weight[1].y;
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[2].x, Sample[1].y ), 0 ) * Weight[2].x * Weight[1].y;
-
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[0].x, Sample[2].y ), 0 ) * Weight[0].x * Weight[2].y;
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[1].x, Sample[2].y ), 0 ) * Weight[1].x * Weight[2].y;
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[2].x, Sample[2].y ), 0 ) * Weight[2].x * Weight[2].y;
-#else
 	// Optimized by removing corner samples
-	OutColor  = Tex.SampleLevel( Sampler, float2( Sample[1].x, Sample[0].y ), 0 ) * Weight[1].x * Weight[0].y;
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[0].x, Sample[1].y ), 0 ) * Weight[0].x * Weight[1].y;
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[1].x, Sample[1].y ), 0 ) * Weight[1].x * Weight[1].y;
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[2].x, Sample[1].y ), 0 ) * Weight[2].x * Weight[1].y;
-	OutColor += Tex.SampleLevel( Sampler, float2( Sample[1].x, Sample[2].y ), 0 ) * Weight[1].x * Weight[2].y;
+	Samples.UV[0] = float2(Sample[1].x, Sample[0].y);
+	Samples.UV[1] = float2(Sample[0].x, Sample[1].y);
+	Samples.UV[2] = float2(Sample[1].x, Sample[1].y);
+	Samples.UV[3] = float2(Sample[2].x, Sample[1].y);
+	Samples.UV[4] = float2(Sample[1].x, Sample[2].y);
+	
+	Samples.Weight[0] = Weight[1].x * Weight[0].y;
+	Samples.Weight[1] = Weight[0].x * Weight[1].y;
+	Samples.Weight[2] = Weight[1].x * Weight[1].y;
+	Samples.Weight[3] = Weight[2].x * Weight[1].y;
+	Samples.Weight[4] = Weight[1].x * Weight[2].y;
+
+	Samples.UVDir[0] = int2(0, -1);
+	Samples.UVDir[1] = int2(-1, 0);
+	Samples.UVDir[2] = int2(0, 0);
+	Samples.UVDir[3] = int2(1, 0);
+	Samples.UVDir[4] = int2(0, 1);
 
 	// Reweight after removing the corners
 	float CornerWeights;
-	CornerWeights  = Weight[1].x * Weight[0].y;
-	CornerWeights += Weight[0].x * Weight[1].y;
-	CornerWeights += Weight[1].x * Weight[1].y;
-	CornerWeights += Weight[2].x * Weight[1].y;
-	CornerWeights += Weight[1].x * Weight[2].y;
-	OutColor /= CornerWeights;
-#endif
+	CornerWeights  = Samples.Weight[0];
+	CornerWeights += Samples.Weight[1];
+	CornerWeights += Samples.Weight[2];
+	CornerWeights += Samples.Weight[3];
+	CornerWeights += Samples.Weight[4];
+	Samples.FinalMultiplier = 1 / CornerWeights;
+
+	return Samples;
+}
+
+MaterialFloat4 Texture2DSampleBicubic( Texture2D Tex, SamplerState Sampler, float2 UV, float2 Size, in float2 InvSize )
+{
+	FCatmullRomSamples Samples = GetBicubic2DCatmullRomSamples(UV, Size, InvSize);
+
+	float4 OutColor = 0;
+	for (uint i = 0; i < Samples.Count; i++)
+	{
+		OutColor += Tex.SampleLevel(Sampler, Samples.UV[i], 0) * Samples.Weight[i];
+	}
+	OutColor *= Samples.FinalMultiplier;
+
 	return OutColor;
 }
 
@@ -1023,17 +1052,6 @@ float4 GetPerPixelLightAttenuation(float2 UV)
 	return Square(Texture2DSampleLevel(LightAttenuationTexture, LightAttenuationTextureSampler, UV, 0));
 }
 
-// Returns thickness provided for flex fluid surface rendering
-float CalcFlexFluidSurfaceThicknessForMaterialNode(float2 ScreenUV)
-{
-#if FLEX_FLUID_SURFACE_FACTORY
-	return Texture2DSampleLevel(FlexFluidSurfaceThicknessTexture, FlexFluidSurfaceThicknessTextureSampler, ScreenUV, 0).x;
-#else
-	return 0.0f;
-#endif
-}
-
-
 // also see ConvertToDeviceZ()
 // @param DeviceZ value that is stored in the depth buffer (Z/W)
 // @return SceneDepth (linear in world units, W)
@@ -1228,6 +1246,19 @@ float2 BufferUVToViewportUV(float2 BufferUV)
 	float2 PixelPos = BufferUV.xy * View.BufferSizeAndInvSize.xy - View.ViewRectMin.xy;
 	return PixelPos.xy * View.ViewSizeAndInvSize.zw;
 }
+
+float2 ViewportUVToBufferUV(float2 ViewportUV)
+{
+	float2 PixelPos = ViewportUV * View.ViewSizeAndInvSize.xy;
+	return (PixelPos + View.ViewRectMin.xy) * View.BufferSizeAndInvSize.zw;
+}
+
+// Maps standard viewport UV to screen position.
+float2 ViewportUVToScreenPos(float2 ViewportUV)
+{
+	return float2(2 * ViewportUV.x - 1, 1 - 2 * ViewportUV.y);
+}
+
 // ----------------------------
 
 /** 
@@ -1496,6 +1527,35 @@ bool RaySegmentHitSphere(float3 RayOrigin, float3 UnitRayDirection, float RayLen
 	return dot(CenterToRay, CenterToRay) <= Square(SphereRadius) && DistanceAlongRay > -SphereRadius && DistanceAlongRay - SphereRadius < RayLength;
 }
 
+/**
+ * Returns near intersection in x, far intersection in y, or both -1 if no intersection.
+ * RayDirection does not need to be unit length.
+ */
+float2 RayIntersectSphere(float3 RayOrigin, float3 RayDirection, float4 Sphere)
+{
+	float3 LocalPosition = RayOrigin - Sphere.xyz;
+	float LocalPositionSqr = dot(LocalPosition, LocalPosition);
+
+	float3 QuadraticCoef;
+	QuadraticCoef.x = dot(RayDirection, RayDirection);
+	QuadraticCoef.y = 2 * dot(RayDirection, LocalPosition);
+	QuadraticCoef.z = LocalPositionSqr - Sphere.w * Sphere.w;
+
+	float Discriminant = QuadraticCoef.y * QuadraticCoef.y - 4 * QuadraticCoef.x * QuadraticCoef.z;
+
+	float2 Intersections = -1;
+
+	// Only continue if the ray intersects the sphere
+	FLATTEN
+	if (Discriminant >= 0)
+	{
+		float SqrtDiscriminant = sqrt(Discriminant);
+		Intersections = (-QuadraticCoef.y + float2(-1, 1) * SqrtDiscriminant) / (2 * QuadraticCoef.x);
+	}
+
+	return Intersections;
+}
+
 /** Transforms a vector from tangent space to world space */
 MaterialFloat3 TransformTangentVectorToWorld(MaterialFloat3x3 TangentToWorld, MaterialFloat3 InTangentVector)
 {
@@ -1681,90 +1741,6 @@ uint ReverseBits32( uint bits )
 #endif
 }
 
-SamplerState GetBilinearWrappedSampler()
-{
-#if PS4_PROFILE
-	sce::Gnm::Sampler BuiltinSampler = GetDefaultBuiltinSampler();
-	BuiltinSampler.setWrapMode(sce::Gnm::kWrapModeWrap, sce::Gnm::kWrapModeWrap, sce::Gnm::kWrapModeWrap);
-	BuiltinSampler.setXyFilterMode(sce::Gnm::kFilterModeBilinear, sce::Gnm::kFilterModeBilinear);
-	BuiltinSampler.setZFilterMode(sce::Gnm::kZFilterModeLinear);
-	BuiltinSampler.setMipFilterMode(sce::Gnm::kMipFilterModePoint);
-	return SamplerState(BuiltinSampler);
-#else
-	return BuiltinSamplers.Bilinear;
-#endif
-}
-
-SamplerState GetBilinearClampedSampler()
-{
-#if PS4_PROFILE
-	sce::Gnm::Sampler BuiltinSampler = GetDefaultBuiltinSampler();
-	BuiltinSampler.setXyFilterMode(sce::Gnm::kFilterModeBilinear, sce::Gnm::kFilterModeBilinear);
-	BuiltinSampler.setMipFilterMode(sce::Gnm::kMipFilterModePoint);
-	BuiltinSampler.setZFilterMode(sce::Gnm::kZFilterModeLinear);
-	BuiltinSampler.setWrapMode(sce::Gnm::kWrapModeClampLastTexel, sce::Gnm::kWrapModeClampLastTexel, sce::Gnm::kWrapModeClampLastTexel);
-	return SamplerState(BuiltinSampler);
-#else
-	return BuiltinSamplers.BilinearClamped;
-#endif
-}
-
-SamplerState GetPointWrappedSampler()
-{
-#if PS4_PROFILE
-	sce::Gnm::Sampler BuiltinSampler = GetDefaultBuiltinSampler();
-	BuiltinSampler.setXyFilterMode(sce::Gnm::kFilterModePoint, sce::Gnm::kFilterModePoint);
-	BuiltinSampler.setMipFilterMode(sce::Gnm::kMipFilterModePoint);
-	BuiltinSampler.setZFilterMode(sce::Gnm::kZFilterModePoint);
-	BuiltinSampler.setWrapMode(sce::Gnm::kWrapModeWrap, sce::Gnm::kWrapModeWrap, sce::Gnm::kWrapModeWrap);
-	return SamplerState(BuiltinSampler);
-#else
-	return BuiltinSamplers.Point;
-#endif
-}
-
-SamplerState GetPointClampedSampler()
-{
-#if PS4_PROFILE
-	sce::Gnm::Sampler BuiltinSampler = GetDefaultBuiltinSampler();
-	BuiltinSampler.setXyFilterMode(sce::Gnm::kFilterModePoint, sce::Gnm::kFilterModePoint);
-	BuiltinSampler.setMipFilterMode(sce::Gnm::kMipFilterModePoint);
-	BuiltinSampler.setZFilterMode(sce::Gnm::kZFilterModePoint);
-	BuiltinSampler.setWrapMode(sce::Gnm::kWrapModeClampLastTexel, sce::Gnm::kWrapModeClampLastTexel, sce::Gnm::kWrapModeClampLastTexel);
-	return SamplerState(BuiltinSampler);
-#else
-	return BuiltinSamplers.PointClamped;
-#endif
-}
-
-SamplerState GetTrilinearWrappedSampler()
-{
-#if PS4_PROFILE
-	sce::Gnm::Sampler BuiltinSampler = GetDefaultBuiltinSampler();
-	BuiltinSampler.setXyFilterMode(sce::Gnm::kFilterModeBilinear, sce::Gnm::kFilterModeBilinear);
-	BuiltinSampler.setMipFilterMode(sce::Gnm::kMipFilterModeLinear);
-	BuiltinSampler.setZFilterMode(sce::Gnm::kZFilterModeLinear);
-	BuiltinSampler.setWrapMode(sce::Gnm::kWrapModeWrap, sce::Gnm::kWrapModeWrap, sce::Gnm::kWrapModeWrap);
-	return SamplerState(BuiltinSampler);
-#else
-	return BuiltinSamplers.Trilinear;
-#endif
-}
-
-SamplerState GetTrilinearClampedSampler()
-{
-#if PS4_PROFILE
-	sce::Gnm::Sampler BuiltinSampler = GetDefaultBuiltinSampler();
-	BuiltinSampler.setXyFilterMode(sce::Gnm::kFilterModeBilinear, sce::Gnm::kFilterModeBilinear);
-	BuiltinSampler.setMipFilterMode(sce::Gnm::kMipFilterModeLinear);
-	BuiltinSampler.setZFilterMode(sce::Gnm::kZFilterModeLinear);
-	BuiltinSampler.setWrapMode(sce::Gnm::kWrapModeClampLastTexel, sce::Gnm::kWrapModeClampLastTexel, sce::Gnm::kWrapModeClampLastTexel);
-	return SamplerState(BuiltinSampler);
-#else
-	return BuiltinSamplers.TrilinearClamped;
-#endif
-}
-
 // see PixelShaderOutputCommon
 struct FPixelShaderIn
 {
@@ -1789,3 +1765,26 @@ struct FPixelShaderOut
 	// Pixel Shader OutDepth
 	float Depth;
 };
+
+
+// ---------------------------------------------------- Global samplers.
+
+// If GetGlobalSampler() was not implemented in Platform.ush, provide a default one from View uniform buffer.
+#if !defined(GetGlobalSampler) && SUPPORTS_INDEPENDENT_SAMPLERS
+
+// Implements UE4's Get global sampler.
+// Filter={Point,Bilinear,Trilinear}
+// WrapMode={Wrapped,Clamped}
+
+#define GetGlobalSampler(Filter,WrapMode) \
+	View.Shared##Filter##WrapMode##Sampler
+
+#endif // GetGlobalSampler
+
+// Shortcuts for global samplers.
+#define GlobalPointClampedSampler GetGlobalSampler(Point, Clamped)
+#define GlobalPointWrappedSampler GetGlobalSampler(Point, Wrapped)
+#define GlobalBilinearClampedSampler GetGlobalSampler(Bilinear, Clamped)
+#define GlobalBilinearWrappedSampler GetGlobalSampler(Bilinear, Wrapped)
+#define GlobalTrilinearClampedSampler GetGlobalSampler(Trilinear, Clamped)
+#define GlobalTrilinearWrappedSampler GetGlobalSampler(Trilinear, Wrapped)

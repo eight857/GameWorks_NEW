@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DetailItemNode.h"
 #include "DetailCategoryGroupNode.h"
@@ -81,6 +81,30 @@ FDetailItemNode::~FDetailItemNode()
 	}
 }
 
+EDetailNodeType FDetailItemNode::GetNodeType() const
+{
+	if (Customization.HasPropertyNode() && Customization.GetPropertyNode()->AsCategoryNode())
+	{
+		return EDetailNodeType::Category;
+	}
+	else
+	{
+		return EDetailNodeType::Item;
+	}
+}
+
+TSharedPtr<IPropertyHandle> FDetailItemNode::CreatePropertyHandle() const
+{
+	if (Customization.HasPropertyNode())
+	{
+		return ParentCategory.Pin()->GetParentLayoutImpl().GetPropertyHandle(Customization.GetPropertyNode());
+	}
+	else
+	{
+		return nullptr;
+	}
+}
+
 void FDetailItemNode::InitPropertyEditor()
 {
 	UProperty* NodeProperty = Customization.GetPropertyNode()->GetProperty();
@@ -160,7 +184,7 @@ void FDetailItemNode::SetExpansionState(bool bWantsExpanded, bool bSaveState)
 	OnItemExpansionChanged(bIsExpanded, bSaveState);
 }
 
-TSharedRef< ITableRow > FDetailItemNode::GenerateNodeWidget( const TSharedRef<STableViewBase>& OwnerTable, const FDetailColumnSizeData& ColumnSizeData, const TSharedRef<IPropertyUtilities>& PropertyUtilities, bool bAllowFavoriteSystem)
+TSharedRef< ITableRow > FDetailItemNode::GenerateWidgetForTableView( const TSharedRef<STableViewBase>& OwnerTable, const FDetailColumnSizeData& ColumnSizeData, bool bAllowFavoriteSystem)
 {
 	FTagMetaData TagMeta(TEXT("DetailRowItem"));
 	if (ParentCategory.IsValid())
@@ -192,11 +216,82 @@ TSharedRef< ITableRow > FDetailItemNode::GenerateNodeWidget( const TSharedRef<ST
 	}
 }
 
-void FDetailItemNode::GetChildren( FDetailNodeList& OutChildren )
+bool FDetailItemNode::GenerateStandaloneWidget(FDetailWidgetRow& OutRow) const
+{
+	bool bResult = false;
+
+	if (Customization.HasPropertyNode() && Customization.GetPropertyNode()->AsCategoryNode())
+	{
+		const bool bIsInnerCategory = true;
+
+		OutRow.NameContent()
+		[
+			SNew(STextBlock)
+			.Text(Customization.GetPropertyNode()->GetDisplayName())
+			.Font(FEditorStyle::GetFontStyle(bIsInnerCategory ? "PropertyWindow.NormalFont" : "DetailsView.CategoryFontStyle"))
+			.ShadowOffset(bIsInnerCategory ? FVector2D::ZeroVector : FVector2D(1.0f, 1.0f))
+		];
+
+		bResult = true;
+	}
+	else if(Customization.IsValidCustomization())
+	{
+		FDetailWidgetRow Row = Customization.GetWidgetRow();
+
+		// We make some slight modifications to the row here before giving it to OutRow
+		if (HasMultiColumnWidget())
+		{
+			TSharedPtr<SWidget> NameWidget;
+			TSharedPtr<SWidget> ValueWidget;
+
+			NameWidget = Row.NameWidget.Widget;
+			if (Row.IsEnabledAttr.IsBound())
+			{
+				NameWidget->SetEnabled(Row.IsEnabledAttr);
+			}
+
+			ValueWidget =
+				SNew(SConstrainedBox)
+				.MinWidth(Row.ValueWidget.MinWidth)
+				.MaxWidth(Row.ValueWidget.MaxWidth)
+				[
+					Row.ValueWidget.Widget
+				];
+
+			if (Row.IsEnabledAttr.IsBound())
+			{
+				ValueWidget->SetEnabled(Row.IsEnabledAttr);
+			}
+
+			OutRow.NameContent()
+			[
+				NameWidget.ToSharedRef()
+			];
+
+			OutRow.ValueContent()
+			[
+				ValueWidget.ToSharedRef()
+			];
+		}
+		else
+		{
+			OutRow.WholeRowContent()
+			[
+				Row.WholeRowWidget.Widget
+			];
+		}
+
+		bResult = true;
+	}
+
+	return bResult;
+}
+
+void FDetailItemNode::GetChildren(FDetailNodeList& OutChildren)
 {
 	for( int32 ChildIndex = 0; ChildIndex < Children.Num(); ++ChildIndex )
 	{
-		TSharedRef<IDetailTreeNode>& Child = Children[ChildIndex];
+		TSharedRef<FDetailTreeNode>& Child = Children[ChildIndex];
 
 		ENodeVisibility ChildVisibility = Child->GetVisibility();
 
@@ -420,7 +515,7 @@ FName FDetailItemNode::GetNodeName() const
 FPropertyPath FDetailItemNode::GetPropertyPath() const
 {
 	FPropertyPath Ret;
-	auto PropertyNode = Customization.GetPropertyNode();
+	TSharedPtr<FPropertyNode> PropertyNode = Customization.GetPropertyNode();
 	if( PropertyNode.IsValid() )
 	{
 		Ret = *FPropertyNode::CreatePropertyPath( PropertyNode.ToSharedRef() );
@@ -428,7 +523,21 @@ FPropertyPath FDetailItemNode::GetPropertyPath() const
 	return Ret;
 }
 
-void FDetailItemNode::FilterNode( const FDetailFilter& InFilter )
+TSharedPtr<FPropertyNode> FDetailItemNode::GetPropertyNode() const
+{
+	return Customization.GetPropertyNode();
+}
+
+TSharedPtr<IDetailPropertyRow> FDetailItemNode::GetRow() const
+{
+	if (Customization.IsValidCustomization() && Customization.PropertyRow.IsValid())
+	{
+		return Customization.PropertyRow;
+	}
+	return nullptr;
+}
+
+void FDetailItemNode::FilterNode(const FDetailFilter& InFilter)
 {
 	bShouldBeVisibleDueToFiltering = PassesAllFilters( Customization, InFilter, ParentCategory.Pin()->GetDisplayName().ToString() );
 
@@ -437,7 +546,7 @@ void FDetailItemNode::FilterNode( const FDetailFilter& InFilter )
 	// Filter each child
 	for( int32 ChildIndex = 0; ChildIndex < Children.Num(); ++ChildIndex )
 	{
-		TSharedRef<IDetailTreeNode>& Child = Children[ChildIndex];
+		TSharedRef<FDetailTreeNode>& Child = Children[ChildIndex];
 
 		// If the parent is visible, we pass an empty filter to all children so that they resume their
 		// default expansion.  This is a lot safer method, otherwise customized details panels tend to be

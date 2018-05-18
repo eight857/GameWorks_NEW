@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -97,7 +97,12 @@ public:
 
 public:
 
-	// ISequencerTrackEditor interface
+	//~ ISequencerTrackEditor interface
+
+    virtual bool SupportsSequence(UMovieSceneSequence* InSequence) const override
+    {
+        return true;
+    }
 
 	virtual bool SupportsType( TSubclassOf<UMovieSceneTrack> Type ) const override
 	{

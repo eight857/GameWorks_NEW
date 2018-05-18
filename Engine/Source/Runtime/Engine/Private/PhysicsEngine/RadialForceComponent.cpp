@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PhysicsEngine/RadialForceComponent.h"
 #include "UObject/ConstructorHelpers.h"
@@ -9,7 +9,7 @@
 #include "Engine/Texture2D.h"
 #include "GameFramework/MovementComponent.h"
 #include "PhysicsEngine/RadialForceActor.h"
-#include "Components/DestructibleComponent.h"
+#include "DestructibleInterface.h"
 
 #if WITH_FLEX
 #include "PhysicsEngine/FlexActor.h"
@@ -217,9 +217,9 @@ void URadialForceComponent::FireImpulse()
 	{
 		if(DestructibleDamage > SMALL_NUMBER)
 		{
-			if(UDestructibleComponent* DestructibleComponent = Cast<UDestructibleComponent>(PrimitiveComponent))
+			if(IDestructibleInterface* DestructibleInstance = Cast<IDestructibleInterface>(PrimitiveComponent))
 			{
-				DestructibleComponent->ApplyRadiusDamage(DestructibleDamage, Origin, Radius, ImpulseStrength, Falloff == RIF_Constant);
+				DestructibleInstance->ApplyRadiusDamage(DestructibleDamage, Origin, Radius, ImpulseStrength, Falloff == RIF_Constant);
 			}
 		}
 

@@ -1,10 +1,12 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/Class.h"
 #include "UObject/PropertyPortFlags.h"
 #include "UObject/UnrealType.h"
+#include "UObject/UObjectThreadContext.h"
+#include "Algo/Find.h"
 
 /*-----------------------------------------------------------------------------
 	UByteProperty.
@@ -44,7 +46,7 @@ void UByteProperty::SerializeItem( FArchive& Ar, void* Value, void const* Defaul
 
 		// There's no guarantee EnumValueName is still present in Enum, in which case Value will be set to the enum's max value.
 		// On save, it will then be serialized as NAME_None.
-		int32 EnumIndex = Enum->GetIndexByName(EnumValueName, true);
+		int32 EnumIndex = Enum->GetIndexByName(EnumValueName, EGetByNameFlags::ErrorIfNotFound);
 		if (EnumIndex == INDEX_NONE)
 		{
 			*(uint8*)Value = Enum->GetMaxEnumValue();
@@ -190,7 +192,7 @@ bool UByteProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 		else
 		{
 			// attempt to find the old enum and get the byte value from the serialized enum name
-			PreviousValue = ReadEnumAsUint8(Ar, DefaultsStruct, Tag);
+			PreviousValue = (uint8)ReadEnumAsInt64(Ar, DefaultsStruct, Tag);
 		}
 
 		// now copy the value into the object's address space
@@ -200,7 +202,7 @@ bool UByteProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 	{
 		// an enum property became a byte
 		// attempt to find the old enum and get the byte value from the serialized enum name
-		uint8 PreviousValue = ReadEnumAsUint8(Ar, DefaultsStruct, Tag);
+		uint8 PreviousValue = (uint8)ReadEnumAsInt64(Ar, DefaultsStruct, Tag);
 
 		// now copy the value into the object's address space
 		SetPropertyValue_InContainer(Data, PreviousValue, Tag.ArrayIndex);
@@ -213,7 +215,7 @@ bool UByteProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 		}
 		else
 		{
-			ConvertFromInt<int8>(Ar, Data, Tag);
+			ConvertFromArithmeticValue<int8>(Ar, Data, Tag);
 		}
 	}
 	else if (Tag.Type == NAME_Int16Property)
@@ -224,7 +226,7 @@ bool UByteProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 		}
 		else
 		{
-			ConvertFromInt<int16>(Ar, Data, Tag);
+			ConvertFromArithmeticValue<int16>(Ar, Data, Tag);
 		}
 	}
 	else if (Tag.Type == NAME_IntProperty)
@@ -235,7 +237,7 @@ bool UByteProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 		}
 		else
 		{
-			ConvertFromInt<int32>(Ar, Data, Tag);
+			ConvertFromArithmeticValue<int32>(Ar, Data, Tag);
 		}
 	}
 	else if (Tag.Type == NAME_Int64Property)
@@ -246,7 +248,7 @@ bool UByteProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 		}
 		else
 		{
-			ConvertFromInt<int64>(Ar, Data, Tag);
+			ConvertFromArithmeticValue<int64>(Ar, Data, Tag);
 		}
 	}
 	else if (Tag.Type == NAME_UInt16Property)
@@ -257,7 +259,7 @@ bool UByteProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 		}
 		else
 		{
-			ConvertFromInt<uint16>(Ar, Data, Tag);
+			ConvertFromArithmeticValue<uint16>(Ar, Data, Tag);
 		}
 	}
 	else if (Tag.Type == NAME_UInt32Property)
@@ -268,7 +270,7 @@ bool UByteProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 		}
 		else
 		{
-			ConvertFromInt<uint32>(Ar, Data, Tag);
+			ConvertFromArithmeticValue<uint32>(Ar, Data, Tag);
 		}
 	}
 	else if (Tag.Type == NAME_UInt64Property)
@@ -279,7 +281,7 @@ bool UByteProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 		}
 		else
 		{
-			ConvertFromInt<uint64>(Ar, Data, Tag);
+			ConvertFromArithmeticValue<uint64>(Ar, Data, Tag);
 		}
 	}
 	else
@@ -354,15 +356,27 @@ const TCHAR* UByteProperty::ImportText_Internal( const TCHAR* InBuffer, void* Da
 	if( Enum && (PortFlags & PPF_ConsoleVariable) == 0 )
 	{
 		FString Temp;
-		const TCHAR* Buffer = UPropertyHelpers::ReadToken( InBuffer, Temp, true );
-		if( Buffer != NULL )
+		if (const TCHAR* Buffer = UPropertyHelpers::ReadToken(InBuffer, Temp, true))
 		{
-			int32 EnumIndex = Enum->GetIndexByName(*Temp, true);
+			int32 EnumIndex = Enum->GetIndexByName(*Temp);
+			if (EnumIndex == INDEX_NONE && (Temp.IsNumeric() && !Algo::Find(Temp, TEXT('.'))))
+			{
+				int64 EnumValue = INDEX_NONE;
+				Lex::FromString(EnumValue, *Temp);
+				EnumIndex = Enum->GetIndexByValue(EnumValue);
+			}
 			if (EnumIndex != INDEX_NONE)
 			{
 				*(uint8*)Data = Enum->GetValueByIndex(EnumIndex);
 				return Buffer;
 			}
+
+			// Enum could not be created from value. This indicates a bad value so
+			// return null so that the caller of ImportText can generate a more meaningful
+			// warning/error
+			FUObjectThreadContext& ThreadContext = FUObjectThreadContext::Get();
+			UE_LOG(LogClass, Warning, TEXT("In asset '%s', there is an enum property of type '%s' with an invalid value of '%s'"), *GetPathNameSafe(ThreadContext.SerializedObject), *Enum->GetName(), *Temp);
+			return nullptr;
 		}
 	}
 	
@@ -370,8 +384,7 @@ const TCHAR* UByteProperty::ImportText_Internal( const TCHAR* InBuffer, void* Da
 	if (!Enum)
 	{
 		FString Temp;
-		const TCHAR* Buffer = UPropertyHelpers::ReadToken(InBuffer, Temp);
-		if (Buffer)
+		if (const TCHAR* Buffer = UPropertyHelpers::ReadToken(InBuffer, Temp))
 		{
 			if (Temp == TEXT("True") || Temp == *(GTrue.ToString()))
 			{

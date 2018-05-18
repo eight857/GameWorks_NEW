@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -109,7 +109,7 @@ public:
 class UUMGSequencePlayer;
 
 /** Describes playback modes for UMG sequences. */
-UENUM()
+UENUM(BlueprintType)
 namespace EUMGSequencePlayMode
 {
 	enum Type
@@ -118,7 +118,7 @@ namespace EUMGSequencePlayMode
 		Forward,
 		/** Animation plays and loops from the end to the beginning. */
 		Reverse,
-		/** Animation plays from the begging to the end and then from the end to beginning. */
+		/** Animation plays from the beginning to the end and then from the end to the beginning. */
 		PingPong,
 	};
 }
@@ -289,8 +289,7 @@ public:
 	 * Gets the player controller associated with this UI.
 	 * @return The player controller that owns the UI.
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintCosmetic, Category="Player")
-	class APlayerController* GetOwningPlayer() const;
+	class APlayerController* GetOwningPlayer() const override;
 
 	/**
 	 * Sets the local player associated with this UI via PlayerController reference.
@@ -305,6 +304,23 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintCosmetic, Category="Player")
 	class APawn* GetOwningPlayerPawn() const;
+
+	/**
+	 * Get the owning player's PlayerState.
+	 *
+	 * @return const APlayerState*
+	 */
+	template <class TPlayerState = APlayerState>
+	TPlayerState* GetOwningPlayerState(bool bChecked = false) const
+	{
+		if (auto Controller = GetOwningPlayer())
+		{
+			return !bChecked ? Cast<TPlayerState>(Controller->PlayerState) :
+			                   CastChecked<TPlayerState>(Controller->PlayerState, ECastCheckedType::NullAllowed);
+		}
+
+		return nullptr;
+	}
 
 	/**
 	 * Called by both the game and the editor.  Allows users to run initial setup for their widgets to better preview
@@ -649,6 +665,18 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category="Touch Input")
 	void OnMouseCaptureLost();
 
+	/**
+	 * Cancels any pending Delays or timer callbacks for this widget.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Delay")
+	void CancelLatentActions();
+
+	/**
+	* Cancels any pending Delays or timer callbacks for this widget, and stops all active animations on the widget.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Delay")
+	void StopAnimationsAndLatentActions();
+
 public:
 
 	/**
@@ -723,8 +751,16 @@ public:
 	 * 
 	 * @param The name of the animation to stop
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintCosmetic, Category="User Interface|Animation")
+	UFUNCTION(BlueprintCallable, Category="User Interface|Animation")
 	void StopAnimation(const UWidgetAnimation* InAnimation);
+
+	/**
+	 * Stop All actively running animations.
+	 * 
+	 * @param The name of the animation to stop
+	 */
+	UFUNCTION(BlueprintCallable, Category="User Interface|Animation")
+	void StopAllAnimations();
 
 	/**
 	 * Pauses an already running animation in this widget
@@ -863,13 +899,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Appearance")
 	FMargin Padding;
 
-	UPROPERTY()
-	bool bSupportsKeyboardFocus_DEPRECATED;
-
-	/** Setting this flag to true, allows this widget to accept focus when clicked, or when navigated to. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Interaction")
-	bool bIsFocusable;
-
 	/** All the sequence players currently playing */
 	UPROPERTY(Transient)
 	TArray<UUMGSequencePlayer*> ActiveSequencePlayers;
@@ -877,12 +906,6 @@ public:
 	/** List of sequence players to cache and clean up when safe */
 	UPROPERTY(Transient)
 	TArray<UUMGSequencePlayer*> StoppedSequencePlayers;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	bool bStopAction;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	int32 Priority;
 
 private:
 	/** Stores the widgets being assigned to named slots */
@@ -918,18 +941,34 @@ public:
 
 #endif
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	int32 Priority;
+
+	UPROPERTY()
+	uint8 bSupportsKeyboardFocus_DEPRECATED:1;
+
+	/** Setting this flag to true, allows this widget to accept focus when clicked, or when navigated to. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Interaction")
+	uint8 bIsFocusable : 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	uint8 bStopAction : 1;
+
 	/** If a widget doesn't ever need to tick the blueprint, setting this to false is an optimization. */
 	UPROPERTY()
-	uint32 bCanEverTick : 1;
+	uint8 bCanEverTick : 1;
 
 	/** If a widget doesn't ever need to do custom painting in the blueprint, setting this to false is an optimization. */
 	UPROPERTY()
-	uint32 bCanEverPaint : 1;
+	uint8 bCanEverPaint : 1;
 
 protected:
 
 	/** Has this widget been initialized by its class yet? */
-	uint32 bInitialized : 1;
+	uint8 bInitialized : 1;
+
+	/** If we're stopping all animations, don't allow new animations to be created as side-effects. */
+	uint8 bStoppingAllAnimations : 1;
 
 public:
 	/**
@@ -937,7 +976,7 @@ public:
 	 * initialization logic for widgets, because these widgets have already been initialized.
 	 */
 	UPROPERTY()
-	uint32 bCookedWidgetTree : 1;
+	uint8 bCookedWidgetTree : 1;
 
 protected:
 
@@ -967,6 +1006,7 @@ protected:
 
 	virtual bool NativeIsInteractable() const;
 	virtual bool NativeSupportsKeyboardFocus() const;
+	virtual bool NativeSupportsCustomNavigation() const { return false; }
 
 	virtual FReply NativeOnFocusReceived( const FGeometry& InGeometry, const FFocusEvent& InFocusEvent );
 	virtual void NativeOnFocusLost( const FFocusEvent& InFocusEvent );
@@ -999,6 +1039,7 @@ protected:
 	virtual FReply NativeOnTouchEnded( const FGeometry& InGeometry, const FPointerEvent& InGestureEvent );
 	virtual FReply NativeOnMotionDetected( const FGeometry& InGeometry, const FMotionEvent& InMotionEvent );
 	virtual FCursorReply NativeOnCursorQuery( const FGeometry& InGeometry, const FPointerEvent& InCursorEvent );
+	virtual FNavigationReply NativeOnNavigation(const FGeometry& InGeometry, const FNavigationEvent& InNavigationEvent);
 	virtual void NativeOnMouseCaptureLost();
 
 protected:

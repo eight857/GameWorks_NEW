@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DiffManifestMode.h"
 #include "Interfaces/IBuildPatchServicesModule.h"
@@ -105,7 +105,7 @@ private:
 		TagCommandLine.ParseIntoArray(TagArray, TEXT(","), false);
 		for (FString& Tag : TagArray)
 		{
-			Tag = Tag.Trim().TrimTrailing();
+			Tag.TrimStartAndEndInline();
 		}
 		if (TagArray.Num() == 0)
 		{

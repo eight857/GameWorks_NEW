@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "InternationalizationSettingsModelDetails.h"
 #include "Misc/Paths.h"
@@ -218,17 +218,9 @@ namespace
 				}
 			};
 
-			const auto& IsCulturePickableLambda = [=](FCulturePtr Culture) -> bool
+			const auto& IsCulturePickableLambda = [](FCulturePtr Culture) -> bool
 			{
-				TArray<FString> CultureNames = Culture->GetPrioritizedParentCultureNames();
-				for (const FString& CultureName : CultureNames)
-				{
-					if (LocalizedCulturesFlyweight->LocalizedCulturesForEditor.Contains(Culture))
-					{
-						return true;
-					}
-				}
-				return false;
+				return true;
 			};
 
 			const auto& CulturePicker = SNew(SCulturePicker)
@@ -246,9 +238,9 @@ namespace
 		}
 	};
 
-	class SNativeGameLanguageComboButton : public SCompoundWidget
+	class SPreviewGameLanguageComboButton : public SCompoundWidget
 	{
-		SLATE_BEGIN_ARGS(SNativeGameLanguageComboButton){}
+		SLATE_BEGIN_ARGS(SPreviewGameLanguageComboButton){}
 		SLATE_END_ARGS()
 
 	public:
@@ -259,53 +251,53 @@ namespace
 
 			ChildSlot
 				[
-					SAssignNew(NativeGameCultureComboButton, SComboButton)
+					SAssignNew(PreviewGameCultureComboButton, SComboButton)
 					.ButtonContent()
 					[
 						SNew(STextBlock)
-						.Text(this, &SNativeGameLanguageComboButton::GetContentText)
+						.Text(this, &SPreviewGameLanguageComboButton::GetContentText)
 					]
 				];
-			NativeGameCultureComboButton->SetOnGetMenuContent(FOnGetContent::CreateSP(this, &SNativeGameLanguageComboButton::GetMenuContent));
+			PreviewGameCultureComboButton->SetOnGetMenuContent(FOnGetContent::CreateSP(this, &SPreviewGameLanguageComboButton::GetMenuContent));
 		}
 
 	private:
 		TWeakObjectPtr<UInternationalizationSettingsModel> SettingsModel;
 		TSharedPtr<FLocalizedCulturesFlyweight> LocalizedCulturesFlyweight;
-		TSharedPtr<SComboButton> NativeGameCultureComboButton;
+		TSharedPtr<SComboButton> PreviewGameCultureComboButton;
 
 	private:
 		FText GetContentText() const
 		{
 			bool IsConfigured = false;
-			FString NativeGameLanguage;
+			FString PreviewGameLanguage;
 			if (SettingsModel.IsValid())
 			{
-				IsConfigured = SettingsModel->GetNativeGameLanguage(NativeGameLanguage);
+				IsConfigured = SettingsModel->GetPreviewGameLanguage(PreviewGameLanguage);
 			}
 			FCulturePtr Culture;
-			if (!NativeGameLanguage.IsEmpty())
+			if (!PreviewGameLanguage.IsEmpty())
 			{
 				FInternationalization& I18N = FInternationalization::Get();
-				Culture = I18N.GetCulture(NativeGameLanguage);
+				Culture = I18N.GetCulture(PreviewGameLanguage);
 			}
 			return Culture.IsValid() ? FText::FromString(Culture->GetDisplayName()) : LOCTEXT("None", "None");
 		}
 
 		TSharedRef<SWidget> GetMenuContent()
 		{
-			FCulturePtr NativeGameCulture;
+			FCulturePtr PreviewGameCulture;
 			{
 				bool IsConfigured = false;
-				FString NativeGameLanguage;
+				FString PreviewGameLanguage;
 				if (SettingsModel.IsValid())
 				{
-					IsConfigured = SettingsModel->GetNativeGameLanguage(NativeGameLanguage);
+					IsConfigured = SettingsModel->GetPreviewGameLanguage(PreviewGameLanguage);
 				}
-				if (!NativeGameLanguage.IsEmpty())
+				if (!PreviewGameLanguage.IsEmpty())
 				{
 					FInternationalization& I18N = FInternationalization::Get();
-					NativeGameCulture = I18N.GetCulture(NativeGameLanguage);
+					PreviewGameCulture = I18N.GetCulture(PreviewGameLanguage);
 				}
 			}
 
@@ -313,12 +305,17 @@ namespace
 			{
 				if (SettingsModel.IsValid())
 				{
-					SettingsModel->SetNativeGameLanguage(SelectedCulture.IsValid() ? SelectedCulture->GetName() : TEXT(""));
-					FTextLocalizationManager::Get().RefreshResources();
+					SettingsModel->SetPreviewGameLanguage(SelectedCulture.IsValid() ? SelectedCulture->GetName() : TEXT(""));
+
+					if (FTextLocalizationManager::Get().ShouldGameLocalizationPreviewAutoEnable() || FTextLocalizationManager::Get().IsGameLocalizationPreviewEnabled())
+					{
+						// Enable the preview again for the newly set culture
+						FTextLocalizationManager::Get().EnableGameLocalizationPreview();
+					}
 				}
-				if (NativeGameCultureComboButton.IsValid())
+				if (PreviewGameCultureComboButton.IsValid())
 				{
-					NativeGameCultureComboButton->SetIsOpen(false);
+					PreviewGameCultureComboButton->SetIsOpen(false);
 				}
 			};
 			const auto& CulturePickerIsPickableLambda = [=](FCulturePtr Culture) -> bool
@@ -338,7 +335,7 @@ namespace
 				.WidthOverride(300.0f)
 				[
 					SNew(SCulturePicker)
-					.InitialSelection(NativeGameCulture)
+					.InitialSelection(PreviewGameCulture)
 					.OnSelectionChanged_Lambda(CulturePickerSelectLambda)
 					.IsCulturePickable_Lambda(CulturePickerIsPickableLambda)
 					.CanSelectNone(true)
@@ -393,31 +390,31 @@ void FInternationalizationSettingsModelDetails::CustomizeDetails(IDetailLayoutBu
 			SNew(SEditorLocaleComboButton, SettingsModel, LocalizedCulturesFlyweight)
 		];
 
-	// Native Game Language Setting
-	const FText NativeGameLanguageSettingDisplayName = LOCTEXT("NativeGameLanguageSettingDisplayName", "Native Game Language");
-	const FText NativeGameLanguageSettingToolTip = LOCTEXT("NativeGameLanguageSettingToolTip", "The language that game content is authored in and localized from.\nWARNING: If this is not set to the culture the game is initially made in, modifying and saving assets may mix localized data in as native data!");
-	DetailCategoryBuilder.AddCustomRow(NativeGameLanguageSettingDisplayName)
+	// Preview Game Language Setting
+	const FText PreviewGameLanguageSettingDisplayName = LOCTEXT("PreviewGameLanguageSettingDisplayName", "Preview Game Language");
+	const FText PreviewGameLanguageSettingToolTip = LOCTEXT("PreviewGameLanguageSettingToolTip", "The language to preview game localization in");
+	DetailCategoryBuilder.AddCustomRow(PreviewGameLanguageSettingDisplayName)
 		.NameContent()
 		[
 			SNew(STextBlock)
-			.Text(NativeGameLanguageSettingDisplayName)
-			.ToolTipText(NativeGameLanguageSettingToolTip)
+			.Text(PreviewGameLanguageSettingDisplayName)
+			.ToolTipText(PreviewGameLanguageSettingToolTip)
 			.Font(DetailLayout.GetDetailFont())
 		]
 		.ValueContent()
 		[
-			SNew(SNativeGameLanguageComboButton, SettingsModel, LocalizedCulturesFlyweight)
+			SNew(SPreviewGameLanguageComboButton, SettingsModel, LocalizedCulturesFlyweight)
 		];
 
-	// Localized Field Names
-	const FText FieldNamesSettingDisplayName = LOCTEXT("EditorFieldNamesLabel", "Use Localized Field Names");
-	const FText FieldNamesSettingToolTip = LOCTEXT("EditorFieldNamesTooltip", "Toggle showing localized field names. NOTE: Requires restart to take effect.");
-	DetailCategoryBuilder.AddCustomRow(FieldNamesSettingDisplayName)
+	// Localized Numeric Input
+	const FText NumericInputSettingDisplayName = LOCTEXT("LocalizedNumericInputLabel", "Use Localized Numeric Input");
+	const FText NumericInputSettingToolTip = LOCTEXT("LocalizedNumericInputTooltip", "Allow numbers to be displayed and modified in the format for the current locale, rather than in the language agnostic format.");
+	DetailCategoryBuilder.AddCustomRow(NumericInputSettingDisplayName)
 		.NameContent()
 		[
 			SNew(STextBlock)
-			.Text(FieldNamesSettingDisplayName)
-			.ToolTipText(FieldNamesSettingToolTip)
+			.Text(NumericInputSettingDisplayName)
+			.ToolTipText(NumericInputSettingToolTip)
 			.Font(DetailLayout.GetDetailFont())
 		]
 		.ValueContent()
@@ -426,28 +423,57 @@ void FInternationalizationSettingsModelDetails::CustomizeDetails(IDetailLayoutBu
 			SNew(SCheckBox)
 			.IsChecked_Lambda([=]()
 			{
-				return SettingsModel.IsValid() && SettingsModel->ShouldLoadLocalizedPropertyNames() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+				return SettingsModel.IsValid() && SettingsModel->ShouldUseLocalizedNumericInput() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 			})
-				.ToolTipText(FieldNamesSettingToolTip)
-				.OnCheckStateChanged_Lambda([=](ECheckBoxState State)
+			.ToolTipText(NumericInputSettingToolTip)
+			.OnCheckStateChanged_Lambda([=](ECheckBoxState State)
 			{
 				if (SettingsModel.IsValid())
 				{
-					SettingsModel->ShouldLoadLocalizedPropertyNames(State == ECheckBoxState::Checked);
+					SettingsModel->SetShouldUseLocalizedNumericInput(State == ECheckBoxState::Checked);
+				}
+			})
+		];
+
+	// Localized Property Names
+	const FText PropertyNamesSettingDisplayName = LOCTEXT("LocalizedEditorPropertyNamesLabel", "Use Localized Property Names");
+	const FText PropertyNamesSettingToolTip = LOCTEXT("LocalizedEditorPropertyNamesTooltip", "Toggle showing localized property names.");
+	DetailCategoryBuilder.AddCustomRow(PropertyNamesSettingDisplayName)
+		.NameContent()
+		[
+			SNew(STextBlock)
+			.Text(PropertyNamesSettingDisplayName)
+			.ToolTipText(PropertyNamesSettingToolTip)
+			.Font(DetailLayout.GetDetailFont())
+		]
+		.ValueContent()
+		.MaxDesiredWidth(300.0f)
+		[
+			SNew(SCheckBox)
+			.IsChecked_Lambda([=]()
+			{
+				return SettingsModel.IsValid() && SettingsModel->ShouldUseLocalizedPropertyNames() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+			})
+			.ToolTipText(PropertyNamesSettingToolTip)
+			.OnCheckStateChanged_Lambda([=](ECheckBoxState State)
+			{
+				if (SettingsModel.IsValid())
+				{
+					SettingsModel->SetShouldUseLocalizedPropertyNames(State == ECheckBoxState::Checked);
 					FTextLocalizationManager::Get().RefreshResources();
 				}
 			})
 		];
 
 	// Localized Node and Pin Names
-	const FText NodeAndPinsNamesSettingDisplayName = LOCTEXT("GraphEditorNodesAndPinsLocalized", "Use Localized Graph Editor Nodes and Pins");
-	const FText NodeAndPinsNamesSettingToolTip = LOCTEXT("GraphEditorNodesAndPinsLocalized_Tooltip", "Toggle localized node and pin titles in all graph editors.");
-	DetailCategoryBuilder.AddCustomRow(NodeAndPinsNamesSettingDisplayName)
+	const FText NodeAndPinNamesSettingDisplayName = LOCTEXT("LocalizedGraphEditorNodeAndPinNamesLabel", "Use Localized Graph Editor Node and Pin Names");
+	const FText NodeAndPinNamesSettingToolTip = LOCTEXT("LocalizedGraphEditorNodeAndPinNamesTooltip", "Toggle localized node and pin names in all graph editors.");
+	DetailCategoryBuilder.AddCustomRow(NodeAndPinNamesSettingDisplayName)
 		.NameContent()
 		[
 			SNew(STextBlock)
-			.Text(NodeAndPinsNamesSettingDisplayName)
-			.ToolTipText(NodeAndPinsNamesSettingToolTip)
+			.Text(NodeAndPinNamesSettingDisplayName)
+			.ToolTipText(NodeAndPinNamesSettingToolTip)
 			.Font(DetailLayout.GetDetailFont())
 		]
 		.ValueContent()
@@ -456,14 +482,14 @@ void FInternationalizationSettingsModelDetails::CustomizeDetails(IDetailLayoutBu
 			SNew(SCheckBox)
 			.IsChecked_Lambda([=]()
 			{
-				return SettingsModel.IsValid() && SettingsModel->ShouldShowNodesAndPinsUnlocalized() ? ECheckBoxState::Unchecked : ECheckBoxState::Checked;
+				return SettingsModel.IsValid() && SettingsModel->ShouldUseLocalizedNodeAndPinNames() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 			})
-				.ToolTipText(NodeAndPinsNamesSettingToolTip)
-				.OnCheckStateChanged_Lambda([=](ECheckBoxState State)
+			.ToolTipText(NodeAndPinNamesSettingToolTip)
+			.OnCheckStateChanged_Lambda([=](ECheckBoxState State)
 			{
 				if (SettingsModel.IsValid())
 				{
-					SettingsModel->ShouldShowNodesAndPinsUnlocalized(State == ECheckBoxState::Unchecked);
+					SettingsModel->SetShouldUseLocalizedNodeAndPinNames(State == ECheckBoxState::Checked);
 
 					// Find all Schemas and force a visualization cache clear
 					for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PlayerInput.cpp: Unreal input system.
@@ -65,6 +65,9 @@ void UAudioSettings::AddDefaultSettings()
 	GConfig->GetInt(TEXT("Audio"), TEXT("MaxChannels"), DefaultSettings.MaxChannels, GEngineIni); // for backwards compatibility
 	QualityLevels.Add(DefaultSettings);
 	bAllowVirtualizedSounds = true;
+	DefaultReverbSendLevel = 0.2f;
+	VoiPSampleRate = EVoiceSampleRate::Low16000Hz;
+	VoipBufferingDelay = 0.2f;
 }
 
 #if WITH_EDITOR

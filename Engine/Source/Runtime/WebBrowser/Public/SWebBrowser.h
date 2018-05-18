@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -210,6 +210,10 @@ public:
 	void BindAdapter(const TSharedRef<IWebBrowserAdapter>& Adapter);
 
 	void UnbindAdapter(const TSharedRef<IWebBrowserAdapter>& Adapter);
+
+	void BindInputMethodSystem(ITextInputMethodSystem* TextInputMethodSystem);
+
+	void UnbindInputMethodSystem();
 
 	/** Returns true if the browser can navigate backwards. */
 	bool CanGoBack() const;

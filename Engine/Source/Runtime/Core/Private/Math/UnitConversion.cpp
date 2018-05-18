@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Math/UnitConversion.h"
 #include "Internationalization/Internationalization.h"
@@ -76,6 +76,8 @@ FParseCandidate ParseCandidates[] = {
 
 	{ TEXT("ppi"),					EUnit::PixelsPerInch },			{ TEXT("dpi"),		EUnit::PixelsPerInch },
 
+	{ TEXT("Percent"),				EUnit::Percentage },			{ TEXT("%"),	EUnit::Percentage },
+
 	{ TEXT("times"),				EUnit::Multiplier },			{ TEXT("x"),	EUnit::Multiplier },			{ TEXT("multiplier"),		EUnit::Multiplier },
 };
 
@@ -106,6 +108,8 @@ const TCHAR* const DisplayStrings[] = {
 
 	TEXT("ppi"),
 
+	TEXT("%"),
+
 	TEXT("x"),
 };
 
@@ -134,6 +138,8 @@ const EUnitType UnitTypes[] = {
 	EUnitType::Time,		EUnitType::Time,		EUnitType::Time,		EUnitType::Time,		EUnitType::Time,		EUnitType::Time,		EUnitType::Time,
 
 	EUnitType::PixelDensity,
+
+	EUnitType::Multipliers,
 
 	EUnitType::Arbitrary,
 };
@@ -274,12 +280,8 @@ struct FUnitExpressionParser
 	{
 		auto& Stream = Consumer.GetStream();
 
-		if (!FChar::IsDigit(Stream.PeekChar()))
-		{
-			return TOptional<FExpressionError>();
-		}
-
-		TOptional<FStringToken> NumberToken = ExpressionParser::ParseNumber(Stream);
+		double Value = 0.0;
+		TOptional<FStringToken> NumberToken = ExpressionParser::ParseLocalizedNumberWithAgnosticFallback(Stream, nullptr, &Value);
 		
 		if (NumberToken.IsSet())
 		{
@@ -298,7 +300,6 @@ struct FUnitExpressionParser
 				}
 			}
 
-			const double Value = FCString::Atod(*NumberToken.GetValue().GetString());
 			if (Unit.IsSet())
 			{
 				Consumer.Add(NumberToken.GetValue(), FNumericUnit<double>(Value, Unit.GetValue()));
@@ -636,6 +637,16 @@ namespace UnitConversion
 											return Factor;
 
 			default: 						return 1;
+		}
+	}
+
+	double MultiplierUnificationFactor(EUnit From)
+	{
+		switch (From)
+		{
+			case EUnit::Percentage:			return 0.01;
+			case EUnit::Multiplier:						// fallthrough
+			default: 						return 1.0;
 		}
 	}
 

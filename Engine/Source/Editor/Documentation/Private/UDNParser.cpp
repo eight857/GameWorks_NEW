@@ -1,7 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UDNParser.h"
 #include "Fonts/SlateFontInfo.h"
+#include "Styling/CoreStyle.h"
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
@@ -468,7 +469,7 @@ bool FUDNParser::ParseLineIntoSymbols(int32 LineNumber, const FString& Line, TAr
 		{
 			auto& Symbol = TokenLibrary[i];
 			FString TrimmedLine = Line;
-			TrimmedLine.Trim();
+			TrimmedLine.TrimStartInline();
 			if (TrimmedLine.StartsWith(Symbol.ParseText))
 			{
 				ChoppedLine = TrimmedLine.RightChop(Symbol.ParseText.Len());
@@ -565,7 +566,7 @@ FUDNLine FUDNParser::ParseLineIntoUDNContent(int32 LineNumber, const FString& Li
 	FMessageLog UDNParserLog(UDNParseErrorLog);
 
 	FString TrimmedLine = Line;
-	TrimmedLine.Trim();
+	TrimmedLine.TrimStartInline();
 
 	FUDNLine OutputLine;
 
@@ -657,7 +658,7 @@ FUDNLine FUDNParser::ParseLineIntoUDNContent(int32 LineNumber, const FString& Li
 						}
 						if (LineConfig.bAcceptTrailingSymbolDumpAsContent)
 						{
-							OutputLine.AdditionalContent.Add(ConvertSymbolsIntoAString(SymbolList, SymbolIdx).Trim());
+							OutputLine.AdditionalContent.Add(ConvertSymbolsIntoAString(SymbolList, SymbolIdx).TrimStart());
 						}
 					}
 					else
@@ -752,8 +753,8 @@ TSharedRef< SWidget > FUDNParser::GenerateExcerptContent( const FString& InLink,
 	const FString SourcePath = FDocumentationLink::ToSourcePath( InLink );
 	const FString FullPath = FPaths::GetPath( SourcePath );
 
-	FSlateFontInfo Header1Font = FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 18 );
-	FSlateFontInfo Header2Font = FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 14 );
+	FSlateFontInfo Header1Font = FCoreStyle::GetDefaultFontStyle("Regular", 18);
+	FSlateFontInfo Header2Font = FCoreStyle::GetDefaultFontStyle("Regular", 14);
 
 	bool bCriticalError = false;
 	FString VariableName;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Text/SMultiLineEditableText.h"
 #include "Rendering/DrawElements.h"
@@ -29,9 +29,11 @@ void SMultiLineEditableText::Construct( const FArguments& InArgs )
 {
 	bIsReadOnly = InArgs._IsReadOnly;
 
+	OnIsTypedCharValid = InArgs._OnIsTypedCharValid;
 	OnTextChangedCallback = InArgs._OnTextChanged;
 	OnTextCommittedCallback = InArgs._OnTextCommitted;
 	OnCursorMovedCallback = InArgs._OnCursorMoved;
+	bAllowMultiLine = InArgs._AllowMultiLine;
 	bSelectAllTextWhenFocused = InArgs._SelectAllTextWhenFocused;
 	bClearTextSelectionOnFocusLoss = InArgs._ClearTextSelectionOnFocusLoss;
 	bClearKeyboardFocusOnCommit = InArgs._ClearKeyboardFocusOnCommit;
@@ -42,6 +44,7 @@ void SMultiLineEditableText::Construct( const FArguments& InArgs )
 	VirtualKeyboardDismissAction = InArgs._VirtualKeyboardDismissAction;
 	OnHScrollBarUserScrolled = InArgs._OnHScrollBarUserScrolled;
 	OnVScrollBarUserScrolled = InArgs._OnVScrollBarUserScrolled;
+	OnKeyCharHandler = InArgs._OnKeyCharHandler;
 	OnKeyDownHandler = InArgs._OnKeyDownHandler;
 	ModiferKeyForNewLine = InArgs._ModiferKeyForNewLine;
 
@@ -73,6 +76,7 @@ void SMultiLineEditableText::Construct( const FArguments& InArgs )
 
 	EditableTextLayout = MakeUnique<FSlateEditableTextLayout>(*this, InArgs._Text, TextStyle, InArgs._TextShapingMethod, InArgs._TextFlowDirection, InArgs._CreateSlateTextLayout, Marshaller.ToSharedRef(), Marshaller.ToSharedRef());
 	EditableTextLayout->SetHintText(InArgs._HintText);
+	EditableTextLayout->SetSearchText(InArgs._SearchText);
 	EditableTextLayout->SetTextWrapping(InArgs._WrapTextAt, InArgs._AutoWrapText, InArgs._WrappingPolicy);
 	EditableTextLayout->SetMargin(InArgs._Margin);
 	EditableTextLayout->SetJustification(InArgs._Justification);
@@ -107,6 +111,16 @@ void SMultiLineEditableText::SetHintText(const TAttribute< FText >& InHintText)
 FText SMultiLineEditableText::GetHintText() const
 {
 	return EditableTextLayout->GetHintText();
+}
+
+void SMultiLineEditableText::SetSearchText(const TAttribute<FText>& InSearchText)
+{
+	EditableTextLayout->SetSearchText(InSearchText);
+}
+
+FText SMultiLineEditableText::GetSearchText() const
+{
+	return EditableTextLayout->GetSearchText();
 }
 
 void SMultiLineEditableText::SetTextStyle(const FTextBlockStyle* InTextStyle)
@@ -175,9 +189,34 @@ void SMultiLineEditableText::SetAllowContextMenu(const TAttribute< bool >& InAll
 	bAllowContextMenu = InAllowContextMenu;
 }
 
+void SMultiLineEditableText::SetVirtualKeyboardDismissAction(TAttribute< EVirtualKeyboardDismissAction > InVirtualKeyboardDismissAction)
+{
+	VirtualKeyboardDismissAction = InVirtualKeyboardDismissAction;
+}
+
 void SMultiLineEditableText::SetIsReadOnly(const TAttribute<bool>& InIsReadOnly)
 {
 	bIsReadOnly = InIsReadOnly;
+}
+
+void SMultiLineEditableText::SetSelectAllTextWhenFocused(const TAttribute<bool>& InSelectAllTextWhenFocused)
+{
+	bSelectAllTextWhenFocused = InSelectAllTextWhenFocused;
+}
+
+void SMultiLineEditableText::SetClearTextSelectionOnFocusLoss(const TAttribute<bool>& InClearTextSelectionOnFocusLoss)
+{
+	bClearTextSelectionOnFocusLoss = InClearTextSelectionOnFocusLoss;
+}
+
+void SMultiLineEditableText::SetRevertTextOnEscape(const TAttribute<bool>& InRevertTextOnEscape)
+{
+	bRevertTextOnEscape = InRevertTextOnEscape;
+}
+
+void SMultiLineEditableText::SetClearKeyboardFocusOnCommit(const TAttribute<bool>& InClearKeyboardFocusOnCommit)
+{
+	bClearKeyboardFocusOnCommit = InClearKeyboardFocusOnCommit;
 }
 
 void SMultiLineEditableText::OnHScrollBarMoved(const float InScrollOffsetFraction)
@@ -204,7 +243,7 @@ bool SMultiLineEditableText::IsTextPassword() const
 
 bool SMultiLineEditableText::IsMultiLineTextEdit() const
 {
-	return true;
+	return bAllowMultiLine.Get(true);
 }
 
 bool SMultiLineEditableText::ShouldJumpCursorToEndWhenFocused() const
@@ -244,7 +283,12 @@ bool SMultiLineEditableText::CanInsertCarriageReturn() const
 
 bool SMultiLineEditableText::CanTypeCharacter(const TCHAR InChar) const
 {
-	return true;
+	if (OnIsTypedCharValid.IsBound())
+	{
+		return OnIsTypedCharValid.Execute(InChar);
+	}
+
+	return InChar != TEXT('\t');
 }
 
 void SMultiLineEditableText::EnsureActiveTick()
@@ -424,6 +468,16 @@ void SMultiLineEditableText::ApplyToSelection(const FRunInfo& InRunInfo, const F
 	EditableTextLayout->ApplyToSelection(InRunInfo, InStyle);
 }
 
+void SMultiLineEditableText::BeginSearch(const FText& InSearchText, const ESearchCase::Type InSearchCase, const bool InReverse)
+{
+	EditableTextLayout->BeginSearch(InSearchText, InSearchCase, InReverse);
+}
+
+void SMultiLineEditableText::AdvanceSearch(const bool InReverse)
+{
+	EditableTextLayout->AdvanceSearch(InReverse);
+}
+
 TSharedPtr<const IRun> SMultiLineEditableText::GetRunUnderCursor() const
 {
 	return EditableTextLayout->GetRunUnderCursor();
@@ -447,6 +501,15 @@ TSharedPtr<const SScrollBar> SMultiLineEditableText::GetVScrollBar() const
 void SMultiLineEditableText::Refresh()
 {
 	EditableTextLayout->Refresh();
+}
+
+void SMultiLineEditableText::ForceScroll(int32 UserIndex, float ScrollAxisMagnitude)
+{
+	const FGeometry& CachedGeom = GetCachedGeometry();
+	FVector2D ScrollPos = (CachedGeom.LocalToAbsolute(FVector2D::ZeroVector) + CachedGeom.LocalToAbsolute(CachedGeom.GetLocalSize())) * 0.5f;
+	TSet<FKey> PressedKeys;
+
+	OnMouseWheel(CachedGeom, FPointerEvent(UserIndex, 0, ScrollPos, ScrollPos, PressedKeys, EKeys::Invalid, ScrollAxisMagnitude, FModifierKeysState()));
 }
 
 void SMultiLineEditableText::Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime )
@@ -507,7 +570,20 @@ bool SMultiLineEditableText::SupportsKeyboardFocus() const
 
 FReply SMultiLineEditableText::OnKeyChar( const FGeometry& MyGeometry,const FCharacterEvent& InCharacterEvent )
 {
-	return EditableTextLayout->HandleKeyChar(InCharacterEvent);
+	FReply Reply = FReply::Unhandled();
+
+	// First call the user defined key handler, there might be overrides to normal functionality
+	if (OnKeyCharHandler.IsBound())
+	{
+		Reply = OnKeyCharHandler.Execute(MyGeometry, InCharacterEvent);
+	}
+
+	if (!Reply.IsEventHandled())
+	{
+		Reply = EditableTextLayout->HandleKeyChar(InCharacterEvent);
+	}
+
+	return Reply;
 }
 
 FReply SMultiLineEditableText::OnKeyDown( const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent )

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ApplePlatformFile.mm: Apple platform implementations of File functions
@@ -29,13 +29,13 @@ namespace
 		}
 
 		return FFileStatData(
-			MacEpoch + FTimespan(0, 0, FileInfo.st_ctime), 
-			MacEpoch + FTimespan(0, 0, FileInfo.st_atime), 
-			MacEpoch + FTimespan(0, 0, FileInfo.st_mtime), 
+			MacEpoch + FTimespan::FromSeconds(FileInfo.st_ctime), 
+			MacEpoch + FTimespan::FromSeconds(FileInfo.st_atime), 
+			MacEpoch + FTimespan::FromSeconds(FileInfo.st_mtime), 
 			FileSize,
 			bIsDirectory,
 			!!(FileInfo.st_mode & S_IWUSR)
-			);
+		);
 	}
 }
 

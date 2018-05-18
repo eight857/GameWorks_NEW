@@ -1,4 +1,4 @@
-﻿INTSourceChangelist:3429236
+﻿INTSourceChangelist:3750407
 Availability:Public
 Title:Ambient Sound アクタのユーザーガイド
 Crumbs: %ROOT%, Engine, Engine/Audio
@@ -18,15 +18,9 @@ order:2
 
 ## Ambient Sound アクタ
 
-
-[OBJECT:topiclistnotitle]
-	[PARAM:icon]
-		![](ambientActors.png)
-	[/PARAM]
-	[PARAM:description]
-	[/PARAM]
-
-[/OBJECT]
+[REGION:raw]
+![](ambientActors.png)
+[/REGION]
 
 Ambient Sound アクタ (画像の左側にあるアイコン) は、環境ループ音やループしない音など多用途に使用できます。 
 一般的に、 Ambient Sound アクタはサウンドに近いほど音が大きく感じられる現実世界のように機能します。比較すると、通常大きいサウンドは、遠くなるとソフトになっていきます。 
@@ -101,7 +95,7 @@ MaxRadius の外側では、サウンドの音量は 0% です。
 | **Spatialize** | 3D に配置されるソースを有効にします。 |
 | **Distance Algorithm** | 減衰モデルに使用するボリュームのタイプに対する距離アルゴリズムです。 |
 | **Attenuation Shape** | 減衰ボリュームの形状です。 |
-| **Radius** | ボリュームの全体的なサイズです。 <BR> ボリューム形状のデフォルト設定は **Sphere** です。このオプションは選択されている Attenuation Shape によって変わります。 |
+| **Radius** | ボリュームの全体的なサイズです。ボリューム形状のデフォルト設定は **Sphere** です。このオプションは選択されている Attenuation Shape によって変わります。 |
 | **Falloff Distance** | フォールオフが発生する距離です。 |
 | **Non-Spatialized Radius** | サウンドソースを空間化されたものとして処理を開始する距離です。 |
 | **Attenuate with LPF** | ローパス フィルタにより減衰を有効にします。 |

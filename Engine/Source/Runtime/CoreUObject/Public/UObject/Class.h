@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Class.h: UClass definition.
@@ -18,6 +18,8 @@
 #include "Templates/HasGetTypeHash.h"
 #include "Templates/IsAbstract.h"
 #include "Templates/IsEnum.h"
+#include "Misc/Optional.h"
+#include "Misc/EnumClassFlags.h"
 
 struct FCustomPropertyListNode;
 struct FFrame;
@@ -64,6 +66,8 @@ class COREUOBJECT_API UField : public UObject
 	// UObject interface.
 	virtual void Serialize( FArchive& Ar ) override;
 	virtual void PostLoad() override;
+	virtual bool NeedsLoadForClient() const override;
+	virtual bool NeedsLoadForServer() const override;
 
 	// UField interface.
 	virtual void AddCppProperty( UProperty* Property );
@@ -394,13 +398,6 @@ public:
 	/** Serializes the SuperStruct pointer */
 	virtual void SerializeSuperStruct(FArchive& Ar);
 
-	/** Called to add a Field to the front of the linked list for the parent struct */
-	void LinkChild(UField* Child)
-	{
-		Child->Next = Children;
-		Children = Child;
-	}
-
 	/** Returns the a human readable string for a property, overridden for user defined structs */
 	virtual FString PropertyNameToDisplayName(FName InName) const 
 	{ 
@@ -499,11 +496,14 @@ enum EStructFlags
 	/** If set, this struct will be serialized using the CPP net delta serializer */
 	STRUCT_NetDeltaSerializeNative = 0x00100000,
 
+	/** If set, this struct will be have PostScriptConstruct called on it after a temporary object is constructed in a running blueprint */
+	STRUCT_PostScriptConstruct     = 0x00200000,
+
 	/** Struct flags that are automatically inherited */
 	STRUCT_Inherit				= STRUCT_HasInstancedReference|STRUCT_Atomic,
 
 	/** Flags that are always computed, never loaded or done with code generation */
-	STRUCT_ComputedFlags		= STRUCT_NetDeltaSerializeNative | STRUCT_NetSerializeNative | STRUCT_SerializeNative | STRUCT_PostSerializeNative | STRUCT_CopyNative | STRUCT_IsPlainOldData | STRUCT_NoDestructor | STRUCT_ZeroConstructor | STRUCT_IdenticalNative | STRUCT_AddStructReferencedObjects | STRUCT_ExportTextItemNative | STRUCT_ImportTextItemNative | STRUCT_SerializeFromMismatchedTag
+	STRUCT_ComputedFlags		= STRUCT_NetDeltaSerializeNative | STRUCT_NetSerializeNative | STRUCT_SerializeNative | STRUCT_PostSerializeNative | STRUCT_CopyNative | STRUCT_IsPlainOldData | STRUCT_NoDestructor | STRUCT_ZeroConstructor | STRUCT_IdenticalNative | STRUCT_AddStructReferencedObjects | STRUCT_ExportTextItemNative | STRUCT_ImportTextItemNative | STRUCT_SerializeFromMismatchedTag | STRUCT_PostScriptConstruct
 };
 
 
@@ -527,6 +527,7 @@ struct TStructOpsTypeTraitsBase2
 		WithNetSerializer              = false,                         // struct has a NetSerialize function for serializing its state to an FArchive used for network replication.
 		WithNetDeltaSerializer         = false,                         // struct has a NetDeltaSerialize function for serializing differences in state from a previous NetSerialize operation.
 		WithSerializeFromMismatchedTag = false,                         // struct has a SerializeFromMismatchedTag function for converting from other property tags.
+		WithPostScriptConstruct        = false,							// struct has a PostScriptConstruct function which is called after it is constructed in blueprints
 	};
 };
 
@@ -634,6 +635,21 @@ template<class CPPSTRUCT>
 FORCEINLINE typename TEnableIf<TStructOpsTypeTraits<CPPSTRUCT>::WithNetDeltaSerializer, bool>::Type NetDeltaSerializeOrNot(FNetDeltaSerializeInfo & DeltaParms, CPPSTRUCT *Data)
 {
 	return Data->NetDeltaSerialize(DeltaParms);
+}
+
+
+/**
+ * Selection of PostScriptConstruct call.
+ */
+template<class CPPSTRUCT>
+FORCEINLINE typename TEnableIf<!TStructOpsTypeTraits<CPPSTRUCT>::WithPostScriptConstruct>::Type PostScriptConstructOrNot(CPPSTRUCT *Data)
+{
+}
+
+template<class CPPSTRUCT>
+FORCEINLINE typename TEnableIf<TStructOpsTypeTraits<CPPSTRUCT>::WithPostScriptConstruct>::Type PostScriptConstructOrNot(CPPSTRUCT *Data)
+{
+	Data->PostScriptConstruct();
 }
 
 
@@ -818,7 +834,7 @@ public:
 
 		/** return true if this class implements a post serialize call **/
 		virtual bool HasPostSerialize() = 0;
-		/** Call PostLoad on this structure */
+		/** Call PostSerialize on this structure */
 		virtual void PostSerialize(const FArchive& Ar, void *Data) = 0;
 
 		/** return true if this struct can net serialize **/
@@ -836,6 +852,11 @@ public:
 		 * @return true if the struct was serialized, otherwise it will fall back to ordinary script struct net delta serialization
 		 */
 		virtual bool NetDeltaSerialize(FNetDeltaSerializeInfo & DeltaParms, void *Data) = 0;
+
+		/** return true if this class implements a post script construct call **/
+		virtual bool HasPostScriptConstruct() = 0;
+		/** Call PostScriptConstruct on this structure */
+		virtual void PostScriptConstruct(void *Data) = 0;
 
 		/** return true if this struct should be memcopied **/
 		virtual bool IsPlainOldData() = 0;
@@ -977,6 +998,15 @@ public:
 		{
 			return NetDeltaSerializeOrNot(DeltaParms, (CPPSTRUCT*)Data);
 		}
+		virtual bool HasPostScriptConstruct() override
+		{
+			return TTraits::WithPostScriptConstruct;
+		}
+		virtual void PostScriptConstruct(void *Data) override
+		{
+			check(TTraits::WithPostScriptConstruct); // don't call this if we have indicated it is not necessary
+			PostScriptConstructOrNot((CPPSTRUCT*)Data);
+		}
 		virtual bool IsPlainOldData() override
 		{
 			return TIsPODType<CPPSTRUCT>::Value;
@@ -1095,7 +1125,6 @@ public:
 
 	// UObject Interface
 	virtual COREUOBJECT_API void Serialize( FArchive& Ar ) override;
-	virtual COREUOBJECT_API void PostLoad() override;
 
 	// UStruct interface.
 	virtual COREUOBJECT_API void Link(FArchive& Ar, bool bRelinkExistingProperties) override;
@@ -1189,7 +1218,7 @@ public:
 	 * @param	ExportRootScope	The scope to create relative paths from, if the PPF_ExportsNotFullyQualified flag is passed in.  If NULL, the package containing the object will be used instead.
 	 * @param	bAllowNativeOverride If true, will try to run native version of export text on the struct
 	 */
-	COREUOBJECT_API void ExportText(FString& ValueStr, const void* Value, const void* Defaults, UObject* OwnerObject, int32 PortFlags, UObject* ExportRootScope, bool bAllowNativeOverride = true);
+	COREUOBJECT_API void ExportText(FString& ValueStr, const void* Value, const void* Defaults, UObject* OwnerObject, int32 PortFlags, UObject* ExportRootScope, bool bAllowNativeOverride = true) const;
 
 	/**
 	 * Sets value of script struct based on imported string
@@ -1251,13 +1280,11 @@ public:
 	/** Returns the (native, c++) name of the struct */
 	virtual COREUOBJECT_API FString GetStructCPPName() const;
 
-#if WITH_EDITOR
 	/**
 	 * Initializes this structure to its default values
 	 * @param InStructData		The memory location to initialize
 	 */
 	virtual COREUOBJECT_API void InitializeDefaultValue(uint8* InStructData) const;
-#endif // WITH_EDITOR
 };
 
 /*-----------------------------------------------------------------------------
@@ -1276,9 +1303,6 @@ public:
 
 	/** EFunctionFlags set defined for this function */
 	EFunctionFlags FunctionFlags;
-
-	/** Memory Offset of replicated data, only valid if Net flag set */
-	uint16 RepOffset;
 
 	// Variables in memory only.
 	
@@ -1306,7 +1330,7 @@ public:
 
 private:
 	/** C++ function this is bound to */
-	Native Func;
+	FNativeFuncPtr Func;
 
 public:
 	/**
@@ -1314,7 +1338,7 @@ public:
 	 *
 	 * @return The native function pointer.
 	 */
-	FORCEINLINE Native GetNativeFunc() const
+	FORCEINLINE FNativeFuncPtr GetNativeFunc() const
 	{
 		return Func;
 	}
@@ -1324,7 +1348,7 @@ public:
 	 *
 	 * @param InFunc - The new function pointer.
 	 */
-	FORCEINLINE void SetNativeFunc(Native InFunc)
+	FORCEINLINE void SetNativeFunc(FNativeFuncPtr InFunc)
 	{
 		Func = InFunc;
 	}
@@ -1339,8 +1363,8 @@ public:
 	void Invoke(UObject* Obj, FFrame& Stack, RESULT_DECL);
 
 	// Constructors.
-	explicit UFunction(const FObjectInitializer& ObjectInitializer, UFunction* InSuperFunction, EFunctionFlags InFunctionFlags = FUNC_None, uint16 InRepOffset = 0, SIZE_T ParamsSize = 0 );
-	explicit UFunction(UFunction* InSuperFunction, EFunctionFlags InFunctionFlags = FUNC_None, uint16 InRepOffset = 0, SIZE_T ParamsSize = 0);
+	explicit UFunction(const FObjectInitializer& ObjectInitializer, UFunction* InSuperFunction, EFunctionFlags InFunctionFlags = FUNC_None, SIZE_T ParamsSize = 0 );
+	explicit UFunction(UFunction* InSuperFunction, EFunctionFlags InFunctionFlags = FUNC_None, SIZE_T ParamsSize = 0);
 
 	/** Initializes transient members like return value offset */
 	void InitializeDerivedMembers();
@@ -1429,8 +1453,8 @@ class COREUOBJECT_API UDelegateFunction : public UFunction
 	DECLARE_CASTED_CLASS_INTRINSIC(UDelegateFunction, UFunction, 0, TEXT("/Script/CoreUObject"), CASTCLASS_UDelegateFunction)
 	DECLARE_WITHIN(UObject)
 public:
-	explicit UDelegateFunction(const FObjectInitializer& ObjectInitializer, UFunction* InSuperFunction, EFunctionFlags InFunctionFlags = FUNC_None, uint16 InRepOffset = 0, SIZE_T ParamsSize = 0);
-	explicit UDelegateFunction(UFunction* InSuperFunction, EFunctionFlags InFunctionFlags = FUNC_None, uint16 InRepOffset = 0, SIZE_T ParamsSize = 0);
+	explicit UDelegateFunction(const FObjectInitializer& ObjectInitializer, UFunction* InSuperFunction, EFunctionFlags InFunctionFlags = FUNC_None, SIZE_T ParamsSize = 0);
+	explicit UDelegateFunction(UFunction* InSuperFunction, EFunctionFlags InFunctionFlags = FUNC_None, SIZE_T ParamsSize = 0);
 };
 
 /*-----------------------------------------------------------------------------
@@ -1438,6 +1462,17 @@ public:
 -----------------------------------------------------------------------------*/
 
 typedef FText(*FEnumDisplayNameFn)(int32);
+
+// Optional flags for the UEnum::Get*ByName() functions.
+enum class EGetByNameFlags
+{
+	None = 0,
+
+	ErrorIfNotFound = 0x01,
+	CaseSensitive   = 0x02
+};
+
+ENUM_CLASS_FLAGS(EGetByNameFlags)
 
 //
 // Reflection data for an enumeration.
@@ -1488,25 +1523,25 @@ public:
 	FName GetNameByIndex(int32 Index) const;
 
 	/** Gets index of name in enum, returns INDEX_NONE and optionally errors when name is not found. This is faster than ByNameString if the FName is exact, but will fall back if needed */
-	int32 GetIndexByName(FName InName, bool bErrorIfNotFound = false) const;
+	int32 GetIndexByName(FName InName, EGetByNameFlags Flags = EGetByNameFlags::None) const;
 
 	/** Gets enum name by value. Returns NAME_None if value is not found. */
 	FName GetNameByValue(int64 InValue) const;
 
 	/** Gets enum value by name, returns INDEX_NONE and optionally errors when name is not found. This is faster than ByNameString if the FName is exact, but will fall back if needed */
-	int64 GetValueByName(FName InName, bool bErrorIfNotFound = false) const;
+	int64 GetValueByName(FName InName, EGetByNameFlags Flags = EGetByNameFlags::None) const;
 
 	/** Returns the short name at the enum index, returns empty string if invalid */
 	FString GetNameStringByIndex(int32 InIndex) const;
 
 	/** Gets index of name in enum, returns INDEX_NONE and optionally errors when name is not found. Handles full or short names. */
-	int32 GetIndexByNameString(const FString& SearchString, bool bErrorIfNotFound = false) const;
+	int32 GetIndexByNameString(const FString& SearchString, EGetByNameFlags Flags = EGetByNameFlags::None) const;
 
 	/** Returns the short name matching the enum Value, returns empty string if invalid */
 	FString GetNameStringByValue(int64 InValue) const;
 
 	/** Gets enum value by name, returns INDEX_NONE and optionally errors when name is not found. Handles full or short names */
-	int64 GetValueByNameString(const FString& SearchString, bool bErrorIfNotFound = false) const;
+	int64 GetValueByNameString(const FString& SearchString, EGetByNameFlags Flags = EGetByNameFlags::None) const;
 
 	/**
 	 * Finds the localized display name or native display name as a fallback.
@@ -1615,6 +1650,13 @@ public:
 	 * @return index of the value the parsed enum name matches, or INDEX_NONE if no matches
 	 */
 	static int64 ParseEnum(const TCHAR*& Str);
+
+	/**
+	 * Tests if the enum contains a MAX value
+	 *
+	 * @return	true if the enum contains a MAX enum, false otherwise.
+	 */
+	bool ContainsExistingMax() const;
 
 	/**
 	 * Sets the array of enums.
@@ -1751,7 +1793,7 @@ public:
 
 	// Deprecated Functions
 	DEPRECATED(4.16, "FindEnumIndex is deprecated, call GetIndexByName or GetValueByName instead")
-	int32 FindEnumIndex(FName InName) const { return GetIndexByName(InName, true); }
+	int32 FindEnumIndex(FName InName) const { return GetIndexByName(InName, EGetByNameFlags::ErrorIfNotFound); }
 
 	DEPRECATED(4.16, "FindEnumRedirects is deprecated, call GetIndexByNameString instead")
 	static int32 FindEnumRedirects(const UEnum* Enum, FName EnumEntryName) { return Enum->GetIndexByNameString(EnumEntryName.ToString()); }
@@ -1860,11 +1902,32 @@ struct ICppClassTypeInfo
 };
 
 
-/** Implements the type information interface for specific C++ class types */
-template<typename TTraits>
-struct TCppClassTypeInfo : ICppClassTypeInfo
+struct FCppClassTypeInfoStatic
 {
-	bool IsAbstract() const { return TTraits::IsAbstract; }
+	bool bIsAbstract;
+};
+
+
+/** Implements the type information interface for specific C++ class types */
+struct FCppClassTypeInfo : ICppClassTypeInfo
+{
+	explicit FCppClassTypeInfo(const FCppClassTypeInfoStatic* InInfo)
+		: Info(InInfo)
+	{
+	}
+
+	// Non-copyable
+	FCppClassTypeInfo(const FCppClassTypeInfo&) = delete;
+	FCppClassTypeInfo& operator=(const FCppClassTypeInfo&) = delete;
+
+	// ICppClassTypeInfo implementation
+	virtual bool IsAbstract() const override
+	{
+		return Info->bIsAbstract;
+	}
+
+private:
+	const FCppClassTypeInfoStatic* Info;
 };
 
 
@@ -1897,9 +1960,9 @@ struct COREUOBJECT_API FImplementedInterface
 struct FNativeFunctionLookup
 {
 	FName Name;
-	Native Pointer;
+	FNativeFuncPtr Pointer;
 
-	FNativeFunctionLookup(FName InName,Native InPointer)
+	FNativeFunctionLookup(FName InName, FNativeFuncPtr InPointer)
 		:	Name(InName)
 		,	Pointer(InPointer)
 	{}
@@ -1971,6 +2034,13 @@ namespace EIncludeSuperFlag
 #endif
 
 
+struct FClassFunctionLinkInfo
+{
+	UFunction* (*CreateFuncPtr)();
+	const char* FuncNameUTF8;
+};
+
+
 /**
  * An object class.
  */
@@ -2001,7 +2071,10 @@ public:
 	ClassAddReferencedObjectsType ClassAddReferencedObjects;
 
 	/** Class pseudo-unique counter; used to accelerate unique instance name generation */
-	int32 ClassUnique;
+	uint32 ClassUnique:31;
+
+	/** Used to check if the class was cooked or not */
+	uint32 bCooked:1;
 
 	/** Class flags; See EClassFlags for more information */
 	EClassFlags ClassFlags;
@@ -2026,9 +2099,6 @@ public:
 
 	/** Which Name.ini file to load Config variables out of */
 	FName ClassConfigName;
-
-	/** Used to check if the class was cooked or not */
-	bool bCooked;
 
 	/** List of replication records */
 	TArray<FRepRecord> ClassReps;
@@ -2069,17 +2139,16 @@ public:
 	static void AssembleReferenceTokenStreams();
 
 private:
-	/** Provides access to attributes of the underlying C++ class. Should never be NULL. */
-	ICppClassTypeInfo* CppTypeInfo;
+#if WITH_EDITOR
+	/** Provides access to attributes of the underlying C++ class. Should never be unset. */
+	TOptional<FCppClassTypeInfo> CppTypeInfo;
+#endif
 
 	/** Map of all functions by name contained in this class */
 	TMap<FName, UFunction*> FuncMap;
 
-	/** A cache of all functions by name that exist in a parent context */
-	mutable TMap<FName, UFunction*> ParentFuncMap;
-
-	/** A cache of all functions by name that exist in an interface context */
-	mutable TMap<FName, UFunction*> InterfaceFuncMap;
+	/** A cache of all functions by name that exist in a parent (superclass or interface) context */
+	mutable TMap<FName, UFunction*> SuperFuncMap;
 
 public:
 	/**
@@ -2100,7 +2169,7 @@ public:
 	/** CS for the token stream. Token stream can assemble code can sometimes be called from two threads throuh a web of async loading calls. */
 	FCriticalSection ReferenceTokenStreamCritical;
 
-#if !(UE_BUILD_TEST || UE_BUILD_SHIPPING)
+#if ENABLE_GC_OBJECT_CHECKS
 	/** TokenIndex map to look-up token stream index origin. */
 	FGCDebugReferenceTokenMap DebugTokenMap;
 #endif
@@ -2150,7 +2219,7 @@ public:
 	*											because dispatch is shared, so the C++ remap table does not work in this case, and this should be false
 	* @return	true if the function was found and replaced, false if it was not
 	*/
-	bool ReplaceNativeFunction(FName InName, Native InPointer, bool bAddToFunctionRemapTable);
+	bool ReplaceNativeFunction(FName InName, FNativeFuncPtr InPointer, bool bAddToFunctionRemapTable);
 #endif
 
 	/**
@@ -2169,7 +2238,7 @@ public:
 	 * @param	InName							name of the function
 	 * @param	InPointer						pointer to the function
 	 */
-	void AddNativeFunction(const ANSICHAR* InName, Native InPointer);
+	void AddNativeFunction(const ANSICHAR* InName, FNativeFuncPtr InPointer);
 
 	/**
 	 * Add a native function to the internal native function table, but with a unicode name. Used when generating code from blueprints, 
@@ -2177,23 +2246,15 @@ public:
 	 * @param	InName							name of the function
 	 * @param	InPointer						pointer to the function
 	 */
-	void AddNativeFunction(const WIDECHAR* InName, Native InPointer);
+	void AddNativeFunction(const WIDECHAR* InName, FNativeFuncPtr InPointer);
 
 	/** Add a function to the function map */
-	void AddFunctionToFunctionMap(UFunction* NewFunction)
+	void AddFunctionToFunctionMap(UFunction* Function, FName FuncName)
 	{
-		FuncMap.Add(NewFunction->GetFName(), NewFunction);
+		FuncMap.Add(FuncName, Function);
 	}
 
-	/** 
-	 * This is used by the code generator, which instantiates UFunctions with a name that is later overridden. Overridden names
-	 * are needed to support generated versions of blueprint classes, properties of which do not have the same naming 
-	 * restrictions as native C++ properties
-	 */
-	void AddFunctionToFunctionMapWithOverriddenName(UFunction* NewFunction, FName OverriddenName)
-	{
-		FuncMap.Add(OverriddenName, NewFunction);
-	}
+	void CreateLinkAndAddChildFunctionsToMap(const FClassFunctionLinkInfo* Functions, uint32 NumFunctions);
 
 	/** Remove a function from the function map */
 	void RemoveFunctionFromFunctionMap(UFunction* Function)
@@ -2204,8 +2265,7 @@ public:
 	/** Clears the function name caches, in case things have changed */
 	void ClearFunctionMapsCaches()
 	{
-		ParentFuncMap.Empty();
-		InterfaceFuncMap.Empty();
+		SuperFuncMap.Empty();
 	}
 
 	/** Looks for a given function name */
@@ -2238,17 +2298,21 @@ public:
 	virtual void SerializeSuperStruct(FArchive& Ar) override;
 	// End of UStruct interface.
 
+#if WITH_EDITOR
 	/** Provides access to C++ type info. */
 	const ICppClassTypeInfo* GetCppTypeInfo() const
 	{
-		return CppTypeInfo;
+		return CppTypeInfo ? &CppTypeInfo.GetValue() : nullptr;
 	}
+#endif
 
 	/** Sets C++ type information. Should not be NULL. */
-	void SetCppTypeInfo(ICppClassTypeInfo* InCppTypeInfo)
+	void SetCppTypeInfoStatic(const FCppClassTypeInfoStatic* InCppTypeInfoStatic)
 	{
-		check(InCppTypeInfo);
-		CppTypeInfo = InCppTypeInfo;
+#if WITH_EDITOR
+		check(InCppTypeInfoStatic);
+		CppTypeInfo.Emplace(InCppTypeInfoStatic);
+#endif
 	}
 	
 	/**
@@ -2290,6 +2354,11 @@ public:
 
 		return ClassDefaultObject;
 	}
+
+	/**
+	 * Called after PostInitProperties during object construction to allow class specific initialization of an object instance.
+	 */
+	virtual void PostInitInstance(UObject* InObj) {}
 
 	/**
 	 * Helper method to assist with initializing object properties from an explicit list.
@@ -2548,8 +2617,13 @@ public:
 	 */
 	virtual void GetRequiredPreloadDependencies(TArray<UObject*>& DependenciesOut) {}
 
-	/** Returns true if this class implements script instrumentation. */
-	virtual bool HasInstrumentation() const { return false; }
+	/**
+	 * Initializes the ClassReps and NetFields arrays used by replication.
+	 * For classes that are loaded, this needs to happen in PostLoad to
+	 * ensure all replicated UFunctions have been serialized. For native classes,
+	 * this should happen in Link. Also needs to happen after blueprint compiliation.
+	 */
+	void SetUpRuntimeReplicationData();
 
 private:
 	#if UCLASS_FAST_ISA_IMPL == UCLASS_ISA_INDEXTREE
@@ -2935,31 +3009,6 @@ FORCEINLINE bool UObject::Implements() const
 // UObjectGlobals.h
 
 /**
- * Construct an object of a particular class.
- * 
- * @param	Class		the class of object to construct
- * @param	Outer		the outer for the new object.  If not specified, object will be created in the transient package.
- * @param	Name		the name for the new object.  If not specified, the object will be given a transient name via
- *						MakeUniqueObjectName
- * @param	SetFlags	the object flags to apply to the new object
- * @param	Template	the object to use for initializing the new object.  If not specified, the class's default object will
- *						be used
- * @param	bInCopyTransientsFromClassDefaults - if true, copy transient from the class defaults instead of the pass in archetype ptr (often these are the same)
- * @param	InstanceGraph
- *						contains the mappings of instanced objects and components to their templates
- *
- * @return	a pointer of type T to a new object of the specified class
- */
-template< class T >
-DEPRECATED(4.8, "ConstructObject is deprecated. Use NewObject instead")
-T* ConstructObject(UClass* Class, UObject* Outer, FName Name, EObjectFlags SetFlags, UObject* Template, bool bCopyTransientsFromClassDefaults, struct FObjectInstancingGraph* InstanceGraph )
-{
-	checkf(Class, TEXT("ConstructObject called with a NULL class object"));
-	checkSlow(Class->IsChildOf(T::StaticClass()));
-	return (T*)StaticConstructObject_Internal(Class, Outer, Name, SetFlags, EInternalObjectFlags::None, Template, bCopyTransientsFromClassDefaults, InstanceGraph);
-}
-
-/**
  * Gets the default object of a class.
  *
  * In most cases, class default objects should not be modified. This method therefore returns
@@ -3013,9 +3062,18 @@ struct FStructUtils
 
 template< class T > struct TBaseStructure
 {
+	static UScriptStruct* Get()
+	{
+		return T::StaticStruct();
+	}
 };
 
 template<> struct TBaseStructure<FRotator>
+{
+	COREUOBJECT_API static UScriptStruct* Get();
+};
+
+template<> struct TBaseStructure<FQuat>
 {
 	COREUOBJECT_API static UScriptStruct* Get();
 };
@@ -3035,12 +3093,22 @@ template<> struct TBaseStructure<FColor>
 	COREUOBJECT_API static UScriptStruct* Get();
 };
 
+template<> struct  TBaseStructure<FPlane>
+{
+	COREUOBJECT_API static UScriptStruct* Get();
+};
+
 template<> struct  TBaseStructure<FVector>
 {
 	COREUOBJECT_API static UScriptStruct* Get();
 };
 
 template<> struct TBaseStructure<FVector2D>
+{
+	COREUOBJECT_API static UScriptStruct* Get();
+};
+
+template<> struct TBaseStructure<FVector4>
 {
 	COREUOBJECT_API static UScriptStruct* Get();
 };
@@ -3096,14 +3164,14 @@ template<> struct TBaseStructure<FInt32Interval>
 	COREUOBJECT_API static UScriptStruct* Get();
 };
 
-struct FStringAssetReference;
-template<> struct TBaseStructure<FStringAssetReference>
+struct FSoftObjectPath;
+template<> struct TBaseStructure<FSoftObjectPath>
 {
 	COREUOBJECT_API static UScriptStruct* Get();
 };
 
-struct FStringClassReference;
-template<> struct TBaseStructure<FStringClassReference>
+struct FSoftClassPath;
+template<> struct TBaseStructure<FSoftClassPath>
 {
 	COREUOBJECT_API static UScriptStruct* Get();
 };

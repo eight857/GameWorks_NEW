@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*===================================================================================
 	Scalability.h: Manager class for handling scalability settings
@@ -88,7 +88,7 @@ namespace Scalability
 	*
 	* @param bGameThread	If true, the game thread value for the CVar is returned, otherwise the render thread value is returned. Useful when accessing the CVar from a game task.
 	*/
-	int32 GetEffectsQualityDirect(bool bGameThread);
+	ENGINE_API int32 GetEffectsQualityDirect(bool bGameThread);
 
 	/**  */
 	ENGINE_API void InitScalabilitySystem();

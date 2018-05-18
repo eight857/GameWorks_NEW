@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 
@@ -321,9 +321,4 @@ void SGraphNodeK2Var::UpdateGraphNode()
 const FSlateBrush* SGraphNodeK2Var::GetShadowBrush(bool bSelected) const
 {
 	return bSelected ? FEditorStyle::GetBrush(TEXT("Graph.VarNode.ShadowSelected")) : FEditorStyle::GetBrush(TEXT("Graph.VarNode.Shadow"));
-}
-
-const FSlateBrush* SGraphNodeK2Var::GetProfilerHeatmapBrush() const
-{
-	return FEditorStyle::GetBrush(TEXT("BlueprintProfiler.VarNode.HeatDisplay"));
 }

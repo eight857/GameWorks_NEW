@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // Implementation of Device Context State Caching to improve draw
 //	thread performance by removing redundant device context calls.
@@ -111,6 +111,8 @@ protected:
 
 	// Input Layout State
 	ID3D11InputLayout* CurrentInputLayout;
+
+	uint16 StreamStrides[MaxVertexElementCount];
 
 	// Sampler State
 	ID3D11SamplerState* CurrentSamplerStates[SF_NumFrequencies][D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT];
@@ -789,6 +791,11 @@ template <EShaderFrequency ShaderFrequency>
 #endif
 	}
 
+	D3D11_STATE_CACHE_INLINE void SetStreamStrides(const uint16* InStreamStrides)
+	{
+		FMemory::Memcpy(StreamStrides, InStreamStrides, sizeof(StreamStrides));
+	}
+
 	D3D11_STATE_CACHE_INLINE void SetInputLayout(ID3D11InputLayout* InputLayout)
 	{
 #if D3D11_ALLOW_STATE_CACHE
@@ -819,7 +826,13 @@ template <EShaderFrequency ShaderFrequency>
 
 	D3D11_STATE_CACHE_INLINE void SetStreamSource(ID3D11Buffer* VertexBuffer, uint32 StreamIndex, uint32 Stride, uint32 Offset)
 	{
+		ensure(Stride == StreamStrides[StreamIndex]);
 		InternalSetStreamSource(VertexBuffer, StreamIndex, Stride, Offset, nullptr);
+	}
+
+	D3D11_STATE_CACHE_INLINE void SetStreamSource(ID3D11Buffer* VertexBuffer, uint32 StreamIndex, uint32 Offset)
+	{
+		InternalSetStreamSource(VertexBuffer, StreamIndex, StreamStrides[StreamIndex], Offset, nullptr);
 	}
 
 	D3D11_STATE_CACHE_INLINE void GetStreamSources(uint32 StartStreamIndex, uint32 NumStreams, ID3D11Buffer** VertexBuffers, uint32* Strides, uint32* Offsets)

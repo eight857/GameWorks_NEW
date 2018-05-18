@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TP_RollingBall.h"
 #include "UObject/ConstructorHelpers.h"
@@ -63,13 +63,13 @@ void ATP_RollingBall::SetupPlayerInputComponent(class UInputComponent* PlayerInp
 void ATP_RollingBall::MoveRight(float Val)
 {
 	const FVector Torque = FVector(-1.f * Val * RollTorque, 0.f, 0.f);
-	Ball->AddTorque(Torque);
+	Ball->AddTorqueInRadians(Torque);
 }
 
 void ATP_RollingBall::MoveForward(float Val)
 {
 	const FVector Torque = FVector(0.f, Val * RollTorque, 0.f);
-	Ball->AddTorque(Torque);	
+	Ball->AddTorqueInRadians(Torque);	
 }
 
 void ATP_RollingBall::Jump()

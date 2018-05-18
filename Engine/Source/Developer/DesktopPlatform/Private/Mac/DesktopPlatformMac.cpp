@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Mac/DesktopPlatformMac.h"
 #include "MacApplication.h"
@@ -570,7 +570,9 @@ void FDesktopPlatformMac::EnumerateEngineInstallations(TMap<FString, FString> &O
 bool FDesktopPlatformMac::VerifyFileAssociations()
 {
 	CFURLRef GlobalDefaultAppURL = NULL;
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	OSStatus Status = LSGetApplicationForInfo(kLSUnknownType, kLSUnknownCreator, CFSTR("uproject"), kLSRolesAll, NULL, &GlobalDefaultAppURL);
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	if (Status == noErr)
 	{
 		NSBundle* GlobalDefaultAppBundle = [NSBundle bundleWithURL:(__bridge NSURL*)GlobalDefaultAppURL];

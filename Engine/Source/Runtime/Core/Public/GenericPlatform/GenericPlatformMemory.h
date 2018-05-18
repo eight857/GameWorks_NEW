@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 /*=============================================================================================
@@ -83,7 +83,7 @@ typedef FGenericPlatformMemoryConstants FPlatformMemoryConstants;
  * Struct used to hold common memory stats for all platforms.
  * These values may change over the entire life of the executable.
  */
-struct FGenericPlatformMemoryStats : public FPlatformMemoryConstants
+struct CORE_API FGenericPlatformMemoryStats : public FPlatformMemoryConstants
 {
 	/** The amount of physical memory currently available, in bytes. */
 	uint64 AvailablePhysical;
@@ -156,6 +156,7 @@ struct CORE_API FGenericPlatformMemory
 		MCR_StreamingPool, // amount of texture pool available for streaming.
 		MCR_UsedStreamingPool, // amount of texture pool used for streaming.
 		MCR_GPUDefragPool, // presized pool of memory that can be defragmented.
+		MCR_PhysicalLLM, // total physical memory including CPU and GPU
 		MCR_MAX
 	};
 
@@ -461,6 +462,18 @@ public:
 	{
 		return false;
 	}
+
+	/**
+	* Returns true if debug memory has been assigned to the title for general use.
+	* Only applies to consoles with fixed memory and no paging.
+	*/
+	static bool IsExtraDevelopmentMemoryAvailable();
+
+	/**
+	* This function sets AllocFunction and FreeFunction and returns true, or just returns false.
+	* These functions are the platform dependant low low low level functions that LLM uses to allocate memory.
+	*/
+	static bool GetLLMAllocFunctions(void*(*&OutAllocFunction)(size_t), void(*&OutFreeFunction)(void*, size_t), int32& OutAlignment);
 
 protected:
 	friend struct FGenericStatsUpdater;

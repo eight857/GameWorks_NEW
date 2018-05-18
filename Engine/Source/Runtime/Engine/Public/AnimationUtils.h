@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AnimationUtils.h: Skeletal mesh animation utilities.
@@ -90,6 +90,13 @@ struct AnimationErrorStats
 	float MaxErrorTime;
 	/** Bone on which the worst error occurred */
 	int32 MaxErrorBone;
+
+	AnimationErrorStats()
+		: AverageError(0.f)
+		, MaxError(0.f)
+		, MaxErrorTime(0.f)
+		, MaxErrorBone(0)
+	{}
 };
 
 /** Different ways to create an additive animation */

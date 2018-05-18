@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	DistanceFieldAOShared.usf
@@ -90,6 +90,9 @@ float2 BaseLevelTexelSize;
 
 Texture2D BentNormalAOTexture;
 SamplerState BentNormalAOSampler;
+#if !SUPPORTS_INDEPENDENT_SAMPLERS
+SamplerState ConfidenceSampler;
+#endif
 
 Texture2D IrradianceTexture;
 SamplerState IrradianceSampler;

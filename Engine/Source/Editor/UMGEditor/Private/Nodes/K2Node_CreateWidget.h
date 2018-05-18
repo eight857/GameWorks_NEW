@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,7 +16,6 @@ class UMGEDITOR_API UK2Node_CreateWidget : public UK2Node_ConstructObjectFromCla
 
 	//~ Begin UEdGraphNode Interface.
 	virtual void AllocateDefaultPins() override;
-	virtual FLinearColor GetNodeTitleColor() const override;
 	virtual void ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph) override;
 	//~ End UEdGraphNode Interface.
 
@@ -36,5 +35,5 @@ protected:
 	/** Gets base class to use for the 'class' pin.  UObject by default. */
 	virtual UClass* GetClassPinBaseClass() const override;
 	/**  */
-	virtual bool IsSpawnVarPin(UEdGraphPin* Pin) override;
+	virtual bool IsSpawnVarPin(UEdGraphPin* Pin) const override;
 };

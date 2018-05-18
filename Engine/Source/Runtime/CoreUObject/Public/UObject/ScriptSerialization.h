@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * This header contains the code for serialization of script bytecode and [eventually] tagged property values.
@@ -372,7 +372,7 @@
 
 			break;
 		}
-		case EX_AssetConst:
+		case EX_SoftObjectConst:
 		{
 			SerializeExpr(iCode, Ar);
 			break;

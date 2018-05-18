@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SPersonaDetails.h"
 #include "Modules/ModuleManager.h"
@@ -11,8 +11,34 @@ void SPersonaDetails::Construct(const FArguments& InArgs)
 	FPropertyEditorModule& PropertyEditorModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	DetailsView = PropertyEditorModule.CreateDetailView(DetailsViewArgs);
 
-	ChildSlot
+	TSharedRef<SVerticalBox> Content = SNew(SVerticalBox);
+
+	if (InArgs._TopContent.IsValid())
+	{
+		Content->AddSlot()
+		.AutoHeight()
+		[
+			InArgs._TopContent.ToSharedRef()
+		];
+	}
+
+	Content->AddSlot()
+	.FillHeight(1.0f)
 	[
 		DetailsView.ToSharedRef()
+	];
+
+	if (InArgs._BottomContent.IsValid())
+	{
+		Content->AddSlot()
+		.AutoHeight()
+		[
+			InArgs._BottomContent.ToSharedRef()
+		];
+	}
+
+	ChildSlot
+	[
+		Content
 	];
 }

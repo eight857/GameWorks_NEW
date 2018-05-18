@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AssetRegistryHelpers.h"
 #include "ModuleManager.h"
@@ -42,9 +42,9 @@ bool UAssetRegistryHelpers::IsRedirector(const FAssetData& InAssetData)
 	return InAssetData.IsRedirector();
 }
 
-FStringAssetReference UAssetRegistryHelpers::ToStringReference(const FAssetData& InAssetData) 
+FSoftObjectPath UAssetRegistryHelpers::ToSoftObjectPath(const FAssetData& InAssetData) 
 {
-	return InAssetData.ToStringReference();
+	return InAssetData.ToSoftObjectPath();
 }
 
 UClass* UAssetRegistryHelpers::GetClass(const FAssetData& InAssetData)

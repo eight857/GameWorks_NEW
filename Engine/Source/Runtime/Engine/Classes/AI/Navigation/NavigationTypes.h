@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,7 +11,7 @@
 #include "Templates/SubclassOf.h"
 #include "UObject/WeakObjectPtr.h"
 #include "Misc/CoreStats.h"
-#include "Misc/StringClassReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "AI/Navigation/NavFilters/NavigationQueryFilter.h"
 #include "NavigationTypes.generated.h"
 
@@ -540,7 +540,7 @@ struct ENGINE_API FNavDataConfig : public FNavAgentProperties
 	TSubclassOf<ANavigationData> NavigationDataClass;
 
 	UPROPERTY(config)
-	FStringClassReference NavigationDataClassName;
+	FSoftClassPath NavigationDataClassName;
 
 	FNavDataConfig(float Radius = FNavigationSystem::FallbackAgentRadius, float Height = FNavigationSystem::FallbackAgentHeight);
 };
@@ -750,44 +750,6 @@ class TNavStatArray : public TArray<InElementType, NavMeshMemory::FNavAllocator>
 {
 public:
 	typedef TArray<InElementType, NavMeshMemory::FNavAllocator> Super;
-
-#if PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
-
-	TNavStatArray() = default;
-	TNavStatArray(TNavStatArray&&) = default;
-	TNavStatArray(const TNavStatArray&) = default;
-	TNavStatArray& operator=(TNavStatArray&&) = default;
-	TNavStatArray& operator=(const TNavStatArray&) = default;
-
-#else
-
-	FORCEINLINE TNavStatArray()
-	{
-	}
-
-	FORCEINLINE TNavStatArray(const TNavStatArray& Other)
-		: Super((const Super&)Other)
-	{
-	}
-
-	FORCEINLINE TNavStatArray(TNavStatArray&& Other)
-		: Super((Super&&)Other)
-	{
-	}
-
-	FORCEINLINE TNavStatArray& operator=(TNavStatArray&& Other)
-	{
-		(Super&)*this = (Super&&)Other;
-		return *this;
-	}
-
-	FORCEINLINE TNavStatArray& operator=(const TNavStatArray& Other)
-	{
-		(Super&)*this = (const Super&)Other;
-		return *this;
-	}
-
-#endif
 };
 
 template<typename InElementType>

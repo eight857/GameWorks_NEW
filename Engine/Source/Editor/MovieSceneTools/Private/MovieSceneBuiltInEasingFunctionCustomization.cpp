@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneBuiltInEasingFunctionCustomization.h"
 #include "Generators/MovieSceneEasingCurves.h"
@@ -12,6 +12,7 @@
 #include "SButton.h"
 #include "SBox.h"
 #include "SlateApplication.h"
+#include "ScopedTransaction.h"
 
 #include "EditorStyleSet.h"
 
@@ -226,6 +227,8 @@ void FMovieSceneBuiltInEasingFunctionCustomization::CustomizeDetails(IDetailLayo
 
 FReply FMovieSceneBuiltInEasingFunctionCustomization::SetType(EMovieSceneBuiltInEasing NewType)
 {
+	FScopedTransaction Transaction(NSLOCTEXT("EasingFunctionCustomization", "SetEasingType", "Set Easing Type"));	
+
 	TypeProperty->NotifyPreChange();
 
 	TArray<void*> RawData;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -209,6 +209,20 @@ public:
 	 * @param InOnChildPropertyValueChanged	The delegate to call
 	 */
 	virtual void SetOnChildPropertyValueChanged( const FSimpleDelegate& InOnChildPropertyValueChanged ) = 0;
+
+	/**
+	* Sets a delegate to call when the value of the property is about to be changed
+	*
+	* @param InOnPropertyValuePreChange	The delegate to call
+	*/
+	virtual void SetOnPropertyValuePreChange(const FSimpleDelegate& InOnPropertyValuePreChange) = 0;
+
+	/**
+	* Sets a delegate to call when the value of the property of a child is about to be changed
+	*
+	* @param InOnChildPropertyValuePreChange	The delegate to call
+	*/
+	virtual void SetOnChildPropertyValuePreChange(const FSimpleDelegate& InOnChildPropertyValuePreChange) = 0;
 
 	/**
 	 * Gets the typed value of a property.  
@@ -423,6 +437,11 @@ public:
 	 * @return The display name of the property
 	 */
 	virtual FText GetPropertyDisplayName() const = 0;
+
+	/** 
+	* Allows the handle to override the node's display name
+	*/
+	virtual void SetPropertyDisplayName(FText InDisplayName) = 0;
 	
 	/**
 	 * Resets the value to its default
@@ -452,7 +471,7 @@ public:
 	/**
 	 * Marks this property has having a custom reset to default (reset to default will not show up in the default place)
 	 */
-	virtual void MarkResetToDefaultCustomized() = 0;
+	virtual void MarkResetToDefaultCustomized(bool bCustomized = true) = 0;
 
 	/**
 	 * Marks this property as not having a custom reset to default (useful when a widget customizing reset to default goes away)
@@ -645,6 +664,13 @@ public:
 	 * @return a handle to the element at the specified index                                                              
 	 */
 	virtual TSharedRef<IPropertyHandle> GetElement( int32 Index ) const = 0;
+
+	/**
+	* Moves an element from OriginalIndex to NewIndex
+	* @return Whether or not this was successful
+	*/
+	virtual FPropertyAccess::Result MoveElementTo(int32 OriginalIndex, int32 NewIndex) = 0;
+
 
 	/**
 	 * Sets a delegate to call when the number of elements changes                                                  

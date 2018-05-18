@@ -1,8 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
+#include "Math/Range.h"
+#include "Templates/SharedPointer.h"
+#include "UObject/NameTypes.h"
 
 class IMessageReceiver;
 enum class EMessageScope : uint8;

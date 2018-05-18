@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -69,6 +69,10 @@ struct ENGINE_API FConstraintProfileProperties
 	// Disable collision between bodies joined by this constraint.
 	UPROPERTY(EditAnywhere, Category = Constraint)
 	uint8 bDisableCollision : 1;
+
+	// When set, the parent body in a constraint will not be affected by the motion of the child
+	UPROPERTY(EditAnywhere, Category = Constraint)
+	uint8 bParentDominates : 1;
 
 	/**
 	* If distance error between bodies exceeds 0.1 units, or rotation error exceeds 10 degrees, body will be projected to fix this.
@@ -557,6 +561,11 @@ public:
 
 	/** Turn off linear and angular projection */
 	void DisableProjection();
+
+	/** Enable/Disable parent dominates (meaning the parent body cannot be be affected at all by a child) */
+	void EnableParentDominates();
+	void DisableParentDominates();
+
 
 	float GetLastKnownScale() const { return LastKnownScale; }
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -20,6 +20,7 @@ public class MixedRealityFramework : ModuleRules
 
 		PublicDependencyModuleNames.AddRange(
 			new string[] {
+				"MediaAssets",
 			}
 		);
 
@@ -28,12 +29,12 @@ public class MixedRealityFramework : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
-
 				"Media",
-				"MediaAssets",
-				"MediaUtils",
 				"HeadMountedDisplay",
-				"InputCore"
+				"InputCore",
+                "MediaUtils",
+				"RenderCore",
+				"LensDistortion"
 			}
 		);
 	}

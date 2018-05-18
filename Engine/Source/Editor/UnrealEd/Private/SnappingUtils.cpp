@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SnappingUtils.h"
 #include "Modules/ModuleManager.h"
@@ -140,13 +140,18 @@ bool FEditorViewportSnapping::IsSnapToVertexEnabled()
 	{
 		FLevelEditorModule& LevelEditor = FModuleManager::GetModuleChecked<FLevelEditorModule>( TEXT("LevelEditor") );
 		const FLevelEditorCommands& Commands = LevelEditor.GetLevelEditorCommands();
+		bool bIsChordPressed = false;
+		for (uint32 i = 0; i < static_cast<uint8>(EMultipleKeyBindingIndex::NumChords); ++i)
+		{
+			EMultipleKeyBindingIndex ChordIndex = static_cast<EMultipleKeyBindingIndex> (i);
+			const FInputChord& Chord = *Commands.HoldToEnableVertexSnapping->GetActiveChord(ChordIndex);
 
-		const FInputChord& Chord = *Commands.HoldToEnableVertexSnapping->GetActiveChord();
-
-		return (Chord.NeedsControl() == GCurrentLevelEditingViewportClient->IsCtrlPressed() ) 
-			&& (Chord.NeedsAlt() ==  GCurrentLevelEditingViewportClient->IsAltPressed() ) 
-			&& (Chord.NeedsShift() == GCurrentLevelEditingViewportClient->IsShiftPressed() ) 
-			&& GCurrentLevelEditingViewportClient->Viewport->KeyState(Chord.Key) == true;
+			bIsChordPressed |= (Chord.NeedsControl() == GCurrentLevelEditingViewportClient->IsCtrlPressed())
+				&& (Chord.NeedsAlt() == GCurrentLevelEditingViewportClient->IsAltPressed())
+				&& (Chord.NeedsShift() == GCurrentLevelEditingViewportClient->IsShiftPressed())
+				&& GCurrentLevelEditingViewportClient->Viewport->KeyState(Chord.Key) == true;
+		}
+		return bIsChordPressed;
 	}
 	else
 	{

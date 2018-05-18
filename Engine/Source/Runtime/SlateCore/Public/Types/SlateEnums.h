@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -220,6 +220,9 @@ enum EMenuPlacement
 
 	/** Place the menu's vertical center on the left side at the menu anchor's vertical center on the right side */
 	MenuPlacement_RightLeftCenter UMETA(DisplayName = "Right Center, Left Center"),
+	
+	/** Place the menu's bottom left corner directly on top of the menu anchor's bottom left corner */
+	MenuPlacement_MatchBottomLeft UMETA(DisplayName = "Match Bottom Left Corner"),
 };
 
 

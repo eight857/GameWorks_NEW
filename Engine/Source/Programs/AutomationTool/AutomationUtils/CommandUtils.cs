@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -101,7 +101,7 @@ namespace AutomationTool
 		/// <returns>Initialized and ready to use BuildEnvironment</returns>
 		static internal void InitCommandEnvironment()
 		{
-			CmdEnvironment = (Automation.IsBuildMachine && !GlobalCommandLine.ForceLocal) ? new CommandEnvironment() : new LocalCommandEnvironment();
+			CmdEnvironment = new CommandEnvironment();
 		}
 
 		#endregion
@@ -116,7 +116,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void Log(string Format, params object[] Args)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.Console, Format, Args);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.Console, Format, Args);
 		}
 
 		/// <summary>
@@ -126,7 +126,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void Log(string Message)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.Console, Message);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.Console, Message);
 		}
 
 		/// <summary>
@@ -137,7 +137,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogError(string Format, params object[] Args)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.Error, Format, Args);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.Error, Format, Args);
 		}
 
 		/// <summary>
@@ -147,7 +147,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogError(string Message)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.Error, Message);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.Error, Message);
 		}
 
 		/// <summary>
@@ -158,7 +158,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogWarning(string Format, params object[] Args)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.Warning, Format, Args);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.Warning, Format, Args);
 		}
 
 		/// <summary>
@@ -168,7 +168,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogWarning(string Message)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.Warning, Message);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.Warning, Message);
 		}
 
 		/// <summary>
@@ -179,7 +179,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogVerbose(string Format, params object[] Args)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.Verbose, Format, Args);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.Verbose, Format, Args);
 		}
 
 		/// <summary>
@@ -189,7 +189,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogVerbose(string Message)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.Verbose, Message);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.Verbose, Message);
 		}
 
 		/// <summary>
@@ -200,7 +200,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogVeryVerbose(string Format, params object[] Args)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.VeryVerbose, Format, Args);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.VeryVerbose, Format, Args);
 		}
 
 		/// <summary>
@@ -210,7 +210,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogVeryVerbose(string Message)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.VeryVerbose, Message);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.VeryVerbose, Message);
 		}
 
 		/// <summary>
@@ -221,7 +221,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogLog(string Format, params object[] Args)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.Log, Format, Args);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.Log, Format, Args);
 		}
 
 		/// <summary>
@@ -231,7 +231,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogLog(string Message)
 		{
-			UnrealBuildTool.Log.WriteLine(1, null, UnrealBuildTool.LogEventType.Log, Message);
+			UnrealBuildTool.Log.WriteLine(1, UnrealBuildTool.LogEventType.Log, Message);
 		}
 
 		/// <summary>
@@ -243,7 +243,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogWithVerbosity(UnrealBuildTool.LogEventType Verbosity, string Format, params object[] Args)
 		{
-            UnrealBuildTool.Log.WriteLine(1, null, Verbosity, Format, Args);
+            UnrealBuildTool.Log.WriteLine(1, Verbosity, Format, Args);
 		}
 
 		/// <summary>
@@ -254,7 +254,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogWithVerbosity(UnrealBuildTool.LogEventType Verbosity, string Message)
 		{
-            UnrealBuildTool.Log.WriteLine(1, null, Verbosity, Message);
+            UnrealBuildTool.Log.WriteLine(1, Verbosity, Message);
 		}
 
 		/// <summary>
@@ -265,7 +265,7 @@ namespace AutomationTool
 		[MethodImplAttribute(MethodImplOptions.NoInlining)]
 		public static void LogWithVerbosity(UnrealBuildTool.LogEventType Verbosity, Exception Ex)
 		{
-            UnrealBuildTool.Log.WriteLine(1, null, Verbosity, LogUtils.FormatException(Ex));
+            UnrealBuildTool.Log.WriteLine(1, Verbosity, LogUtils.FormatException(Ex));
 		}
 
 		#endregion
@@ -636,49 +636,29 @@ namespace AutomationTool
 		}
 
 		/// <summary>
-		/// Creates a directory(or directories).
-		/// If the creation of the directory fails, this function throws an Exception.
+		/// Creates a directory. Throws an exception on failure.
 		/// </summary>
-        /// <param name="Directories">Directories</param>
+        /// <param name="DirectoryName">Name of the directory to create</param>
         public static void CreateDirectory(string DirectoryName)
 		{
-			var NormalizedDirectory = ConvertSeparators(PathSeparator.Default, DirectoryName);
-			if (!InternalUtils.SafeCreateDirectory(NormalizedDirectory))
+			string NormalizedDirectory = ConvertSeparators(PathSeparator.Default, DirectoryName);
+			try
 			{
-				throw new AutomationException(String.Format("Failed to create directory '{0}'", NormalizedDirectory));
+				Directory.CreateDirectory(DirectoryName);
+			}
+			catch (Exception Ex)
+			{
+				throw new AutomationException(Ex, "Failed to create directory '{0}'", NormalizedDirectory);
 			}
 		}
 
-        /// <summary>
-        /// Creates a directory(or directories).
-        /// If the creation of the directory fails, this function throws an Exception.
-        /// </summary>
-        /// <param name="bQuiet">When true, logging is suppressed.</param>
-        /// <param name="Directories">Directories</param>
-        public static void CreateDirectory(bool bQuiet, string DirectoryName)
-        {
-            var NormalizedDirectory = ConvertSeparators(PathSeparator.Default, DirectoryName);
-            if (!InternalUtils.SafeCreateDirectory(NormalizedDirectory, bQuiet))
-            {
-                throw new AutomationException(String.Format("Failed to create directory '{0}'", NormalizedDirectory));
-            }
-        }
-
 		/// <summary>
-		/// Creates a directory (or directories).
-		/// If the creation of the directory fails, this function prints a warning.
+		/// Creates a directory. Throws an exception on failure.
 		/// </summary>
-        /// <param name="Directories">Directories</param>
-        public static bool CreateDirectory_NoExceptions(string DirectoryName)
+        /// <param name="Location">Name of the directory to create</param>
+        public static void CreateDirectory(DirectoryReference Location)
 		{
-			bool Result = true;
-			var NormalizedDirectory = ConvertSeparators(PathSeparator.Default, DirectoryName);
-			if (!InternalUtils.SafeCreateDirectory(NormalizedDirectory))
-			{
-				LogWarning("Failed to create directory '{0}'", NormalizedDirectory);
-				Result = false;
-			}
-			return Result;
+			CreateDirectory(Location.FullName);
 		}
 
 		/// <summary>
@@ -1607,17 +1587,10 @@ namespace AutomationTool
 			{
                 throw new AutomationException("Source count ({0}) does not match Dest count ({1})", Source.Count, Dest.Count);
 			}
-            try
-            {
-                Parallel.ForEach(Source.Zip(Dest, (Src, Dst) => new { SourceFile = Src, DestFile = Dst }), new ParallelOptions { MaxDegreeOfParallelism = MaxThreads }, (Pair) =>
-                {
-                    CommandUtils.CopyFile(Pair.SourceFile, Pair.DestFile, true);
-                });
-            }
-            catch (AggregateException Ex)
-            {
-                throw new AutomationException(Ex, "Failed to thread-copy files.");
-            }
+			Parallel.ForEach(Source.Zip(Dest, (Src, Dst) => new { SourceFile = Src, DestFile = Dst }), new ParallelOptions { MaxDegreeOfParallelism = MaxThreads }, (Pair) =>
+			{
+				CommandUtils.CopyFile(Pair.SourceFile, Pair.DestFile, true);
+			});
         }
 
 		/// <summary>
@@ -2079,7 +2052,7 @@ namespace AutomationTool
 			}
 			else
 			{
-				using (Ionic.Zip.ZipFile Zip = new Ionic.Zip.ZipFile())
+				using (Ionic.Zip.ZipFile Zip = new Ionic.Zip.ZipFile(Encoding.UTF8))
 				{
 					Zip.UseZip64WhenSaving = Ionic.Zip.Zip64Option.Always;
 					foreach (FileReference FilteredFile in Filter.ApplyToDirectory(BaseDirectory, true))
@@ -2123,7 +2096,7 @@ namespace AutomationTool
 			}
 			else
 			{
-				Ionic.Zip.ZipFile Zip = new Ionic.Zip.ZipFile();
+				Ionic.Zip.ZipFile Zip = new Ionic.Zip.ZipFile(Encoding.UTF8);
 				Zip.UseZip64WhenSaving = Ionic.Zip.Zip64Option.Always;
 				foreach(FileReference File in Files)
 				{
@@ -2336,7 +2309,7 @@ namespace AutomationTool
 		/// <param name="FileName">The file to read from</param>
 		/// <param name="Telemetry">On success, the read telemetry data</param>
 		/// <returns>True if a telemetry object was read</returns>
-		public static bool TryRead(string FileName, out TelemetryData Telemetry)
+		public static bool TryRead(FileReference FileName, out TelemetryData Telemetry)
 		{
 			// Try to read the raw json object
 			JsonObject RawObject;
@@ -2573,8 +2546,8 @@ namespace AutomationTool
 		{
 			string[] PossibleSignToolNames =
 			{
-				"C:/Program Files (x86)/Windows Kits/10/bin/x86/SignTool.exe",
-				"C:/Program Files (x86)/Windows Kits/8.1/bin/x86/SignTool.exe"
+				"C:/Program Files (x86)/Windows Kits/8.1/bin/x86/SignTool.exe",
+				"C:/Program Files (x86)/Windows Kits/10/bin/x86/SignTool.exe"
 			};
 
 			foreach(string PossibleSignToolName in PossibleSignToolNames)
@@ -2816,7 +2789,7 @@ namespace AutomationTool
 				//@TODO: Verbosity choosing
 				//  /v will spew lots of info
 				//  /q does nothing on success and minimal output on failure
-				string CodeSignArgs = String.Format("sign{0} /a /n \"{1}\" /t {2} /v {3}", SpecificStoreArg, SigningIdentity, TimestampServer[NumTrials % TimestampServer.Length], FilesToSign);
+				string CodeSignArgs = String.Format("sign{0} /a /n \"{1}\" /t {2} /debug {3}", SpecificStoreArg, SigningIdentity, TimestampServer[NumTrials % TimestampServer.Length], FilesToSign);
 
 				IProcessResult Result = CommandUtils.Run(SignToolName, CodeSignArgs, null, CommandUtils.ERunOptions.AllowSpew);
 				++NumTrials;
@@ -2852,13 +2825,14 @@ namespace AutomationTool
 			List<string> FinalFiles = new List<string>();
 			foreach (string Filename in Files.Select(x => x.FullName))
 			{
-				// Make sure the file isn't read-only
 				FileInfo TargetFileInfo = new FileInfo(Filename);
 
 				// Executable extensions
 				List<string> Extensions = new List<string>();
 				Extensions.Add(".dll");
 				Extensions.Add(".exe");
+				Extensions.Add(".msi");
+				Extensions.Add(".dle");
 
 				bool IsExecutable = bIgnoreExtension;
 
@@ -2866,6 +2840,8 @@ namespace AutomationTool
 				{
 					if (TargetFileInfo.FullName.EndsWith(Ext, StringComparison.InvariantCultureIgnoreCase))
 					{
+						// force file writable
+						TargetFileInfo.IsReadOnly = false;
 						IsExecutable = true;
 						break;
 					}

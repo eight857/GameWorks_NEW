@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -76,6 +76,13 @@ struct FVisualizerEvent
 	{
 		ColorIndex = GetTypeHash( InEventName );
 	}
+
+	static TSharedPtr< FVisualizerEvent > LoadVisualizerEvent(FArchive *Ar);
+	static void SaveVisualizerEventRecursively(FArchive *Ar, TSharedPtr< FVisualizerEvent > VisualizerEvent);
+
+private:
+	static TSharedPtr< FVisualizerEvent > LoadVisualizerEventRecursively(FArchive *Ar, TSharedPtr< FVisualizerEvent > InParentEvent);
+
 };
 
 /** Array of graph events.*/

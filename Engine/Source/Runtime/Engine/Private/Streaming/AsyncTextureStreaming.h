@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 AsyncTextureStreaming.h: Definitions of classes used for texture streaming async task.
@@ -67,8 +67,43 @@ private:
 
 	/** Time since last full update. Used to know if something is immediately visible. */
 	float LastUpdateTime;
+
+	/** Sorted list of all static instances. The sorting is based on MaxLevelTextureScreenSize. */
+	TArray<int32> StaticInstancesViewIndices;
+
+	/** List of all static instances that were rejected. */
+	TArray<int32> CulledStaticInstancesViewIndices;
 };
 
+struct FCompareTextureByRetentionPriority // Bigger retention priority first.
+{
+	FCompareTextureByRetentionPriority(const TArray<FStreamingTexture>& InStreamingTextures) : StreamingTextures(InStreamingTextures) {}
+	const TArray<FStreamingTexture>& StreamingTextures;
+
+	FORCEINLINE bool operator()( int32 IndexA, int32 IndexB ) const
+	{
+		const int32 PrioA = StreamingTextures[IndexA].RetentionPriority;
+		const int32 PrioB = StreamingTextures[IndexB].RetentionPriority;
+		if ( PrioA > PrioB )  return true;
+		if ( PrioA == PrioB ) return IndexA > IndexB;  // Sorting by index so that it gets deterministic.
+		return false;
+	}
+};
+
+struct FCompareTextureByLoadOrderPriority // Bigger load order priority first.
+{
+	FCompareTextureByLoadOrderPriority(const TArray<FStreamingTexture>& InStreamingTextures) : StreamingTextures(InStreamingTextures) {}
+	const TArray<FStreamingTexture>& StreamingTextures;
+
+	FORCEINLINE bool operator()( int32 IndexA, int32 IndexB ) const
+	{
+		const int32 PrioA = StreamingTextures[IndexA].LoadOrderPriority;
+		const int32 PrioB = StreamingTextures[IndexB].LoadOrderPriority;
+		if ( PrioA > PrioB )  return true;
+		if ( PrioA == PrioB ) return IndexA > IndexB;  // Sorting by index so that it gets deterministic.
+		return false;
+	}
+};
 
 /** Async work class for calculating priorities for all textures. */
 // this could implement a better abandon, but give how it is used, it does that anyway via the abort mechanism
@@ -119,39 +154,14 @@ public:
 		StreamingData.ReleaseViews();
 	}
 
+protected:
+
+	/** Ensures that no temporary streaming boost are active which could interfere with texture streaming bias in undesirable ways. */
+	bool AllowPerTextureMipBiasChanges() const;
+
 private:
 
 	friend class FAsyncTask<FAsyncTextureStreamingTask>;
-
-	struct FCompareTextureByRetentionPriority // Bigger retention priority first.
-	{
-		FCompareTextureByRetentionPriority(const TArray<FStreamingTexture>& InStreamingTextures) : StreamingTextures(InStreamingTextures) {}
-		const TArray<FStreamingTexture>& StreamingTextures;
-
-		FORCEINLINE bool operator()( int32 IndexA, int32 IndexB ) const
-		{
-			const int32 PrioA = StreamingTextures[IndexA].RetentionPriority;
-			const int32 PrioB = StreamingTextures[IndexB].RetentionPriority;
-			if ( PrioA > PrioB )  return true;
-			if ( PrioA == PrioB ) return IndexA > IndexB;  // Sorting by index so that it gets deterministic.
-			return false;
-		}
-	};
-
-	struct FCompareTextureByLoadOrderPriority // Bigger load order priority first.
-	{
-		FCompareTextureByLoadOrderPriority(const TArray<FStreamingTexture>& InStreamingTextures) : StreamingTextures(InStreamingTextures) {}
-		const TArray<FStreamingTexture>& StreamingTextures;
-
-		FORCEINLINE bool operator()( int32 IndexA, int32 IndexB ) const
-		{
-			const int32 PrioA = StreamingTextures[IndexA].LoadOrderPriority;
-			const int32 PrioB = StreamingTextures[IndexB].LoadOrderPriority;
-			if ( PrioA > PrioB )  return true;
-			if ( PrioA == PrioB ) return IndexA > IndexB;  // Sorting by index so that it gets deterministic.
-			return false;
-		}
-	};
 
 	void UpdateBudgetedMips_Async(int64& OutMemoryUsed, int64& OutTempMemoryUsed);
 

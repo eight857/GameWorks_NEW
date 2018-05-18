@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TutorialStateSettings.h"
 #include "Templates/SubclassOf.h"
@@ -65,7 +65,7 @@ void UTutorialStateSettings::RecordProgress(UEditorTutorial* InTutorial, int32 C
 		else
 		{
 			FTutorialProgress Progress;
-			Progress.Tutorial = FStringClassReference(InTutorial->GetClass());
+			Progress.Tutorial = FSoftClassPath(InTutorial->GetClass());
 			Progress.CurrentStage = CurrentStage;
 			Progress.bUserDismissed = false;
 			Progress.bUserDismissedThisSession = false;
@@ -88,7 +88,7 @@ void UTutorialStateSettings::DismissTutorial(UEditorTutorial* InTutorial, bool b
 		else
 		{
 			FTutorialProgress Progress;
-			Progress.Tutorial = FStringClassReference(InTutorial->GetClass());
+			Progress.Tutorial = FSoftClassPath(InTutorial->GetClass());
 			Progress.CurrentStage = 0;
 			Progress.bUserDismissed = bDismissAcrossSessions;
 			Progress.bUserDismissedThisSession = true;

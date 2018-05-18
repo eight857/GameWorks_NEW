@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,6 +6,7 @@ using System.Text;
 using UnrealBuildTool;
 using System.IO;
 using System.Reflection;
+using Tools.DotNETCommon;
 
 namespace AutomationTool
 {
@@ -128,10 +129,15 @@ namespace AutomationTool
 					string CmdLinePlatform = null;
 					foreach (var ParamName in PlatformParamNames)
 					{
-						CmdLinePlatform = Command.ParseParamValue(ParamName);
-						if (!String.IsNullOrEmpty(CmdLinePlatform))
+						string ParamValue = Command.ParseParamValue(ParamName);
+						if (!string.IsNullOrEmpty(ParamValue))
 						{
-							break;
+							if (!string.IsNullOrEmpty(CmdLinePlatform))
+							{
+								CmdLinePlatform += "+";
+							}
+
+							CmdLinePlatform += ParamValue;
 						}
 					}
 
@@ -148,7 +154,7 @@ namespace AutomationTool
 					{
 						// Get all platforms from the param value: Platform_1+Platform_2+...+Platform_k
 						TargetPlatforms = new List<TargetPlatformDescriptor>();
-						var PlatformNames = new List<string>(CmdLinePlatform.Split('+'));
+						var PlatformNames = (new HashSet<string>(CmdLinePlatform.Split('+'))).ToList();
 						foreach (var PlatformName in PlatformNames)
 						{
                             // Look for dependent platforms, Source_1.Dependent_1+Source_2.Dependent_2+Standalone_3
@@ -156,23 +162,27 @@ namespace AutomationTool
 
                             foreach (var SubPlatformName in SubPlatformNames)
                             {
-                                UnrealTargetPlatform NewPlatformType = (UnrealTargetPlatform)Enum.Parse(typeof(UnrealTargetPlatform), SubPlatformName, true);
-                                // generate all valid platform descriptions for this platform type + cook flavors
-                                List<TargetPlatformDescriptor> PlatformDescriptors = Platform.GetValidTargetPlatforms(NewPlatformType, CookFlavors);
-                                TargetPlatforms.AddRange(PlatformDescriptors);
+								// Need to tolerate cook platform names here, which UFE likes to pass in. (TODO: Not sure if it's right to do that, but it does pass -targetplatform as well)
+                                UnrealTargetPlatform NewPlatformType;
+								if(Enum.TryParse(SubPlatformName, out NewPlatformType))
+								{
+									// generate all valid platform descriptions for this platform type + cook flavors
+									List<TargetPlatformDescriptor> PlatformDescriptors = Platform.GetValidTargetPlatforms(NewPlatformType, CookFlavors);
+									TargetPlatforms.AddRange(PlatformDescriptors);
                                                               
-                                if (SubPlatformName != SubPlatformNames[0])
-                                {
-                                    // This is not supported with cook flavors
-                                    if (!CommandUtils.IsNullOrEmpty(CookFlavors))
-                                    {
-                                        throw new AutomationException("Cook flavors are not supported for dependent platforms!");
-                                    }
+									if (SubPlatformName != SubPlatformNames[0])
+									{
+										// This is not supported with cook flavors
+										if (!CommandUtils.IsNullOrEmpty(CookFlavors))
+										{
+											throw new AutomationException("Cook flavors are not supported for dependent platforms!");
+										}
 
-                                    // We're a dependent platform so add ourselves to the map, pointing to the first element in the list
-                                    UnrealTargetPlatform FirstPlatformType = (UnrealTargetPlatform)Enum.Parse(typeof(UnrealTargetPlatform), SubPlatformNames[0], true);
-                                    DependentPlatformMap.Add(new TargetPlatformDescriptor(NewPlatformType), new TargetPlatformDescriptor(FirstPlatformType));
-                                }
+										// We're a dependent platform so add ourselves to the map, pointing to the first element in the list
+										UnrealTargetPlatform FirstPlatformType = (UnrealTargetPlatform)Enum.Parse(typeof(UnrealTargetPlatform), SubPlatformNames[0], true);
+										DependentPlatformMap.Add(new TargetPlatformDescriptor(NewPlatformType), new TargetPlatformDescriptor(FirstPlatformType));
+									}
+								}
                             }
 						}
 					}
@@ -223,8 +233,12 @@ namespace AutomationTool
             this.GeneratePatch = InParams.GeneratePatch;
 			this.AddPatchLevel = InParams.AddPatchLevel;
 			this.StageBaseReleasePaks = InParams.StageBaseReleasePaks;
-			this.DLCName = InParams.DLCName;
+			this.DLCFile = InParams.DLCFile;
+			this.GenerateRemaster = InParams.GenerateRemaster;
+			this.DiscVersion = InParams.DiscVersion;
             this.DLCIncludeEngineContent = InParams.DLCIncludeEngineContent;
+			this.DLCActLikePatch = InParams.DLCActLikePatch;
+			this.DLCPakPluginFile = InParams.DLCPakPluginFile;
             this.DiffCookedContentPath = InParams.DiffCookedContentPath;
             this.AdditionalCookerOptions = InParams.AdditionalCookerOptions;
 			this.ClientCookedTargets = InParams.ClientCookedTargets;
@@ -243,7 +257,7 @@ namespace AutomationTool
 			this.IterativeCooking = InParams.IterativeCooking;
 			this.IterateSharedCookedBuild = InParams.IterateSharedCookedBuild;
 			this.IterateSharedBuildUsePrecompiledExe = InParams.IterateSharedBuildUsePrecompiledExe;
-			this.CookAll = InParams.CookAll;
+            this.CookAll = InParams.CookAll;
 			this.CookPartialGC = InParams.CookPartialGC;
 			this.CookInEditor = InParams.CookInEditor; 
 			this.CookOutputDir = InParams.CookOutputDir;
@@ -263,7 +277,7 @@ namespace AutomationTool
             this.UnversionedCookedContent = InParams.UnversionedCookedContent;
 			this.EncryptIniFiles = InParams.EncryptIniFiles;
             this.EncryptPakIndex = InParams.EncryptPakIndex;
-            this.EncryptEverything = InParams.EncryptEverything;
+			this.EncryptEverything = InParams.EncryptEverything;
 			this.SkipCookingEditorContent = InParams.SkipCookingEditorContent;
             this.NumCookersToSpawn = InParams.NumCookersToSpawn;
 			this.FileServer = InParams.FileServer;
@@ -388,7 +402,7 @@ namespace AutomationTool
             bool? UnversionedCookedContent = null,
 			bool? EncryptIniFiles = null,
             bool? EncryptPakIndex = null,
-            bool? EncryptEverything = null,
+			bool? EncryptEverything = null,
 			bool? SkipCookingEditorContent = null,
             int? NumCookersToSpawn = null,
             string AdditionalCookerOptions = null,
@@ -399,9 +413,13 @@ namespace AutomationTool
             bool? GeneratePatch = null,
 			bool? AddPatchLevel = null,
 			bool? StageBaseReleasePaks = null,
-			string DLCName = null,
+			bool? GenerateRemaster = null,
+            string DiscVersion = null,
+            string DLCName = null,
             string DiffCookedContentPath = null,
             bool? DLCIncludeEngineContent = null,
+			bool? DLCPakPluginFile = null,
+			bool? DLCActLikePatch = null,
 			bool? CrashReporter = null,
 			bool? DedicatedServer = null,
 			bool? Client = null,
@@ -533,10 +551,31 @@ namespace AutomationTool
             this.GeneratePatch = GetParamValueIfNotSpecified(Command, GeneratePatch, this.GeneratePatch, "GeneratePatch");
             this.AddPatchLevel = GetParamValueIfNotSpecified(Command, AddPatchLevel, this.AddPatchLevel, "AddPatchLevel");
 			this.StageBaseReleasePaks = GetParamValueIfNotSpecified(Command, StageBaseReleasePaks, this.StageBaseReleasePaks, "StageBaseReleasePaks");
+			this.GenerateRemaster = GetParamValueIfNotSpecified(Command, GenerateRemaster, this.GenerateRemaster, "GenerateRemaster");
+			this.DiscVersion = ParseParamValueIfNotSpecified(Command, DiscVersion, "DiscVersion", String.Empty);
 			this.AdditionalCookerOptions = ParseParamValueIfNotSpecified(Command, AdditionalCookerOptions, "AdditionalCookerOptions", String.Empty);
-            this.DLCName = ParseParamValueIfNotSpecified(Command, DLCName, "DLCName", String.Empty);
+
+			DLCName = ParseParamValueIfNotSpecified(Command, DLCName, "DLCName", String.Empty);
+			if(!String.IsNullOrEmpty(DLCName))
+			{
+				List<PluginInfo> CandidatePlugins = Plugins.ReadAvailablePlugins(CommandUtils.EngineDirectory, RawProjectPath, null);
+				PluginInfo DLCPlugin = CandidatePlugins.FirstOrDefault(x => String.Equals(x.Name, DLCName, StringComparison.InvariantCultureIgnoreCase));
+				if(DLCPlugin == null)
+				{
+					DLCFile = FileReference.Combine(RawProjectPath.Directory, "Plugins", DLCName, DLCName + ".uplugin");
+				}
+				else
+				{
+					DLCFile = DLCPlugin.File;
+				}
+			}
+
+            //this.DLCName = 
             this.DiffCookedContentPath = ParseParamValueIfNotSpecified(Command, DiffCookedContentPath, "DiffCookedContentPath", String.Empty);
             this.DLCIncludeEngineContent = GetParamValueIfNotSpecified(Command, DLCIncludeEngineContent, this.DLCIncludeEngineContent, "DLCIncludeEngineContent");
+			this.DLCPakPluginFile = GetParamValueIfNotSpecified(Command, DLCPakPluginFile, this.DLCPakPluginFile, "DLCPakPluginFile");
+			this.DLCActLikePatch = GetParamValueIfNotSpecified(Command, DLCActLikePatch, this.DLCActLikePatch, "DLCActLikePatch");
+			
 			this.SkipCook = GetParamValueIfNotSpecified(Command, SkipCook, this.SkipCook, "skipcook");
 			if (this.SkipCook)
 			{
@@ -569,7 +608,7 @@ namespace AutomationTool
             this.UnversionedCookedContent = GetParamValueIfNotSpecified(Command, UnversionedCookedContent, this.UnversionedCookedContent, "UnversionedCookedContent");
 			this.EncryptIniFiles = GetParamValueIfNotSpecified(Command, EncryptIniFiles, this.EncryptIniFiles, "EncryptIniFiles");
             this.EncryptPakIndex = GetParamValueIfNotSpecified(Command, EncryptPakIndex, this.EncryptPakIndex, "EncryptPakIndex");
-            this.EncryptEverything = GetParamValueIfNotSpecified(Command, EncryptEverything, this.EncryptEverything, "EncryptEverything");
+			this.EncryptEverything = GetParamValueIfNotSpecified(Command, EncryptEverything, this.EncryptEverything, "EncryptEverything");
 			this.SkipCookingEditorContent = GetParamValueIfNotSpecified(Command, SkipCookingEditorContent, this.SkipCookingEditorContent, "SkipCookingEditorContent");
             if (NumCookersToSpawn.HasValue)
             {
@@ -584,7 +623,7 @@ namespace AutomationTool
 			this.IterativeCooking = GetParamValueIfNotSpecified(Command, IterativeCooking, this.IterativeCooking, new string[] { "iterativecooking", "iterate" });
 			this.IterateSharedCookedBuild = GetParamValueIfNotSpecified(Command, IterateSharedCookedBuild, this.IterateSharedCookedBuild, new string[] { "IterateSharedCookedBuild"});
 			this.IterateSharedBuildUsePrecompiledExe = GetParamValueIfNotSpecified(Command, IterateSharedBuildUsePrecompiledExe, this.IterateSharedBuildUsePrecompiledExe, new string[] { "IterateSharedBuildUsePrecompiledExe" });
-
+			
 			this.SkipCookOnTheFly = GetParamValueIfNotSpecified(Command, SkipCookOnTheFly, this.SkipCookOnTheFly, "skipcookonthefly");
 			this.CookAll = GetParamValueIfNotSpecified(Command, CookAll, this.CookAll, "CookAll");
 			this.CookPartialGC = GetParamValueIfNotSpecified(Command, CookPartialGC, this.CookPartialGC, "CookPartialGC");
@@ -607,7 +646,7 @@ namespace AutomationTool
 				this.Stage = true;
 			}
 			this.StageDirectoryParam = ParseParamValueIfNotSpecified(Command, StageDirectoryParam, "stagingdirectory", String.Empty, true);
-			this.bCodeSign = GetParamValueIfNotSpecified(Command, CodeSign, CommandUtils.IsBuildMachine, "CodeSign");
+			this.bCodeSign = GetOptionalParamValueIfNotSpecified(Command, CodeSign, CommandUtils.IsBuildMachine, "CodeSign", "NoCodeSign").GetValueOrDefault();
 			this.bTreatNonShippingBinariesAsDebugFiles = GetParamValueIfNotSpecified(Command, TreatNonShippingBinariesAsDebugFiles, false, "TreatNonShippingBinariesAsDebugFiles");
 			this.Manifests = GetParamValueIfNotSpecified(Command, Manifests, this.Manifests, "manifests");
             this.CreateChunkInstall = GetParamValueIfNotSpecified(Command, CreateChunkInstall, this.CreateChunkInstall, "createchunkinstall");
@@ -676,7 +715,18 @@ namespace AutomationTool
 			this.IterativeDeploy = GetParamValueIfNotSpecified(Command, IterativeDeploy, this.IterativeDeploy, new string[] {"iterativedeploy", "iterate" } );
 			this.FastCook = GetParamValueIfNotSpecified(Command, FastCook, this.FastCook, "FastCook");
 			this.IgnoreCookErrors = GetParamValueIfNotSpecified(Command, IgnoreCookErrors, this.IgnoreCookErrors, "IgnoreCookErrors");
-            this.RunAssetNativization = GetParamValueIfNotSpecified(Command, RunAssetNativization, this.RunAssetNativization, "nativizeAssets");
+
+            // Determine whether or not we're going to nativize Blueprint assets at cook time.
+            this.RunAssetNativization = false;
+            ConfigHierarchy GameIni = ConfigCache.ReadHierarchy(ConfigHierarchyType.Game, RawProjectPath.Directory, HostPlatform.Current.HostEditorPlatform);
+            if (GameIni != null)
+            {
+                string BlueprintNativizationMethod;
+                if (GameIni.TryGetValue("/Script/UnrealEd.ProjectPackagingSettings", "BlueprintNativizationMethod", out BlueprintNativizationMethod))
+                {
+                    this.RunAssetNativization = !string.IsNullOrEmpty(BlueprintNativizationMethod) && BlueprintNativizationMethod != "Disabled";
+                }
+            }
 
             string DeviceString = ParseParamValueIfNotSpecified(Command, Device, "device", String.Empty).Trim(new char[] { '\"' });
             if(DeviceString == "")
@@ -911,6 +961,18 @@ namespace AutomationTool
                 this.RunTimeoutSeconds = Command.ParseParamInt("runtimeoutseconds");
             }
 
+			// Gather up any '-ini:' arguments and save them. We'll pass these along to other tools that may be spawned in a new process as part of the command.
+			if(Command != null)
+			{
+				foreach (string Param in Command.Params)
+				{
+					if (Param.StartsWith("ini:", StringComparison.InvariantCultureIgnoreCase))
+					{
+						this.ConfigOverrideParams.Add(Param);
+					}
+				}
+			}
+
 			AutodetectSettings(false);
 			ValidateAndLog();
 		}
@@ -1095,7 +1157,7 @@ namespace AutomationTool
                 }
                 if ( HasDLCName )
                 {
-                     return Path.GetFullPath( CommandUtils.CombinePaths(Path.GetDirectoryName(RawProjectPath.FullName), "Plugins", DLCName, "Saved", "StagedBuilds" ) );
+                     return Path.GetFullPath( CommandUtils.CombinePaths( DLCFile.Directory.FullName, "Saved", "StagedBuilds" ) );
                 }
                 // default return the project saved\stagedbuilds directory
                 return Path.GetFullPath( CommandUtils.CombinePaths(Path.GetDirectoryName(RawProjectPath.FullName), "Saved", "StagedBuilds") );
@@ -1143,18 +1205,12 @@ namespace AutomationTool
         /// <summary>
         /// Determines if Blueprint assets should be substituted with auto-generated code.
         /// </summary>
-        [Help("nativizeAssets", "Runs a \"nativization\" pass on Blueprint assets, converting then into C++ (replacing the assets with the generated source).")]
         public bool RunAssetNativization;
 
-        public struct BlueprintPluginKey
-        {
-            public bool Client;
-            public UnrealTargetPlatform TargetPlatform;
-        }
-        /// <summary>
-        /// Shared: Ref to an auto-generated plugin file that should be incorporated into the project's build
-        /// </summary>
-        public Dictionary<BlueprintPluginKey, FileReference> BlueprintPluginPaths = new Dictionary<BlueprintPluginKey, FileReference>();
+		/// <summary>
+		/// Keeps track of any '-ini:type:[section]:value' arguments on the command line. These will override cached config settings for the current process, and can be passed along to other tools.
+		/// </summary>
+		public List<string> ConfigOverrideParams = new List<string>();
 
         #endregion
 
@@ -1294,8 +1350,8 @@ namespace AutomationTool
         /// Cook: Create a cooked release version.  Also, the version. e.g. 1.0
         /// </summary>
         public string CreateReleaseVersion;
-        
-		/// <summary>
+
+        /// <summary>
 		/// Cook: While cooking clean up packages as we go along rather then cleaning everything (and potentially having to reload some of it) when we run out of space
 		/// </summary>
 		[Help("CookPartialgc", "while cooking clean up packages as we are done with them rather then cleaning everything up when we run out of space")]
@@ -1335,20 +1391,27 @@ namespace AutomationTool
         public bool GeneratePatch;
 
         /// <summary>
-        /// Are we adding a new patch tier (otherwise patch will modify the most recent patch tier), this requires GeneratePatch and BasedOnReleaseVersion
-        /// see also GeneratePatch, BasedOnReleaseVersion
+		/// Are we generating a remaster, generate a patch from a previously released version of the game (use CreateReleaseVersion to create a release). 
+		/// this requires BasedOnReleaseVersion
+		/// see also CreateReleaseVersion, BasedOnReleaseVersion
+		/// </summary>
+		public bool GenerateRemaster;
+
+		/// <summary>
+		/// Required when building remaster package
+		/// </summary>
+		public string DiscVersion;
+
+		/// <summary>
         /// </summary>
         public bool AddPatchLevel;
-
         /// <summary>
         /// Are we staging the unmodified pak files from the base release
-        /// </summary>
         public bool StageBaseReleasePaks;
 
-        /// <summary>
         /// Name of dlc to cook and package (if this paramter is supplied cooks the dlc and packages it into the dlc directory)
         /// </summary>
-        public string DLCName;
+        public FileReference DLCFile;
 
         /// <summary>
         /// Enable cooking of engine content when cooking dlc 
@@ -1356,11 +1419,23 @@ namespace AutomationTool
         /// </summary>
         public bool DLCIncludeEngineContent;
 
-        /// <summary>
-        /// After cook completes diff the cooked content against another cooked content directory.
-        ///  report all errors to the log
-        /// </summary>
-        public string DiffCookedContentPath;
+
+		/// <summary>
+		/// Enable packaging up the uplugin file inside the dlc pak.  This is sometimes desired if you want the plugin to be standalone
+		/// </summary>
+		public bool DLCPakPluginFile;
+
+		/// <summary>
+		/// DLC will remap it's files to the game directory and act like a patch.  This is useful if you want to override content in the main game along side your main game.
+		/// For example having different main game content in different DLCs
+		/// </summary>
+		public bool DLCActLikePatch;
+
+		/// <summary>
+		/// After cook completes diff the cooked content against another cooked content directory.
+		///  report all errors to the log
+		/// </summary>
+		public string DiffCookedContentPath;
 
         /// <summary>
         /// Cook: Additional cooker options to include on the cooker commandline
@@ -1387,15 +1462,15 @@ namespace AutomationTool
 		/// </summary>
 		public bool EncryptEverything;
 
-        /// <summary>
+		/// <summary>
 		/// Encrypt all files which are packaged into the pak file.  Only valid when encryption keys and building pak file specified. 
 		/// </summary>
         public bool EncryptPakIndex;
 
         /// <summary>
-        /// put -debug on the editorexe commandline
-        /// </summary>
-        public bool UseDebugParamForEditorExe;
+		/// put -debug on the editorexe commandline
+		/// </summary>
+		public bool UseDebugParamForEditorExe;
 
         /// <summary>
         /// Cook: Do not include a version number in the cooked content
@@ -1766,8 +1841,8 @@ namespace AutomationTool
 				ClientCookedTargetsList = null;
 				ServerCookedTargetsList = null;
 				ProgramTargetsList = null;
-				ProjectBinariesPath = null;
-				ProjectGameExePath = null;
+				ProjectPlatformBinariesPaths = null;
+				ProjectExePaths = null;
 			}
 
             List<UnrealTargetPlatform> ClientTargetPlatformTypes = ClientTargetPlatforms.ConvertAll(x => x.Type).Distinct().ToList();
@@ -1935,13 +2010,18 @@ namespace AutomationTool
 				ServerCookedTargetsList = new ParamList<string>();
 			}
 
-			if (String.IsNullOrEmpty(ProjectBinariesPath) || String.IsNullOrEmpty(ProjectGameExePath))
+			if (ProjectPlatformBinariesPaths == null || ProjectExePaths == null)
 			{
-				if ( ClientTargetPlatforms.Count > 0 )
+				ProjectPlatformBinariesPaths = new Dictionary<UnrealTargetPlatform, DirectoryReference>();
+				ProjectExePaths = new Dictionary<UnrealTargetPlatform, FileReference>();
+
+				var ProjectClientBinariesPath = ProjectUtils.GetClientProjectBinariesRootPath(RawProjectPath, ProjectType, Properties.bIsCodeBasedProject);
+
+				foreach (TargetPlatformDescriptor TargetPlatform in ClientTargetPlatforms)
 				{
-					var ProjectClientBinariesPath = ProjectUtils.GetClientProjectBinariesRootPath(RawProjectPath, ProjectType, Properties.bIsCodeBasedProject);
-					ProjectBinariesPath = ProjectUtils.GetProjectClientBinariesFolder(ProjectClientBinariesPath, ClientTargetPlatforms[0].Type).FullName;
-					ProjectGameExePath = CommandUtils.CombinePaths(ProjectBinariesPath, GameTarget + Platform.GetExeExtension(ClientTargetPlatforms[0].Type));
+					DirectoryReference BinariesPath = ProjectUtils.GetProjectClientBinariesFolder(ProjectClientBinariesPath, TargetPlatform.Type);
+					ProjectPlatformBinariesPaths[TargetPlatform.Type] = BinariesPath;
+					ProjectExePaths[TargetPlatform.Type] = FileReference.Combine(BinariesPath, GameTarget + Platform.GetExeExtension(TargetPlatform.Type));
 				}
 			}
 		}
@@ -2007,7 +2087,7 @@ namespace AutomationTool
 
         public bool HasDLCName
         {
-            get { return !String.IsNullOrEmpty(DLCName); }
+            get { return DLCFile != null; }
         }
 
         public bool HasDiffCookedContentPath
@@ -2070,21 +2150,28 @@ namespace AutomationTool
 		public bool IsProgramTarget { get; private set; }
 
 		/// <summary>
-		/// Path where the project's game (or program) binaries are built.
+		/// Path where the project's game (or program) binaries are built for the given target platform.
 		/// </summary>
-		public string ProjectBinariesFolder
+		public DirectoryReference GetProjectBinariesPathForPlatform(UnrealTargetPlatform InPlatform)
 		{
-			get
-			{
-				if (String.IsNullOrEmpty(ProjectBinariesPath))
-				{
-					AutodetectSettings(false);
-				}
-				return ProjectBinariesPath;
-			}
+			DirectoryReference Result = null;
+			ProjectPlatformBinariesPaths.TryGetValue(InPlatform, out Result);
+			return Result;
 		}
-		private string ProjectBinariesPath;
 
+		private Dictionary<UnrealTargetPlatform, DirectoryReference> ProjectPlatformBinariesPaths;
+
+		/// <summary>
+		/// Filename of the target game exe (or program exe) for the given target platform
+		/// </summary>
+		public FileReference GetProjectExeForPlatform(UnrealTargetPlatform InPlatform)
+		{
+			FileReference Result = null;
+			ProjectExePaths.TryGetValue(InPlatform, out Result);
+			return Result;
+		}
+
+		private Dictionary<UnrealTargetPlatform, FileReference> ProjectExePaths;
 
 		/// <summary>
 		/// Get the path to the directory of the version we are basing a diff or a patch on.  
@@ -2144,7 +2231,7 @@ namespace AutomationTool
             get { return GeneratePatch; }
         }
 
-        /// <summary>
+		/// <summary>
         /// True if we are generating a new patch pak tier
         /// </summary>
         public bool ShouldAddPatchLevel
@@ -2161,20 +2248,12 @@ namespace AutomationTool
         }
 
 		/// <summary>
-		/// Filename of the target game exe (or program exe).
+		/// True if we are generating a patch
 		/// </summary>
-		public string ProjectGameExeFilename
+		public bool IsGeneratingRemaster
 		{
-			get
-			{
-				if (String.IsNullOrEmpty(ProjectGameExePath))
-				{
-					AutodetectSettings(false);
-				}
-				return ProjectGameExePath;
-			}
+			get { return GenerateRemaster; }
 		}
-		private string ProjectGameExePath;
 
 		public List<Platform> ClientTargetPlatformInstances
 		{
@@ -2342,7 +2421,11 @@ namespace AutomationTool
 
             if (!HasDLCName && DLCIncludeEngineContent)
             {
-                throw new AutomationException("DLCIncludeEngineContent flag is only valid when cooking dlc.");
+                throw new AutomationException("DLCIncludeEngineContent flag is only valid when building DLC.");
+            }
+			if (!HasDLCName && DLCPakPluginFile )
+			{
+				throw new AutomationException("DLCPakPluginFile flag is only valid when building DLC.");
             }
 
             if ((IsGeneratingPatch || HasDLCName || ShouldAddPatchLevel) && !HasBasedOnReleaseVersion)
@@ -2389,6 +2472,11 @@ namespace AutomationTool
 			{
 				throw new AutomationException("-createchunkinstall must specify the chunk install data version string with -chunkinstallversion=");
 			}
+
+			if(IsGeneratingRemaster && string.IsNullOrEmpty(DiscVersion))
+			{
+				throw new AutomationException("DiscVersion is required for generating remaster package.");
+			}
 		}
 
 		protected bool bLogged = false;
@@ -2422,16 +2510,19 @@ namespace AutomationTool
 				CommandUtils.LogLog("UnversionedCookedContent={0}", UnversionedCookedContent);
 				CommandUtils.LogLog("EncryptIniFiles={0}", EncryptIniFiles);
                 CommandUtils.LogLog("EncryptPakIndex={0}", EncryptPakIndex);
-                CommandUtils.LogLog("EncryptEverything={0}", EncryptEverything);
+				CommandUtils.LogLog("EncryptEverything={0}", EncryptEverything);
 				CommandUtils.LogLog("SkipCookingEditorContent={0}", SkipCookingEditorContent);
                 CommandUtils.LogLog("NumCookersToSpawn={0}", NumCookersToSpawn);
-				CommandUtils.LogLog("GeneratePatch={0}", GeneratePatch);
+                CommandUtils.LogLog("GeneratePatch={0}", GeneratePatch);
 				CommandUtils.LogLog("AddPatchLevel={0}", AddPatchLevel);
 				CommandUtils.LogLog("StageBaseReleasePaks={0}", StageBaseReleasePaks);
+				CommandUtils.LogLog("GenerateRemaster={0}", GenerateRemaster);
+				CommandUtils.LogLog("DiscVersion={0}", DiscVersion);
 				CommandUtils.LogLog("CreateReleaseVersion={0}", CreateReleaseVersion);
                 CommandUtils.LogLog("BasedOnReleaseVersion={0}", BasedOnReleaseVersion);
-                CommandUtils.LogLog("DLCName={0}", DLCName);
+                CommandUtils.LogLog("DLCFile={0}", DLCFile);
                 CommandUtils.LogLog("DLCIncludeEngineContent={0}", DLCIncludeEngineContent);
+				CommandUtils.LogLog("DLCPakPluginFile={0}", DLCPakPluginFile);
                 CommandUtils.LogLog("DiffCookedContentPath={0}", DiffCookedContentPath);
                 CommandUtils.LogLog("AdditionalCookerOptions={0}", AdditionalCookerOptions);
 				CommandUtils.LogLog("DedicatedServer={0}", DedicatedServer);
@@ -2472,10 +2563,8 @@ namespace AutomationTool
                 CommandUtils.LogLog("RunTimeoutSeconds={0}", RunTimeoutSeconds);
                 CommandUtils.LogLog("CrashIndex={0}", CrashIndex);
 				CommandUtils.LogLog("ProgramTargets={0}", ProgramTargets.ToString());
-                CommandUtils.LogLog("ProjectBinariesFolder={0}", ProjectBinariesFolder);
-				CommandUtils.LogLog("ProjectBinariesPath={0}", ProjectBinariesPath);
-				CommandUtils.LogLog("ProjectGameExeFilename={0}", ProjectGameExeFilename);
-				CommandUtils.LogLog("ProjectGameExePath={0}", ProjectGameExePath);
+				CommandUtils.LogLog("ProjectPlatformBinariesPaths={0}", string.Join(",", ProjectPlatformBinariesPaths));
+				CommandUtils.LogLog("ProjectExePaths={0}", string.Join(",", ProjectExePaths));
 				CommandUtils.LogLog("Distribution={0}", Distribution);
                 CommandUtils.LogLog("Prebuilt={0}", Prebuilt);
 				CommandUtils.LogLog("Prereqs={0}", Prereqs);

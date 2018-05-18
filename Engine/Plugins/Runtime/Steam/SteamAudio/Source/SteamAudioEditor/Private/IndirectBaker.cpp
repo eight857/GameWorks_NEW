@@ -67,33 +67,30 @@ namespace SteamAudio
 		TArray<AActor*> PhononProbeVolumes;
 		UGameplayStatics::GetAllActorsOfClass(World, APhononProbeVolume::StaticClass(), PhononProbeVolumes);
 
-		TArray<AActor*> PhononSceneActors;
-		UGameplayStatics::GetAllActorsOfClass(World, APhononScene::StaticClass(), PhononSceneActors);
-
-		// Ensure we have at least one probe
-		bool AtLeastOneProbe = false;
-
-		for (auto PhononProbeVolumeActor : PhononProbeVolumes)
+		Async<void>(EAsyncExecution::Thread, [=]()
 		{
-			auto PhononProbeVolume = Cast<APhononProbeVolume>(PhononProbeVolumeActor);
-			if (PhononProbeVolume->NumProbes > 0)
+			// Ensure we have at least one probe
+			bool AtLeastOneProbe = false;
+
+			for (auto PhononProbeVolumeActor : PhononProbeVolumes)
 			{
-				AtLeastOneProbe = true;
-				break;
+				auto PhononProbeVolume = Cast<APhononProbeVolume>(PhononProbeVolumeActor);
+				if (PhononProbeVolume->NumProbes > 0)
+				{
+					AtLeastOneProbe = true;
+					break;
+				}
 			}
-		}
 
-		if (!AtLeastOneProbe)
-		{
-			UE_LOG(LogSteamAudioEditor, Error, TEXT("Ensure at least one Phonon Probe Volume with probes exists."));
-			GBakeTickable->SetDisplayText(NSLOCTEXT("SteamAudio", "Bake failed.", "Bake failed. Create at least one Phonon Probe Volume that has probes."));
-			GBakeTickable->DestroyNotification(SNotificationItem::CS_Fail);
-			GIsBaking.store(false);
-			return;
-		}
+			if (!AtLeastOneProbe)
+			{
+				UE_LOG(LogSteamAudioEditor, Error, TEXT("Ensure at least one Phonon Probe Volume with probes exists."));
+				GBakeTickable->SetDisplayText(NSLOCTEXT("SteamAudio", "Bake failed.", "Bake failed. Create at least one Phonon Probe Volume that has probes."));
+				GBakeTickable->DestroyNotification(SNotificationItem::CS_Fail);
+				GIsBaking.store(false);
+				return;
+			}
 
-		AsyncTask(ENamedThreads::AnyNormalThreadNormalTask, [=]()
-		{
 			IPLBakingSettings BakingSettings;
 			BakingSettings.bakeParametric = IPL_FALSE;
 			BakingSettings.bakeConvolution = IPL_TRUE;
@@ -110,36 +107,21 @@ namespace SteamAudio
 			IPLhandle ComputeDevice = nullptr;
 			IPLhandle PhononScene = nullptr;
 			IPLhandle PhononEnvironment = nullptr;
+			FPhononSceneInfo PhononSceneInfo;
 
 			GBakeTickable->SetDisplayText(NSLOCTEXT("SteamAudio", "Loading scene...", "Loading scene..."));
 
-			if (PhononSceneActors.Num() == 0)
+			// Load the scene
+			if (!LoadSceneFromDisk(World, ComputeDevice, SimulationSettings, &PhononScene, PhononSceneInfo))
 			{
-				UE_LOG(LogSteamAudioEditor, Error, TEXT("Unable to create Phonon environment: PhononScene not found. Be sure to add a PhononScene actor to your level and export the scene."));
-				GBakeTickable->SetDisplayText(NSLOCTEXT("SteamAudio", "Bake failed.", "Bake failed. Export scene first."));
-				GBakeTickable->DestroyNotification(SNotificationItem::CS_Fail);
-				GIsBaking.store(false);
-				return;
-			}
-			else if (PhononSceneActors.Num() > 1)
-			{
-				UE_LOG(LogSteamAudioEditor, Warning, TEXT("More than one PhononScene actor found in level. Arbitrarily choosing one. Ensure only one exists to avoid unexpected behavior."));
-			}
-
-			APhononScene* PhononSceneActor = Cast<APhononScene>(PhononSceneActors[0]);
-			check(PhononSceneActor);
-
-			if (PhononSceneActor->SceneData.Num() == 0)
-			{
-				UE_LOG(LogSteamAudioEditor, Error, TEXT("Unable to create Phonon environment: PhononScene actor does not have scene data. Be sure to export the scene."));
+				// If we can't find the scene, then presumably they haven't generated probes either, so just exit
+				UE_LOG(LogSteamAudioEditor, Error, TEXT("Unable to create Phonon environment: .phononscene not found. Be sure to export the scene."));
 				GBakeTickable->SetDisplayText(NSLOCTEXT("SteamAudio", "Bake failed.", "Bake failed. Export scene first."));
 				GBakeTickable->DestroyNotification(SNotificationItem::CS_Fail);
 				GIsBaking.store(false);
 				return;
 			}
 
-			iplLoadFinalizedScene(GlobalContext, SimulationSettings, PhononSceneActor->SceneData.GetData(), PhononSceneActor->SceneData.Num(),
-				ComputeDevice, nullptr, &PhononScene);
 			iplCreateEnvironment(SteamAudio::GlobalContext, ComputeDevice, SimulationSettings, PhononScene, nullptr, &PhononEnvironment);
 
 			if (BakeReverb)
@@ -153,7 +135,7 @@ namespace SteamAudio
 					auto PhononProbeVolume = Cast<APhononProbeVolume>(PhononProbeVolumeActor);
 
 					IPLhandle ProbeBox = nullptr;
-					iplLoadProbeBox(PhononProbeVolume->GetProbeBoxData(), PhononProbeVolume->GetProbeBoxDataSize(), &ProbeBox);
+					PhononProbeVolume->LoadProbeBoxFromDisk(&ProbeBox);
 
 					iplDeleteBakedDataByName(ProbeBox, (IPLstring)"__reverb__");
 					iplBakeReverb(PhononEnvironment, ProbeBox, BakingSettings, BakeProgressCallback);
@@ -183,7 +165,7 @@ namespace SteamAudio
 						PhononProbeVolume->BakedDataInfo.Sort();
 					}
 
-					PhononProbeVolume->UpdateProbeBoxData(ProbeBox);
+					PhononProbeVolume->UpdateProbeData(ProbeBox);
 					iplDestroyProbeBox(&ProbeBox);
 					++GCurrentProbeVolume;
 				}
@@ -207,65 +189,73 @@ namespace SteamAudio
 			{
 				// Set the User ID on the audio component
 				UAudioComponent* AudioComponent = Cast<UAudioComponent>(PhononSourceComponent->GetOwner()->GetComponentByClass(UAudioComponent::StaticClass()));
-				AudioComponent->AudioComponentUserID = PhononSourceComponent->UniqueIdentifier;
-
-				GBakeTickable->SetDisplayText(NSLOCTEXT("SteamAudio", "Baking...", "Baking..."));
-				GNumProbeVolumes = PhononProbeVolumes.Num();
-				GCurrentProbeVolume = 1;
-
-				for (auto PhononProbeVolumeActor : PhononProbeVolumes)
+				
+				if (AudioComponent == nullptr)
 				{
-					auto PhononProbeVolume = Cast<APhononProbeVolume>(PhononProbeVolumeActor);
+					UE_LOG(LogSteamAudioEditor, Warning, TEXT("Actor containing the Phonon source \"%s\" has no Audio Component. It will be skipped."), *(PhononSourceComponent->UniqueIdentifier.ToString()));
+				}
+				else
+				{
+					AudioComponent->AudioComponentUserID = PhononSourceComponent->UniqueIdentifier;
 
-					IPLhandle ProbeBox = nullptr;
-					iplLoadProbeBox(PhononProbeVolume->GetProbeBoxData(), PhononProbeVolume->GetProbeBoxDataSize(), &ProbeBox);
+					GBakeTickable->SetDisplayText(NSLOCTEXT("SteamAudio", "Baking...", "Baking..."));
+					GNumProbeVolumes = PhononProbeVolumes.Num();
+					GCurrentProbeVolume = 1;
 
-					IPLSphere SourceInfluence;
-					SourceInfluence.radius = PhononSourceComponent->BakingRadius * SteamAudio::SCALEFACTOR;
-					SourceInfluence.center = SteamAudio::UnrealToPhononIPLVector3(PhononSourceComponent->GetComponentLocation());
+					for (auto PhononProbeVolumeActor : PhononProbeVolumes)
+					{
+						auto PhononProbeVolume = Cast<APhononProbeVolume>(PhononProbeVolumeActor);
 
-					iplDeleteBakedDataByName(ProbeBox, TCHAR_TO_ANSI(*AudioComponent->GetAudioComponentUserID().ToString()));
-					iplBakePropagation(PhononEnvironment, ProbeBox, SourceInfluence, TCHAR_TO_ANSI(*AudioComponent->GetAudioComponentUserID().ToString().ToLower()),
-						BakingSettings, BakeProgressCallback);
+						IPLhandle ProbeBox = nullptr;
+						PhononProbeVolume->LoadProbeBoxFromDisk(&ProbeBox);
+
+						IPLSphere SourceInfluence;
+						SourceInfluence.radius = PhononSourceComponent->BakingRadius * SteamAudio::SCALEFACTOR;
+						SourceInfluence.center = SteamAudio::UnrealToPhononIPLVector3(PhononSourceComponent->GetComponentLocation());
+
+						iplDeleteBakedDataByName(ProbeBox, TCHAR_TO_ANSI(*AudioComponent->GetAudioComponentUserID().ToString()));
+						iplBakePropagation(PhononEnvironment, ProbeBox, SourceInfluence, TCHAR_TO_ANSI(*AudioComponent->GetAudioComponentUserID().ToString().ToLower()),
+							BakingSettings, BakeProgressCallback);
+
+						if (!GIsBaking.load())
+						{
+							iplDestroyProbeBox(&ProbeBox);
+							break;
+						}
+
+						FBakedDataInfo BakedDataInfo;
+						BakedDataInfo.Name = PhononSourceComponent->UniqueIdentifier;
+						BakedDataInfo.Size = iplGetBakedDataSizeByName(ProbeBox, TCHAR_TO_ANSI(*PhononSourceComponent->UniqueIdentifier.ToString().ToLower()));
+
+						auto ExistingInfo = PhononProbeVolume->BakedDataInfo.FindByPredicate([=](const FBakedDataInfo& InfoItem)
+						{
+							return InfoItem.Name == BakedDataInfo.Name;
+						});
+
+						if (ExistingInfo)
+						{
+							ExistingInfo->Size = BakedDataInfo.Size;
+						}
+						else
+						{
+							PhononProbeVolume->BakedDataInfo.Add(BakedDataInfo);
+							PhononProbeVolume->BakedDataInfo.Sort();
+						}
+
+						PhononProbeVolume->UpdateProbeData(ProbeBox);
+						iplDestroyProbeBox(&ProbeBox);
+						++GCurrentProbeVolume;
+					}
 
 					if (!GIsBaking.load())
 					{
-						iplDestroyProbeBox(&ProbeBox);
 						break;
 					}
 
-					FBakedDataInfo BakedDataInfo;
-					BakedDataInfo.Name = PhononSourceComponent->UniqueIdentifier;
-					BakedDataInfo.Size = iplGetBakedDataSizeByName(ProbeBox, TCHAR_TO_ANSI(*PhononSourceComponent->UniqueIdentifier.ToString().ToLower()));
+					BakedSourceUpdated.ExecuteIfBound(PhononSourceComponent->UniqueIdentifier);
 
-					auto ExistingInfo = PhononProbeVolume->BakedDataInfo.FindByPredicate([=](const FBakedDataInfo& InfoItem)
-					{
-						return InfoItem.Name == BakedDataInfo.Name;
-					});
-
-					if (ExistingInfo)
-					{
-						ExistingInfo->Size = BakedDataInfo.Size;
-					}
-					else
-					{
-						PhononProbeVolume->BakedDataInfo.Add(BakedDataInfo);
-						PhononProbeVolume->BakedDataInfo.Sort();
-					}
-
-					PhononProbeVolume->UpdateProbeBoxData(ProbeBox);
-					iplDestroyProbeBox(&ProbeBox);
-					++GCurrentProbeVolume;
+					++GCurrentBakeTask;
 				}
-
-				if (!GIsBaking.load())
-				{
-					break;
-				}
-
-				BakedSourceUpdated.ExecuteIfBound(PhononSourceComponent->UniqueIdentifier);
-
-				++GCurrentBakeTask;
 			}
 
 			iplDestroyEnvironment(&PhononEnvironment);

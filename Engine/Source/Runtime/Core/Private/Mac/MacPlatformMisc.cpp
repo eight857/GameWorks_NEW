@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MacPlatformMisc.mm: Mac implementations of misc functions
@@ -9,9 +9,6 @@
 #include "ExceptionHandling.h"
 #include "SecureHash.h"
 #include "VarargsHelper.h"
-#include "MacApplication.h"
-#include "MacCursor.h"
-#include "CocoaMenu.h"
 #include "CocoaThread.h"
 #include "EngineVersion.h"
 #include "MacMallocZone.h"
@@ -26,9 +23,10 @@
 #include "Misc/OutputDeviceError.h"
 #include "Misc/OutputDeviceRedirector.h"
 #include "Misc/FeedbackContext.h"
+#include "Misc/CoreDelegates.h"
 #include "Internationalization/Internationalization.h"
 #include "Internationalization/Culture.h"
-#include "Apple/ApplePlatformDebugEvents.h"
+#include "Modules/ModuleManager.h"
 
 #include <dlfcn.h>
 #include <IOKit/IOKitLib.h>
@@ -63,6 +61,8 @@ static FAutoConsoleVariableRef CVarMacExplicitRendererID(
  FMacApplicationInfo - class to contain all state for crash reporting that is unsafe to acquire in a signal.
  ------------------------------------------------------------------------------*/
 
+FMacMallocCrashHandler* GCrashMalloc = nullptr;
+
 /**
  * Information that cannot be obtained during a signal-handler is initialised here.
  * This ensures that we only call safe functions within the crash reporting handler.
@@ -84,7 +84,7 @@ struct FMacApplicationInfo
 			delete [] d;
 		}
 		
-		AppName = FApp::GetGameName();
+		AppName = FApp::GetProjectName();
 		FCStringAnsi::Strcpy(AppNameUTF8, PATH_MAX+1, TCHAR_TO_UTF8(*AppName));
 		
 		ExecutableName = FPlatformProcess::ExecutableName();
@@ -183,12 +183,14 @@ struct FMacApplicationInfo
 		
 		gethostname(MachineName, ARRAY_COUNT(MachineName));
 		
-		FString CrashVideoPath = FPaths::GameLogDir() + TEXT("CrashVideo.avi");
-		
+		FString CrashVideoPath = FPaths::ProjectLogDir() + TEXT("CrashVideo.avi");
+
+		// The engine mode may be incorrect at this point, as GIsEditor is uninitialized yet. We'll update BranchBaseDir in PostInitUpdate(),
+		// but we initialize it here anyway in case the engine crashes before PostInitUpdate() is called.
 		BranchBaseDir = FString::Printf( TEXT( "%s!%s!%s!%d" ), *FApp::GetBranchName(), FPlatformProcess::BaseDir(), FPlatformMisc::GetEngineMode(), FEngineVersion::Current().GetChangelist() );
 		
 		// Get the paths that the files will actually have been saved to
-		FString LogDirectory = FPaths::GameLogDir();
+		FString LogDirectory = FPaths::ProjectLogDir();
 		TCHAR CommandlineLogFile[MAX_SPRINTF]=TEXT("");
 		
 		// Use the log file specified on the commandline if there is one
@@ -285,9 +287,9 @@ struct FMacApplicationInfo
 	
 	~FMacApplicationInfo()
 	{
-		if(GMalloc != CrashMalloc)
+		if(GMalloc != GCrashMalloc)
 		{
-			delete CrashMalloc;
+			delete GCrashMalloc;
 		}
 		if(CrashReporter)
 		{
@@ -378,23 +380,15 @@ struct FMacApplicationInfo
 	NSOperatingSystemVersion XcodeVersion;
 	NSPipe* StdErrPipe;
 	static PLCrashReporter* CrashReporter;
-	static FMacMallocCrashHandler* CrashMalloc;
 };
 static FMacApplicationInfo GMacAppInfo;
 PLCrashReporter* FMacApplicationInfo::CrashReporter = nullptr;
-FMacMallocCrashHandler* FMacApplicationInfo::CrashMalloc = nullptr;
-
-UpdateCachedMacMenuStateProc FMacPlatformMisc::UpdateCachedMacMenuState = nullptr;
-bool FMacPlatformMisc::bChachedMacMenuStateNeedsUpdate = true;
-id<NSObject> FMacPlatformMisc::CommandletActivity = nil;
 
 void FMacPlatformMisc::PlatformPreInit()
 {
 	FGenericPlatformMisc::PlatformPreInit();
 	
 	GMacAppInfo.Init();
-
-	FMacApplication::UpdateScreensArray();
 	
 	// No SIGPIPE crashes please - they are a pain to debug!
 	signal(SIGPIPE, SIG_IGN);
@@ -460,89 +454,13 @@ void FMacPlatformMisc::PlatformInit()
 #endif
 }
 
-void FMacPlatformMisc::PlatformPostInit()
+void FMacPlatformMisc::PostInitMacAppInfoUpdate()
 {
-	// Setup the app menu in menu bar
-	const bool bIsBundledApp = [[[NSBundle mainBundle] bundlePath] hasSuffix:@".app"];
-	if (bIsBundledApp)
-	{
-		NSString* AppName = GIsEditor ? @"Unreal Editor" : FString(FApp::GetGameName()).GetNSString();
-
-		SEL ShowAboutSelector = [[NSApp delegate] respondsToSelector:@selector(showAboutWindow:)] ? @selector(showAboutWindow:) : @selector(orderFrontStandardAboutPanel:);
-		NSMenuItem* AboutItem = [[[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"About %@", AppName] action:ShowAboutSelector keyEquivalent:@""] autorelease];
-
-		NSMenuItem* PreferencesItem = GIsEditor ? [[[NSMenuItem alloc] initWithTitle:@"Preferences..." action:@selector(showPreferencesWindow:) keyEquivalent:@","] autorelease] : nil;
-
-		NSMenuItem* HideItem = [[[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"Hide %@", AppName] action:@selector(hide:) keyEquivalent:@"h"] autorelease];
-		NSMenuItem* HideOthersItem = [[[NSMenuItem alloc] initWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"] autorelease];
-		[HideOthersItem setKeyEquivalentModifierMask:NSCommandKeyMask | NSAlternateKeyMask];
-		NSMenuItem* ShowAllItem = [[[NSMenuItem alloc] initWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""] autorelease];
-
-		SEL RequestQuitSelector = [[NSApp delegate] respondsToSelector:@selector(requestQuit:)] ? @selector(requestQuit:) : @selector(terminate:);
-		NSMenuItem* QuitItem = [[[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"Quit %@", AppName] action:RequestQuitSelector keyEquivalent:@"q"] autorelease];
-
-		NSMenuItem* ServicesItem = [[NSMenuItem new] autorelease];
-		FCocoaMenu* ServicesMenu = [[FCocoaMenu new] autorelease];
-		[ServicesItem setTitle:@"Services"];
-		[ServicesItem setSubmenu:ServicesMenu];
-		[NSApp setServicesMenu:ServicesMenu];
-
-		FCocoaMenu* AppMenu = [[FCocoaMenu new] autorelease];
-		[AppMenu addItem:AboutItem];
-		[AppMenu addItem:[NSMenuItem separatorItem]];
-		if (PreferencesItem)
-		{
-			[AppMenu addItem:PreferencesItem];
-			[AppMenu addItem:[NSMenuItem separatorItem]];
-		}
-		[AppMenu addItem:ServicesItem];
-		[AppMenu addItem:[NSMenuItem separatorItem]];
-		[AppMenu addItem:HideItem];
-		[AppMenu addItem:HideOthersItem];
-		[AppMenu addItem:ShowAllItem];
-		[AppMenu addItem:[NSMenuItem separatorItem]];
-		[AppMenu addItem:QuitItem];
-
-		FCocoaMenu* MenuBar = [[FCocoaMenu new] autorelease];
-		NSMenuItem* AppMenuItem = [[NSMenuItem new] autorelease];
-		[MenuBar addItem:AppMenuItem];
-		[NSApp setMainMenu:MenuBar];
-		[AppMenuItem setSubmenu:AppMenu];
-
-		if (FApp::IsGame())
-		{
-			NSMenu* ViewMenu = [[FCocoaMenu new] autorelease];
-			[ViewMenu setTitle:@"View"];
-			NSMenuItem* ViewMenuItem = [[NSMenuItem new] autorelease];
-			[ViewMenuItem setSubmenu:ViewMenu];
-			[[NSApp mainMenu] addItem:ViewMenuItem];
-
-			NSMenuItem* ToggleFullscreenItem = [[[NSMenuItem alloc] initWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"] autorelease];
-			[ToggleFullscreenItem setKeyEquivalentModifierMask:NSCommandKeyMask | NSControlKeyMask];
-			[ViewMenu addItem:ToggleFullscreenItem];
-		}
-		
-		UpdateWindowMenu();
-	}
-
-	if (!MacApplication)
-	{
-		// No MacApplication means that app is a dedicated server, commandline tool or the editor running a commandlet. In these cases we don't want macOS to put our app into App Nap mode.
-		CommandletActivity = [[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityUserInitiated reason:IsRunningCommandlet() ? @"Running commandlet" : @"Running dedicated server"];
-		[CommandletActivity retain];
-	}
+	GMacAppInfo.BranchBaseDir = FString::Printf(TEXT("%s!%s!%s!%d"), *FApp::GetBranchName(), FPlatformProcess::BaseDir(), FPlatformMisc::GetEngineMode(), FEngineVersion::Current().GetChangelist());
 }
 
 void FMacPlatformMisc::PlatformTearDown()
 {
-	if (CommandletActivity)
-	{
-		MainThreadCall(^{
-			[[NSProcessInfo processInfo] endActivity:CommandletActivity];
-			[CommandletActivity release];
-		}, NSDefaultRunLoopMode, false);
-		CommandletActivity = nil;
-	}
 	FApplePlatformSymbolication::EnableCoreSymbolication(false);
 	
 	if (GMacAppInfo.StdErrPipe)
@@ -554,100 +472,6 @@ void FMacPlatformMisc::PlatformTearDown()
 		}
 		
 		[GMacAppInfo.StdErrPipe release];
-	}
-}
-
-void FMacPlatformMisc::UpdateWindowMenu()
-{
-	NSMenu* WindowMenu = [NSApp windowsMenu];
-	if (!WindowMenu)
-	{
-		WindowMenu = [[FCocoaMenu new] autorelease];
-		[WindowMenu setTitle:@"Window"];
-		NSMenuItem* WindowMenuItem = [[NSMenuItem new] autorelease];
-		[WindowMenuItem setSubmenu:WindowMenu];
-		[[NSApp mainMenu] addItem:WindowMenuItem];
-		[NSApp setWindowsMenu:WindowMenu];
-	}
-
-	NSMenuItem* MinimizeItem = [[[NSMenuItem alloc] initWithTitle:@"Minimize" action:@selector(miniaturize:) keyEquivalent:@"m"] autorelease];
-	NSMenuItem* ZoomItem = [[[NSMenuItem alloc] initWithTitle:@"Zoom" action:@selector(zoom:) keyEquivalent:@""] autorelease];
-	NSMenuItem* CloseItem = [[[NSMenuItem alloc] initWithTitle:@"Close" action:@selector(performClose:) keyEquivalent:@"w"] autorelease];
-	NSMenuItem* BringAllToFrontItem = [[[NSMenuItem alloc] initWithTitle:@"Bring All to Front" action:@selector(arrangeInFront:) keyEquivalent:@""] autorelease];
-
-	[WindowMenu addItem:MinimizeItem];
-	[WindowMenu addItem:ZoomItem];
-	[WindowMenu addItem:CloseItem];
-	[WindowMenu addItem:[NSMenuItem separatorItem]];
-	[WindowMenu addItem:BringAllToFrontItem];
-	[WindowMenu addItem:[NSMenuItem separatorItem]];
-}
-
-void FMacPlatformMisc::ActivateApplication()
-{
-	MainThreadCall(^{
-		[NSApp activateIgnoringOtherApps:YES];
-	}, NSDefaultRunLoopMode, false);
-}
-
-bool FMacPlatformMisc::ControlScreensaver(EScreenSaverAction Action)
-{
-	static uint32 IOPMNoSleepAssertion = 0;
-	static bool bDisplaySleepEnabled = true;
-	
-	switch(Action)
-	{
-		case EScreenSaverAction::Disable:
-		{
-			// Prevent display sleep.
-			if(bDisplaySleepEnabled)
-			{
-				SCOPED_AUTORELEASE_POOL;
-				
-				//  NOTE: IOPMAssertionCreateWithName limits the string to 128 characters.
-				FString ReasonForActivity = FString::Printf(TEXT("Running %s"), FApp::GetGameName());
-				
-				CFStringRef ReasonForActivityCF = (CFStringRef)ReasonForActivity.GetNSString();
-				
-				IOReturn Success = IOPMAssertionCreateWithName(kIOPMAssertionTypeNoDisplaySleep, kIOPMAssertionLevelOn, ReasonForActivityCF, &IOPMNoSleepAssertion);
-				bDisplaySleepEnabled = !(Success == kIOReturnSuccess);
-				ensure(!bDisplaySleepEnabled);
-			}
-			break;
-		}
-		case EScreenSaverAction::Enable:
-		{
-			// Stop preventing display sleep now that we are done.
-			if(!bDisplaySleepEnabled)
-			{
-				IOReturn Success = IOPMAssertionRelease(IOPMNoSleepAssertion);
-				bDisplaySleepEnabled = (Success == kIOReturnSuccess);
-				ensure(bDisplaySleepEnabled);
-			}
-			break;
-		}
-	}
-	
-	return true;
-}
-
-GenericApplication* FMacPlatformMisc::CreateApplication()
-{
-	return FMacApplication::CreateMacApplication();
-}
-
-void FMacPlatformMisc::GetEnvironmentVariable(const TCHAR* InVariableName, TCHAR* Result, int32 ResultLength)
-{
-	FString VariableName = InVariableName;
-	VariableName.ReplaceInline(TEXT("-"), TEXT("_"));
-	ANSICHAR *AnsiResult = getenv(TCHAR_TO_ANSI(*VariableName));
-	if (AnsiResult)
-	{
-		wcsncpy(Result, ANSI_TO_TCHAR(AnsiResult), ResultLength);
-	}
-	else
-	{
-		*Result = 0;
 	}
 }
 
@@ -713,8 +537,8 @@ TArray<uint8> FMacPlatformMisc::GetMacAddress()
 			{
 				Result.AddZeroed(kIOEthernetAddressSize);
 				CFDataGetBytes((CFDataRef)MACAddressAsCFData, CFRangeMake(0, kIOEthernetAddressSize), Result.GetData());
-				break;
 				CFRelease(MACAddressAsCFData);
+				break;
 			}
 			IOObjectRelease(ControllerService);
 		}
@@ -725,105 +549,12 @@ TArray<uint8> FMacPlatformMisc::GetMacAddress()
 	return Result;
 }
 
-void FMacPlatformMisc::PumpMessages( bool bFromMainLoop )
-{
-	if( bFromMainLoop )
-	{
-		ProcessGameThreadEvents();
-
-		if (MacApplication && !MacApplication->IsProcessingDeferredEvents() && IsInGameThread())
-		{
-			if (UpdateCachedMacMenuState && bChachedMacMenuStateNeedsUpdate)
-			{
-				UpdateCachedMacMenuState();
-				bChachedMacMenuStateNeedsUpdate = false;
-			}
-		}
-	}
-}
-
-uint32 FMacPlatformMisc::GetCharKeyMap(uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings)
-{
-	return FGenericPlatformMisc::GetStandardPrintableKeyMap(KeyCodes, KeyNames, MaxMappings, false, true);
-}
-
-uint32 FMacPlatformMisc::GetKeyMap( uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings )
-{
-#define ADDKEYMAP(KeyCode, KeyName)		if (NumMappings<MaxMappings) { KeyCodes[NumMappings]=KeyCode; KeyNames[NumMappings]=KeyName; ++NumMappings; };
-
-	uint32 NumMappings = 0;
-
-	if ( KeyCodes && KeyNames && (MaxMappings > 0) )
-	{
-		ADDKEYMAP( kVK_Delete, TEXT("BackSpace") );
-		ADDKEYMAP( kVK_Tab, TEXT("Tab") );
-		ADDKEYMAP( kVK_Return, TEXT("Enter") );
-		ADDKEYMAP( kVK_ANSI_KeypadEnter, TEXT("Enter") );
-
-		ADDKEYMAP( kVK_CapsLock, TEXT("CapsLock") );
-		ADDKEYMAP( kVK_Escape, TEXT("Escape") );
-		ADDKEYMAP( kVK_Space, TEXT("SpaceBar") );
-		ADDKEYMAP( kVK_PageUp, TEXT("PageUp") );
-		ADDKEYMAP( kVK_PageDown, TEXT("PageDown") );
-		ADDKEYMAP( kVK_End, TEXT("End") );
-		ADDKEYMAP( kVK_Home, TEXT("Home") );
-
-		ADDKEYMAP( kVK_LeftArrow, TEXT("Left") );
-		ADDKEYMAP( kVK_UpArrow, TEXT("Up") );
-		ADDKEYMAP( kVK_RightArrow, TEXT("Right") );
-		ADDKEYMAP( kVK_DownArrow, TEXT("Down") );
-
-		ADDKEYMAP( kVK_ForwardDelete, TEXT("Delete") );
-
-		ADDKEYMAP( kVK_ANSI_Keypad0, TEXT("NumPadZero") );
-		ADDKEYMAP( kVK_ANSI_Keypad1, TEXT("NumPadOne") );
-		ADDKEYMAP( kVK_ANSI_Keypad2, TEXT("NumPadTwo") );
-		ADDKEYMAP( kVK_ANSI_Keypad3, TEXT("NumPadThree") );
-		ADDKEYMAP( kVK_ANSI_Keypad4, TEXT("NumPadFour") );
-		ADDKEYMAP( kVK_ANSI_Keypad5, TEXT("NumPadFive") );
-		ADDKEYMAP( kVK_ANSI_Keypad6, TEXT("NumPadSix") );
-		ADDKEYMAP( kVK_ANSI_Keypad7, TEXT("NumPadSeven") );
-		ADDKEYMAP( kVK_ANSI_Keypad8, TEXT("NumPadEight") );
-		ADDKEYMAP( kVK_ANSI_Keypad9, TEXT("NumPadNine") );
-
-		ADDKEYMAP( kVK_ANSI_KeypadMultiply, TEXT("Multiply") );
-		ADDKEYMAP( kVK_ANSI_KeypadPlus, TEXT("Add") );
-		ADDKEYMAP( kVK_ANSI_KeypadMinus, TEXT("Subtract") );
-		ADDKEYMAP( kVK_ANSI_KeypadDecimal, TEXT("Decimal") );
-		ADDKEYMAP( kVK_ANSI_KeypadDivide, TEXT("Divide") );
-
-		ADDKEYMAP( kVK_F1, TEXT("F1") );
-		ADDKEYMAP( kVK_F2, TEXT("F2") );
-		ADDKEYMAP( kVK_F3, TEXT("F3") );
-		ADDKEYMAP( kVK_F4, TEXT("F4") );
-		ADDKEYMAP( kVK_F5, TEXT("F5") );
-		ADDKEYMAP( kVK_F6, TEXT("F6") );
-		ADDKEYMAP( kVK_F7, TEXT("F7") );
-		ADDKEYMAP( kVK_F8, TEXT("F8") );
-		ADDKEYMAP( kVK_F9, TEXT("F9") );
-		ADDKEYMAP( kVK_F10, TEXT("F10") );
-		ADDKEYMAP( kVK_F11, TEXT("F11") );
-		ADDKEYMAP( kVK_F12, TEXT("F12") );
-
-		ADDKEYMAP( MMK_RightControl, TEXT("RightControl") );
-		ADDKEYMAP( MMK_LeftControl, TEXT("LeftControl") );
-		ADDKEYMAP( MMK_LeftShift, TEXT("LeftShift") );
-		ADDKEYMAP( MMK_CapsLock, TEXT("CapsLock") );
-		ADDKEYMAP( MMK_LeftAlt, TEXT("LeftAlt") );
-		ADDKEYMAP( MMK_LeftCommand, TEXT("LeftCommand") );
-		ADDKEYMAP( MMK_RightShift, TEXT("RightShift") );
-		ADDKEYMAP( MMK_RightAlt, TEXT("RightAlt") );
-		ADDKEYMAP( MMK_RightCommand, TEXT("RightCommand") );
-	}
-
-	check(NumMappings < MaxMappings);
-	return NumMappings;
-}
-
 void FMacPlatformMisc::RequestExit( bool Force )
 {
 	UE_LOG(LogMac, Log,  TEXT("FPlatformMisc::RequestExit(%i)"), Force );
-	
+
+	FCoreDelegates::ApplicationWillTerminateDelegate.Broadcast();
+
 	notify_cancel(GMacAppInfo.PowerSourceNotification);
 	GMacAppInfo.PowerSourceNotification = 0;
 	
@@ -839,238 +570,18 @@ void FMacPlatformMisc::RequestExit( bool Force )
 	}
 }
 
-void FMacPlatformMisc::RequestMinimize()
-{
-	[NSApp hide : nil];
-}
-
-const TCHAR* FMacPlatformMisc::GetSystemErrorMessage(TCHAR* OutBuffer, int32 BufferCount, int32 Error)
-{
-	// There's no Mac equivalent for GetLastError()
-	check(OutBuffer && BufferCount);
-	*OutBuffer = TEXT('\0');
-	return OutBuffer;
-}
-
-void FMacPlatformMisc::ClipboardCopy(const TCHAR* Str)
-{
-	// Don't attempt to copy the text to the clipboard if we've crashed or we'll crash again & become unkillable.
-	// The MallocZone used for crash reporting will be enabled before this call if we've crashed so that will do for testing.
-	if ( GMalloc != FMacApplicationInfo::CrashMalloc )
-	{
-		SCOPED_AUTORELEASE_POOL;
-
-		CFStringRef CocoaString = FPlatformString::TCHARToCFString(Str);
-		NSPasteboard *Pasteboard = [NSPasteboard generalPasteboard];
-		[Pasteboard clearContents];
-		NSPasteboardItem *Item = [[[NSPasteboardItem alloc] init] autorelease];
-		[Item setString: (NSString *)CocoaString forType: NSPasteboardTypeString];
-		[Pasteboard writeObjects:[NSArray arrayWithObject:Item]];
-		CFRelease(CocoaString);
-	}
-}
-
-void FMacPlatformMisc::ClipboardPaste(class FString& Result)
-{
-	SCOPED_AUTORELEASE_POOL;
-
-	NSPasteboard *Pasteboard = [NSPasteboard generalPasteboard];
-	NSString *CocoaString = [Pasteboard stringForType: NSPasteboardTypeString];
-	if (CocoaString)
-	{
-		TArray<TCHAR> Ch;
-		Ch.AddUninitialized([CocoaString length] + 1);
-		FPlatformString::CFStringToTCHAR((CFStringRef)CocoaString, Ch.GetData());
-		Result = Ch.GetData();
-	}
-	else
-	{
-		Result = TEXT("");
-	}
-}
-
-void FMacPlatformMisc::CreateGuid(FGuid& Result)
-{
-	uuid_t UUID;
-	uuid_generate(UUID);
-	
-	uint32* Values = (uint32*)(&UUID[0]);
-	Result[0] = Values[0];
-	Result[1] = Values[1];
-	Result[2] = Values[2];
-	Result[3] = Values[3];
-}
+CORE_API TFunction<EAppReturnType::Type(EAppMsgType::Type MsgType, const TCHAR* Text, const TCHAR* Caption)> MessageBoxExtCallback;
 
 EAppReturnType::Type FMacPlatformMisc::MessageBoxExt(EAppMsgType::Type MsgType, const TCHAR* Text, const TCHAR* Caption)
 {
-	FSlowHeartBeatScope SuspendHeartBeat;
-
-	SCOPED_AUTORELEASE_POOL;
-
-	EAppReturnType::Type ReturnValue = MainThreadReturn(^{
-		EAppReturnType::Type RetValue = EAppReturnType::Cancel;
-		NSInteger Result;
-
-		NSAlert* AlertPanel = [NSAlert new];
-		[AlertPanel setInformativeText:FString(Text).GetNSString()];
-		[AlertPanel setMessageText:FString(Caption).GetNSString()];
-
-		switch (MsgType)
-		{
-			case EAppMsgType::Ok:
-				[AlertPanel addButtonWithTitle:@"OK"];
-				[AlertPanel runModal];
-				RetValue = EAppReturnType::Ok;
-				break;
-
-			case EAppMsgType::YesNo:
-				[AlertPanel addButtonWithTitle:@"Yes"];
-				[AlertPanel addButtonWithTitle:@"No"];
-				Result = [AlertPanel runModal];
-				if (Result == NSAlertFirstButtonReturn)
-				{
-					RetValue = EAppReturnType::Yes;
-				}
-				else if (Result == NSAlertSecondButtonReturn)
-				{
-					RetValue = EAppReturnType::No;
-				}
-				break;
-
-			case EAppMsgType::OkCancel:
-				[AlertPanel addButtonWithTitle:@"OK"];
-				[AlertPanel addButtonWithTitle:@"Cancel"];
-				Result = [AlertPanel runModal];
-				if (Result == NSAlertFirstButtonReturn)
-				{
-					RetValue = EAppReturnType::Ok;
-				}
-				else if (Result == NSAlertSecondButtonReturn)
-				{
-					RetValue = EAppReturnType::Cancel;
-				}
-				break;
-
-			case EAppMsgType::YesNoCancel:
-				[AlertPanel addButtonWithTitle:@"Yes"];
-				[AlertPanel addButtonWithTitle:@"No"];
-				[AlertPanel addButtonWithTitle:@"Cancel"];
-				Result = [AlertPanel runModal];
-				if (Result == NSAlertFirstButtonReturn)
-				{
-					RetValue = EAppReturnType::Yes;
-				}
-				else if (Result == NSAlertSecondButtonReturn)
-				{
-					RetValue = EAppReturnType::No;
-				}
-				else
-				{
-					RetValue = EAppReturnType::Cancel;
-				}
-				break;
-
-			case EAppMsgType::CancelRetryContinue:
-				[AlertPanel addButtonWithTitle:@"Continue"];
-				[AlertPanel addButtonWithTitle:@"Retry"];
-				[AlertPanel addButtonWithTitle:@"Cancel"];
-				Result = [AlertPanel runModal];
-				if (Result == NSAlertFirstButtonReturn)
-				{
-					RetValue = EAppReturnType::Continue;
-				}
-				else if (Result == NSAlertSecondButtonReturn)
-				{
-					RetValue = EAppReturnType::Retry;
-				}
-				else
-				{
-					RetValue = EAppReturnType::Cancel;
-				}
-				break;
-
-			case EAppMsgType::YesNoYesAllNoAll:
-				[AlertPanel addButtonWithTitle:@"Yes"];
-				[AlertPanel addButtonWithTitle:@"No"];
-				[AlertPanel addButtonWithTitle:@"Yes to all"];
-				[AlertPanel addButtonWithTitle:@"No to all"];
-				Result = [AlertPanel runModal];
-				if (Result == NSAlertFirstButtonReturn)
-				{
-					RetValue = EAppReturnType::Yes;
-				}
-				else if (Result == NSAlertSecondButtonReturn)
-				{
-					RetValue = EAppReturnType::No;
-				}
-				else if (Result == NSAlertThirdButtonReturn)
-				{
-					RetValue = EAppReturnType::YesAll;
-				}
-				else
-				{
-					RetValue = EAppReturnType::NoAll;
-				}
-				break;
-
-			case EAppMsgType::YesNoYesAllNoAllCancel:
-				[AlertPanel addButtonWithTitle:@"Yes"];
-				[AlertPanel addButtonWithTitle:@"No"];
-				[AlertPanel addButtonWithTitle:@"Yes to all"];
-				[AlertPanel addButtonWithTitle:@"No to all"];
-				[AlertPanel addButtonWithTitle:@"Cancel"];
-				Result = [AlertPanel runModal];
-				if (Result == NSAlertFirstButtonReturn)
-				{
-					RetValue = EAppReturnType::Yes;
-				}
-				else if (Result == NSAlertSecondButtonReturn)
-				{
-					RetValue = EAppReturnType::No;
-				}
-				else if (Result == NSAlertThirdButtonReturn)
-				{
-					RetValue = EAppReturnType::YesAll;
-				}
-				else if (Result == NSAlertThirdButtonReturn + 1)
-				{
-					RetValue = EAppReturnType::NoAll;
-				}
-				else
-				{
-					RetValue = EAppReturnType::Cancel;
-				}
-				break;
-
-			case EAppMsgType::YesNoYesAll:
-				[AlertPanel addButtonWithTitle:@"Yes"];
-				[AlertPanel addButtonWithTitle:@"No"];
-				[AlertPanel addButtonWithTitle:@"Yes to all"];
-				Result = [AlertPanel runModal];
-				if (Result == NSAlertFirstButtonReturn)
-				{
-					RetValue = EAppReturnType::Yes;
-				}
-				else if (Result == NSAlertSecondButtonReturn)
-				{
-					RetValue = EAppReturnType::No;
-				}
-				else
-				{
-					RetValue = EAppReturnType::YesAll;
-				}
-				break;
-
-			default:
-				break;
-		}
-
-		[AlertPanel release];
-
-		return RetValue;
-	});
-
-	return ReturnValue;
+	if(MessageBoxExtCallback)
+	{
+		return MessageBoxExtCallback(MsgType, Text, Caption);
+	}
+	else
+	{
+		return FGenericPlatformMisc::MessageBoxExt(MsgType, Text, Caption);
+	}
 }
 
 static bool HandleFirstInstall()
@@ -1116,17 +627,7 @@ int32 FMacPlatformMisc::NumberOfCores()
 
 int32 FMacPlatformMisc::NumberOfCoresIncludingHyperthreads()
 {
-	static int32 NumberOfCores = -1;
-	if (NumberOfCores == -1)
-	{
-		SIZE_T Size = sizeof(int32);
-		
-		if (sysctlbyname("hw.ncpu", &NumberOfCores, &Size, NULL, 0) != 0)
-		{
-			NumberOfCores = 1;
-		}
-	}
-	return NumberOfCores;
+	return FApplePlatformMisc::NumberOfCores();
 }
 
 void FMacPlatformMisc::NormalizePath(FString& InPath)
@@ -1158,7 +659,8 @@ void FMacPlatformMisc::NormalizePath(FString& InPath)
 }
 
 FMacPlatformMisc::FGPUDescriptor::FGPUDescriptor()
-: PCIDevice(0)
+: RegistryID(0)
+, PCIDevice(0)
 , GPUName(nil)
 , GPUMetalBundle(nil)
 , GPUOpenGLBundle(nil)
@@ -1172,7 +674,8 @@ FMacPlatformMisc::FGPUDescriptor::FGPUDescriptor()
 }
 
 FMacPlatformMisc::FGPUDescriptor::FGPUDescriptor(FGPUDescriptor const& Other)
-: PCIDevice(0)
+: RegistryID(0)
+, PCIDevice(0)
 , GPUName(nil)
 , GPUMetalBundle(nil)
 , GPUOpenGLBundle(nil)
@@ -1202,6 +705,8 @@ FMacPlatformMisc::FGPUDescriptor& FMacPlatformMisc::FGPUDescriptor::operator=(FG
 {
 	if(this != &Other)
 	{
+		RegistryID = Other.RegistryID;
+		
 		if(Other.PCIDevice)
 		{
 			IOObjectRetain((io_registry_entry_t)Other.PCIDevice);
@@ -1390,6 +895,9 @@ TArray<FMacPlatformMisc::FGPUDescriptor> const& FMacPlatformMisc::GetGPUDescript
 									if (IOMatchCategory && CFGetTypeID(IOMatchCategory) == CFStringGetTypeID() && CFStringCompare(IOMatchCategory, IOAcceleratorRef, 0) == kCFCompareEqualTo)
 									{
 										BundleID = (CFStringRef)IORegistryEntrySearchCFProperty(ChildEntry, kIOServicePlane, CFBundleIdentifier, kCFAllocatorDefault, 0);
+										
+										kern_return_t Result = IORegistryEntryGetRegistryEntryID(ChildEntry, &Desc.RegistryID);
+										check(Result == kIOReturnSuccess);
 									}
 									if (IOMatchCategory)
 									{
@@ -1489,7 +997,7 @@ FGPUDriverInfo FMacPlatformMisc::GetGPUDriverInfo(const FString& DeviceDescripti
 	for(FMacPlatformMisc::FGPUDescriptor const& GPU : GPUs)
 	{
 		NameComponents.Empty();
-		bool bMatchesName = FString(GPU.GPUName).Trim().ParseIntoArray(NameComponents, TEXT(" ")) > 0;
+		bool bMatchesName = FString(GPU.GPUName).TrimStart().ParseIntoArray(NameComponents, TEXT(" ")) > 0;
 		for (FString& Component : NameComponents)
 		{
 			bMatchesName &= DeviceDescription.Contains(Component);
@@ -1564,8 +1072,8 @@ FGPUDriverInfo FMacPlatformMisc::GetGPUDriverInfo(const FString& DeviceDescripti
 						gmtime_r(&DylibTime, &Time);
 						Info.DriverDate = FString::Printf(TEXT("%d-%d-%d"), Time.tm_mon + 1, Time.tm_mday, 1900 + Time.tm_year);
 
-						bGotInternalVersionInfo = true;
-						bGotDate = true;
+						bGotInternalVersionInfo = Major != 0 || Minor != 0 || Patch != 0;
+						bGotDate = (1900 + Time.tm_year) >= 2014;
 						break;
 					}
 					else if (SourceVersion)
@@ -1584,8 +1092,8 @@ FGPUDriverInfo FMacPlatformMisc::GetGPUDriverInfo(const FString& DeviceDescripti
 						gmtime_r(&Stat.st_mtime, &Time);
 						Info.DriverDate = FString::Printf(TEXT("%d-%d-%d"), Time.tm_mon + 1, Time.tm_mday, 1900 + Time.tm_year);
 						
-						bGotInternalVersionInfo = true;
-						bGotDate = true;
+						bGotInternalVersionInfo = A != 0 || B != 0 || C != 0 || D != 0;
+						bGotDate = (1900 + Time.tm_year) >= 2014;
 					}
 				}
 			}
@@ -1630,6 +1138,7 @@ FGPUDriverInfo FMacPlatformMisc::GetGPUDriverInfo(const FString& DeviceDescripti
 								}
 							}
 						}
+						[URL release];
 					}
 				}
 				
@@ -1690,43 +1199,6 @@ bool FMacPlatformMisc::HasSeparateChannelForDebugOutput()
 	return FPlatformMisc::IsDebuggerPresent() || isatty(STDOUT_FILENO) || isatty(STDERR_FILENO);
 }
 
-#include "ModuleManager.h"
-
-void FMacPlatformMisc::LoadPreInitModules()
-{
-	FModuleManager::Get().LoadModule(TEXT("CoreAudio"));
-	FModuleManager::Get().LoadModule(TEXT("AudioMixerAudioUnit"));
-}
-
-void* FMacPlatformMisc::CreateAutoreleasePool()
-{
-	return [[NSAutoreleasePool alloc] init];
-}
-
-void FMacPlatformMisc::ReleaseAutoreleasePool(void *Pool)
-{
-	[(NSAutoreleasePool*)Pool release];
-}
-
-FLinearColor FMacPlatformMisc::GetScreenPixelColor(const FVector2D& InScreenPos, float /*InGamma*/)
-{
-	SCOPED_AUTORELEASE_POOL;
-
-	CGImageRef ScreenImage = CGWindowListCreateImage(CGRectMake(InScreenPos.X, InScreenPos.Y, 1, 1), kCGWindowListOptionOnScreenBelowWindow, kCGNullWindowID, kCGWindowImageDefault);
-	
-	CGDataProviderRef provider = CGImageGetDataProvider(ScreenImage);
-	NSData* data = (id)CGDataProviderCopyData(provider);
-	[data autorelease];
-	const uint8* bytes = (const uint8*)[data bytes];
-	
-	// Mac colors are gamma corrected in Pow(2.2) space, so do the conversion using the 2.2 to linear conversion.
-	FColor ScreenColor(bytes[2], bytes[1], bytes[0]);
-	FLinearColor ScreenLinearColor = FLinearColor::FromPow22Color(ScreenColor);
-	CGImageRelease(ScreenImage);
-
-	return ScreenLinearColor;
-}
-
 FString FMacPlatformMisc::GetCPUVendor()
 {
 	union
@@ -1758,28 +1230,6 @@ uint32 FMacPlatformMisc::GetCPUInfo()
 	asm( "cpuid" : "=a" (Args[0]), "=b" (Args[1]), "=c" (Args[2]), "=d" (Args[3]) : "a" (1));
 
 	return Args[0];
-}
-
-FString FMacPlatformMisc::GetDefaultLanguage()
-{
-	CFArrayRef Languages = CFLocaleCopyPreferredLanguages();
-	CFStringRef LangCodeStr = (CFStringRef)CFArrayGetValueAtIndex(Languages, 0);
-	FString LangCode((__bridge NSString*)LangCodeStr);
-	CFRelease(Languages);
-
-	return LangCode;
-}
-
-FString FMacPlatformMisc::GetDefaultLocale()
-{
-	CFLocaleRef Locale = CFLocaleCopyCurrent();
-	CFStringRef LangCodeStr = (CFStringRef)CFLocaleGetValue(Locale, kCFLocaleLanguageCode);
-	FString LangCode((__bridge NSString*)LangCodeStr);
-	CFStringRef CountryCodeStr = (CFStringRef)CFLocaleGetValue(Locale, kCFLocaleCountryCode);
-	FString CountryCode((__bridge NSString*)CountryCodeStr);
-	CFRelease(Locale);
-
-	return CountryCode.IsEmpty() ? LangCode : FString::Printf(TEXT("%s-%s"), *LangCode, *CountryCode);
 }
 
 FText FMacPlatformMisc::GetFileManagerName()
@@ -1842,18 +1292,40 @@ FString FMacPlatformMisc::GetXcodePath()
 
 bool FMacPlatformMisc::IsSupportedXcodeVersionInstalled()
 {
-	// We need Xcode 8.2 or newer (but not Xcode 9 beta) to be able to compile Metal shaders correctly
-	return GMacAppInfo.XcodeVersion.majorVersion == 8 && GMacAppInfo.XcodeVersion.minorVersion >= 2;
+	// We need Xcode 8.2 or newer to be able to compile Metal shaders correctly
+	return GMacAppInfo.XcodeVersion.majorVersion > 8 || (GMacAppInfo.XcodeVersion.majorVersion == 8 && GMacAppInfo.XcodeVersion.minorVersion >= 2);
 }
 
-float FMacPlatformMisc::GetDPIScaleFactorAtPoint(float X, float Y)
+CGDisplayModeRef FMacPlatformMisc::GetSupportedDisplayMode(CGDirectDisplayID DisplayID, uint32 Width, uint32 Height)
 {
-	if (MacApplication && MacApplication->IsHighDPIModeEnabled())
+	CGDisplayModeRef BestMatchingMode = nullptr;
+	uint32 BestWidth = 0;
+	uint32 BestHeight = 0;
+
+	CFArrayRef AllModes = CGDisplayCopyAllDisplayModes(DisplayID, nullptr);
+	if (AllModes)
 	{
-		TSharedRef<FMacScreen> Screen = FMacApplication::FindScreenBySlatePosition(X, Y);
-		return Screen->Screen.backingScaleFactor;
+		const int32 NumModes = CFArrayGetCount(AllModes);
+		for (int32 Index = 0; Index < NumModes; Index++)
+		{
+			CGDisplayModeRef Mode = (CGDisplayModeRef)CFArrayGetValueAtIndex(AllModes, Index);
+			const int32 ModeWidth = (int32)CGDisplayModeGetWidth(Mode);
+			const int32 ModeHeight = (int32)CGDisplayModeGetHeight(Mode);
+
+			const bool bIsEqualOrBetterWidth = FMath::Abs((int32)ModeWidth - (int32)Width) <= FMath::Abs((int32)BestWidth - (int32)Width);
+			const bool bIsEqualOrBetterHeight = FMath::Abs((int32)ModeHeight - (int32)Height) <= FMath::Abs((int32)BestHeight - (int32)Height);
+			if (!BestMatchingMode || (bIsEqualOrBetterWidth && bIsEqualOrBetterHeight))
+			{
+				BestWidth = ModeWidth;
+				BestHeight = ModeHeight;
+				BestMatchingMode = Mode;
+			}
+		}
+		BestMatchingMode = CGDisplayModeRetain(BestMatchingMode);
+		CFRelease(AllModes);
 	}
-	return 1.0f;
+
+	return BestMatchingMode;
 }
 
 /** Global pointer to crash handler */
@@ -1897,8 +1369,8 @@ static void PlatformCrashHandler(int32 Signal, siginfo_t* Info, void* Context)
 	CrashContext.InitFromSignal(Signal, Info, Context);
 	
 	// Switch to crash handler malloc to avoid malloc reentrancy
-	check(FMacApplicationInfo::CrashMalloc);
-	FMacApplicationInfo::CrashMalloc->Enable(&CrashContext, FPlatformTLS::GetCurrentThreadId());
+	check(GCrashMalloc);
+	GCrashMalloc->Enable(&CrashContext, FPlatformTLS::GetCurrentThreadId());
 	
 	if (GCrashHandlerPointer)
 	{
@@ -1963,10 +1435,10 @@ void FMacPlatformMisc::SetCrashHandler(void (* CrashHandler)(const FGenericCrash
 	
 	GCrashHandlerPointer = CrashHandler;
 	
-	if(!FMacApplicationInfo::CrashReporter && !FMacApplicationInfo::CrashMalloc)
+	if(!FMacApplicationInfo::CrashReporter && !GCrashMalloc)
 	{
 		// Configure the crash handler malloc zone to reserve some VM space for itself
-		FMacApplicationInfo::CrashMalloc = new FMacMallocCrashHandler( 128 * 1024 * 1024 );
+		GCrashMalloc = new FMacMallocCrashHandler( 128 * 1024 * 1024 );
 		
 		PLCrashReporterConfig* Config = [[[PLCrashReporterConfig alloc] initWithSignalHandlerType: PLCrashReporterSignalHandlerTypeBSD
 																		symbolicationStrategy: PLCrashReporterSymbolicationStrategyNone
@@ -2010,202 +1482,6 @@ void FMacPlatformMisc::SetCrashHandler(void (* CrashHandler)(const FGenericCrash
 	}
 }
 
-void FMacCrashContext::GenerateWindowsErrorReport(char const* WERPath, bool bIsEnsure) const
-{
-	int ReportFile = open(WERPath, O_CREAT|O_WRONLY, 0766);
-	if (ReportFile != -1)
-	{
-		TCHAR Line[PATH_MAX] = {};
-		
-		// write BOM
-		static uint16 ByteOrderMarker = 0xFEFF;
-		write(ReportFile, &ByteOrderMarker, sizeof(ByteOrderMarker));
-		
-		WriteLine(ReportFile, TEXT("<?xml version=\"1.0\" encoding=\"UTF-16\"?>"));
-		WriteLine(ReportFile, TEXT("<WERReportMetadata>"));
-		
-		WriteLine(ReportFile, TEXT("\t<OSVersionInformation>"));
-		WriteUTF16String(ReportFile, TEXT("\t\t<WindowsNTVersion>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.OSVersion);
-		WriteLine(ReportFile, TEXT("</WindowsNTVersion>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<Build>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.OSVersion);
-		WriteUTF16String(ReportFile, TEXT(" ("));
-		WriteUTF16String(ReportFile, *GMacAppInfo.OSBuild);
-		WriteLine(ReportFile, TEXT(")</Build>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<Product>(0x30): Mac OS X "));
-		WriteUTF16String(ReportFile, *GMacAppInfo.OSVersion);
-		WriteLine(ReportFile, TEXT("</Product>"));
-		
-		WriteLine(ReportFile, TEXT("\t\t<Edition>Mac OS X</Edition>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<BuildString>Mac OS X "));
-		WriteUTF16String(ReportFile, *GMacAppInfo.OSVersion);
-		WriteUTF16String(ReportFile, TEXT(" ("));
-		WriteUTF16String(ReportFile, *GMacAppInfo.OSBuild);
-		WriteLine(ReportFile, TEXT(")</BuildString>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<Revision>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.OSBuild);
-		WriteLine(ReportFile, TEXT("</Revision>"));
-		
-		WriteLine(ReportFile, TEXT("\t\t<Flavor>Multiprocessor Free</Flavor>"));
-		WriteLine(ReportFile, TEXT("\t\t<Architecture>X64</Architecture>"));
-		WriteUTF16String(ReportFile, TEXT("\t\t<LCID>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.LCID);
-		WriteLine(ReportFile, TEXT("</LCID>"));
-		WriteLine(ReportFile, TEXT("\t</OSVersionInformation>"));
-		
-		WriteLine(ReportFile, TEXT("\t<ParentProcessInformation>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<ParentProcessId>"));
-		WriteUTF16String(ReportFile, ItoTCHAR(getppid(), 10));
-		WriteLine(ReportFile, TEXT("</ParentProcessId>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<ParentProcessPath>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.ParentProcess);
-		WriteLine(ReportFile, TEXT("</ParentProcessPath>"));
-		
-		WriteLine(ReportFile, TEXT("\t\t<ParentProcessCmdLine></ParentProcessCmdLine>"));	// FIXME: supply valid?
-		WriteLine(ReportFile, TEXT("\t</ParentProcessInformation>"));
-		
-		WriteLine(ReportFile, TEXT("\t<ProblemSignatures>"));
-		WriteLine(ReportFile, TEXT("\t\t<EventType>APPCRASH</EventType>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<Parameter0>UE4-"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.AppName);
-		WriteLine(ReportFile, TEXT("</Parameter0>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<Parameter1>"));
-		WriteUTF16String(ReportFile, ItoTCHAR(FEngineVersion::Current().GetMajor(), 10));
-		WriteUTF16String(ReportFile, TEXT("."));
-		WriteUTF16String(ReportFile, ItoTCHAR(FEngineVersion::Current().GetMinor(), 10));
-		WriteUTF16String(ReportFile, TEXT("."));
-		WriteUTF16String(ReportFile, ItoTCHAR(FEngineVersion::Current().GetPatch(), 10));
-		WriteLine(ReportFile, TEXT("</Parameter1>"));
-
-		// App time stamp
-		WriteLine(ReportFile, TEXT("\t\t<Parameter2>528f2d37</Parameter2>"));													// FIXME: supply valid?
-		
-		Dl_info DLInfo;
-		if(Info && Info->si_addr != 0 && dladdr(Info->si_addr, &DLInfo) != 0)
-		{
-			// Crash Module name
-			WriteUTF16String(ReportFile, TEXT("\t\t<Parameter3>"));
-			if (DLInfo.dli_fname && FCStringAnsi::Strlen(DLInfo.dli_fname))
-			{
-				FMemory::Memzero(Line, PATH_MAX * sizeof(TCHAR));
-				FUTF8ToTCHAR_Convert::Convert(Line, PATH_MAX, DLInfo.dli_fname, FCStringAnsi::Strlen(DLInfo.dli_fname));
-				WriteUTF16String(ReportFile, Line);
-			}
-			else
-			{
-				WriteUTF16String(ReportFile, TEXT("Unknown"));
-			}
-			WriteLine(ReportFile, TEXT("</Parameter3>"));
-			
-			// Check header
-			uint32 Version = 0;
-			uint32 TimeStamp = 0;
-			struct mach_header_64* Header = (struct mach_header_64*)DLInfo.dli_fbase;
-			struct load_command *CurrentCommand = (struct load_command *)( (char *)Header + sizeof(struct mach_header_64) );
-			if( Header->magic == MH_MAGIC_64 )
-			{
-				for( int32 i = 0; i < Header->ncmds; i++ )
-				{
-					if( CurrentCommand->cmd == LC_LOAD_DYLIB )
-					{
-						struct dylib_command *DylibCommand = (struct dylib_command *) CurrentCommand;
-						Version = DylibCommand->dylib.current_version;
-						TimeStamp = DylibCommand->dylib.timestamp;
-						Version = ((Version & 0xff) + ((Version >> 8) & 0xff) * 100 + ((Version >> 16) & 0xffff) * 10000);
-						break;
-					}
-					
-					CurrentCommand = (struct load_command *)( (char *)CurrentCommand + CurrentCommand->cmdsize );
-				}
-			}
-			
-			// Module version
-			WriteUTF16String(ReportFile, TEXT("\t\t<Parameter4>"));
-			WriteUTF16String(ReportFile, ItoTCHAR(Version, 10));
-			WriteLine(ReportFile, TEXT("</Parameter4>"));
-			
-			// Module time stamp
-			WriteUTF16String(ReportFile, TEXT("\t\t<Parameter5>"));
-			WriteUTF16String(ReportFile, ItoTCHAR(TimeStamp, 16));
-			WriteLine(ReportFile, TEXT("</Parameter5>"));
-			
-			// MethodDef token -> no equivalent
-			WriteLine(ReportFile, TEXT("\t\t<Parameter6>00000001</Parameter6>"));
-			
-			// IL Offset -> Function pointer
-			WriteUTF16String(ReportFile, TEXT("\t\t<Parameter7>"));
-			WriteUTF16String(ReportFile, ItoTCHAR((uint64)Info->si_addr, 16));
-			WriteLine(ReportFile, TEXT("</Parameter7>"));
-		}
-		
-		// Command line, must match the Windows version.
-		WriteUTF16String(ReportFile, TEXT("\t\t<Parameter8>!"));
-		WriteUTF16String(ReportFile, FCommandLine::GetOriginal());
-		WriteLine(ReportFile, TEXT("!</Parameter8>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<Parameter9>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.BranchBaseDir);
-		WriteLine(ReportFile, TEXT("</Parameter9>"));
-		
-		WriteLine(ReportFile, TEXT("\t</ProblemSignatures>"));
-		
-		WriteLine(ReportFile, TEXT("\t<DynamicSignatures>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<Parameter1>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.BiosUUID);
-		WriteLine(ReportFile, TEXT("</Parameter1>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<Parameter2>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.LCID);
-		WriteLine(ReportFile, TEXT("</Parameter2>"));
-		WriteLine(ReportFile, *FString::Printf(TEXT("\t\t<DeploymentName>%s</DeploymentName>"), FApp::GetDeploymentName()));
-		WriteLine(ReportFile, *FString::Printf(TEXT("\t\t<IsEnsure>%s</IsEnsure>"), bIsEnsure ? TEXT("1") : TEXT("0")));
-		WriteLine(ReportFile, *FString::Printf(TEXT("\t\t<IsAssert>%s</IsAssert>"), FDebug::bHasAsserted ? TEXT("1") : TEXT("0")));
-		WriteLine(ReportFile, *FString::Printf(TEXT("\t\t<CrashType>%s</CrashType>"), FGenericCrashContext::GetCrashTypeString(bIsEnsure, FDebug::bHasAsserted, GIsGPUCrashed)));
-		WriteLine(ReportFile, *FString::Printf(TEXT("\t\t<BuildVersion>%s</BuildVersion>"), FApp::GetBuildVersion()));
-		WriteLine(ReportFile, *FString::Printf(TEXT("\t\t<EngineModeEx>%s</EngineModeEx>"), FGenericCrashContext::EngineModeExString()));
-
-		WriteLine(ReportFile, TEXT("\t</DynamicSignatures>"));
-		
-		WriteLine(ReportFile, TEXT("\t<SystemInformation>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<MID>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.MachineUUID);
-		WriteLine(ReportFile, TEXT("</MID>"));
-		
-		WriteLine(ReportFile, TEXT("\t\t<SystemManufacturer>Apple Inc.</SystemManufacturer>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<SystemProductName>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.MachineModel);
-		WriteLine(ReportFile, TEXT("</SystemProductName>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<BIOSVersion>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.BiosRelease);
-		WriteUTF16String(ReportFile, TEXT("-"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.BiosRevision);
-		WriteLine(ReportFile, TEXT("</BIOSVersion>"));
-		
-		WriteUTF16String(ReportFile, TEXT("\t\t<GraphicsCard>"));
-		WriteUTF16String(ReportFile, *GMacAppInfo.PrimaryGPU);
-		WriteLine(ReportFile, TEXT("</GraphicsCard>"));
-		
-		WriteLine(ReportFile, TEXT("\t</SystemInformation>"));
-		
-		WriteLine(ReportFile, TEXT("</WERReportMetadata>"));
-		
-		close(ReportFile);
-	}
-}
-
 void FMacCrashContext::CopyMinidump(char const* OutputPath, char const* InputPath) const
 {
 	int ReportFile = open(OutputPath, O_CREAT|O_WRONLY, 0766);
@@ -2227,7 +1503,7 @@ void FMacCrashContext::CopyMinidump(char const* OutputPath, char const* InputPat
 	}
 }
 
-void FMacCrashContext::GenerateInfoInFolder(char const* const InfoFolder, bool bIsEnsure) const
+void FMacCrashContext::GenerateInfoInFolder(char const* const InfoFolder) const
 {
 	// create a crash-specific directory
 	char CrashInfoFolder[PATH_MAX] = {};
@@ -2236,26 +1512,6 @@ void FMacCrashContext::GenerateInfoInFolder(char const* const InfoFolder, bool b
 	if(!mkdir(CrashInfoFolder, 0766))
 	{
 		char FilePath[PATH_MAX] = {};
-		FCStringAnsi::Strncpy(FilePath, CrashInfoFolder, PATH_MAX);
-		FCStringAnsi::Strcat(FilePath, PATH_MAX, "/report.wer");
-		int ReportFile = open(FilePath, O_CREAT|O_WRONLY, 0766);
-		if (ReportFile != -1)
-		{
-			// write BOM
-			static uint16 ByteOrderMarker = 0xFEFF;
-			write(ReportFile, &ByteOrderMarker, sizeof(ByteOrderMarker));
-			
-			WriteUTF16String(ReportFile, TEXT("\r\nAppPath="));
-			WriteUTF16String(ReportFile, *GMacAppInfo.AppPath);
-			WriteLine(ReportFile, TEXT("\r\n"));
-			
-			close(ReportFile);
-		}
-		
-		// generate "WER"
-		FCStringAnsi::Strncpy(FilePath, CrashInfoFolder, PATH_MAX);
-		FCStringAnsi::Strcat(FilePath, PATH_MAX, "/wermeta.xml");
-		GenerateWindowsErrorReport(FilePath, bIsEnsure);
 		
 		// generate "minidump" (Apple crash log format)
 		FCStringAnsi::Strncpy(FilePath, CrashInfoFolder, PATH_MAX);
@@ -2265,7 +1521,7 @@ void FMacCrashContext::GenerateInfoInFolder(char const* const InfoFolder, bool b
 		// generate "info.txt" custom data for our server
 		FCStringAnsi::Strncpy(FilePath, CrashInfoFolder, PATH_MAX);
 		FCStringAnsi::Strcat(FilePath, PATH_MAX, "/info.txt");
-		ReportFile = open(FilePath, O_CREAT|O_WRONLY, 0766);
+		int ReportFile = open(FilePath, O_CREAT|O_WRONLY, 0766);
 		if (ReportFile != -1)
 		{
 			WriteUTF16String(ReportFile, TEXT("GameName UE4-"));
@@ -2292,7 +1548,7 @@ void FMacCrashContext::GenerateInfoInFolder(char const* const InfoFolder, bool b
 		FCStringAnsi::Strncpy(FilePath, CrashInfoFolder, PATH_MAX);
 		FCStringAnsi::Strcat(FilePath, PATH_MAX, "/" );
 		FCStringAnsi::Strcat(FilePath, PATH_MAX, FGenericCrashContext::CrashContextRuntimeXMLNameA );
-		//SerializeAsXML( FilePath ); @todo uncomment after verification - need to do a bit more work on this for macOS
+		SerializeAsXML( *FString(FilePath) );
 		
 		// copy log
 		FCStringAnsi::Strncpy(FilePath, CrashInfoFolder, PATH_MAX);
@@ -2389,8 +1645,7 @@ void FMacCrashContext::GenerateCrashInfoAndLaunchReporter() const
 		FCStringAnsi::Strcat(CrashInfoFolder, PATH_MAX, ItoANSI(GMacAppInfo.RunUUID.C, 16));
 		FCStringAnsi::Strcat(CrashInfoFolder, PATH_MAX, ItoANSI(GMacAppInfo.RunUUID.D, 16));
 		
-		const bool bIsEnsure = false;
-		GenerateInfoInFolder(CrashInfoFolder, bIsEnsure);
+		GenerateInfoInFolder(CrashInfoFolder);
 
 		// try launching the tool and wait for its exit, if at all
 		// Use vfork() & execl() as they are async-signal safe, CreateProc can fail in Cocoa
@@ -2452,11 +1707,10 @@ void FMacCrashContext::GenerateEnsureInfoAndLaunchReporter() const
 
 		// Use a slightly different output folder name to not conflict with a subequent crash
 		const FGuid Guid = FGuid::NewGuid();
-		FString GameName = FApp::GetGameName();
+		FString GameName = FApp::GetProjectName();
 		FString EnsureLogFolder = FString(GMacAppInfo.CrashReportPath) / FString::Printf(TEXT("EnsureReport-%s-%s"), *GameName, *Guid.ToString(EGuidFormats::Digits));
 		
-		const bool bIsEnsure = true;
-		GenerateInfoInFolder(TCHAR_TO_UTF8(*EnsureLogFolder), bIsEnsure);
+		GenerateInfoInFolder(TCHAR_TO_UTF8(*EnsureLogFolder));
 		
 		FString Arguments;
 		if (IsInteractiveEnsureMode())
@@ -2496,7 +1750,7 @@ void NewReportEnsure( const TCHAR* ErrorMessage )
 		Signal.si_code = TRAP_TRACE;
 		Signal.si_addr = __builtin_return_address(0);
 		
-		FMacCrashContext EnsureContext;
+		FMacCrashContext EnsureContext(true);
 		EnsureContext.InitFromSignal(SIGTRAP, &Signal, nullptr);
 		EnsureContext.GenerateEnsureInfoAndLaunchReporter();
 	}
@@ -2940,19 +2194,12 @@ void FMacPlatformMisc::UpdateDriverMonitorStatistics(int32 DeviceIndex)
 	}
 }
 
-#if MAC_PROFILING_ENABLED
-void FMacPlatformMisc::BeginNamedEvent(const struct FColor& Color,const TCHAR* Text)
+int FMacPlatformMisc::GetDefaultStackSize()
 {
-	FApplePlatformDebugEvents::BeginNamedEvent(Color, Text);
-}
-
-void FMacPlatformMisc::BeginNamedEvent(const struct FColor& Color,const ANSICHAR* Text)
-{
-	FApplePlatformDebugEvents::BeginNamedEvent(Color, Text);
-}
-
-void FMacPlatformMisc::EndNamedEvent()
-{
-	FApplePlatformDebugEvents::EndNamedEvent();
-}
+	// Thread sanitiser requires 5x the memory.
+#if __has_feature(thread_sanitizer)
+	return 20 * 1024 * 1024;
+#else
+	return 4 * 1024 * 1024;
 #endif
+}

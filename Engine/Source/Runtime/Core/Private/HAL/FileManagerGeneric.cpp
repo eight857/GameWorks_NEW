@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	FileManagerGeneric.cpp: Unreal generic file manager support code.
@@ -37,7 +37,7 @@ void FFileManagerGeneric::ProcessCommandLineOptions()
 
 	if( FParse::Param( FCommandLine::Get(),TEXT( "CLEANLOGS" ) ) )
 	{
-		DeleteDirectory( *FPaths::GameLogDir(), false, true );
+		DeleteDirectory( *FPaths::ProjectLogDir(), false, true );
 	}
 #endif
 }

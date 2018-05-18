@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/RecastNavMeshDataChunk.h"
 #include "Engine/World.h"
@@ -352,26 +352,3 @@ void URecastNavMeshDataChunk::GatherTiles(const FPImplRecastNavMesh* NavMeshImpl
 	}
 }
 #endif// WITH_EDITOR
-
-//----------------------------------------------------------------------//
-// DEPRECATED
-//----------------------------------------------------------------------//
-TArray<uint32> URecastNavMeshDataChunk::AttachTiles(FPImplRecastNavMesh* NavMeshImpl)
-{
-	if (NavMeshImpl)
-	{
-		return AttachTiles(*NavMeshImpl);
-	}
-
-	return TArray<uint32>();
-}
-
-TArray<uint32> URecastNavMeshDataChunk::DetachTiles(FPImplRecastNavMesh* NavMeshImpl)
-{
-	if (NavMeshImpl)
-	{
-		return DetachTiles(*NavMeshImpl);
-	}
-
-	return TArray<uint32>();
-}

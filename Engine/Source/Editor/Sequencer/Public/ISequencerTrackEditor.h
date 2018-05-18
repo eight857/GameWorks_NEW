@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -108,6 +108,24 @@ public:
 	virtual bool HandleAssetAdded(UObject* Asset, const FGuid& TargetObjectGuid) = 0;
 
 	/**
+	 * Called when attempting to drop an asset directly onto a track.
+	 *
+	 * @param DragDropEvent The drag drop event.
+	 * @param Track The track that is receiving this drop event.
+	 * @return Whether the drop event can be handled.
+	 */
+	virtual bool OnAllowDrop(const FDragDropEvent& DragDropEvent, UMovieSceneTrack* Track) = 0;
+
+	/**
+	 * Called when an asset is dropped directly onto a track.
+	 *
+	 * @param DragDropEvent The drag drop event.
+	 * @param Track The track that is receiving this drop event.
+	 * @return Whether the drop event was handled.
+	 */	
+	virtual FReply OnDrop(const FDragDropEvent& DragDropEvent, UMovieSceneTrack* Track) = 0;
+
+	/**
 	 * Called to generate a section layout for a particular section.
 	 *
 	 * @param SectionObject The section to make UI for.
@@ -165,6 +183,14 @@ public:
 	virtual void Resize(float NewSize, UMovieSceneTrack* InTrack)
 	{
 		
+	}
+
+	/**
+	 * @return The default expansion state of this track
+	 */
+	virtual bool GetDefaultExpansionState(UMovieSceneTrack* InTrack) const
+	{
+		return false;
 	}
 
 public:

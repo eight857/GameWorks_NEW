@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Framework/Commands/GenericCommands.h"
 
@@ -17,7 +17,7 @@ void FGenericCommands::RegisterCommands()
 	UI_COMMAND( Undo, "Undo", "Undo last action", EUserInterfaceActionType::Button, FInputChord( EModifierKey::Control, EKeys::Z ) )
 	UI_COMMAND( Redo, "Redo", "Redo last action", EUserInterfaceActionType::Button, FInputChord( EModifierKey::Control, EKeys::Y ) )
 
-	UI_COMMAND(Delete, "Delete", "Delete current selection", EUserInterfaceActionType::Button, FInputChord(EKeys::Platform_Delete))
+	UI_COMMAND(Delete, "Delete", "Delete current selection", EUserInterfaceActionType::Button, FInputChord(EKeys::Delete), FInputChord(EKeys::BackSpace))
 	
 	UI_COMMAND( Rename, "Rename", "Rename current selection", EUserInterfaceActionType::Button, FInputChord( EKeys::F2 ) )
 	UI_COMMAND( SelectAll, "Select All", "Select everything in the current scope", EUserInterfaceActionType::Button, FInputChord( EModifierKey::Control, EKeys::A ) )

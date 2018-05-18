@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -133,7 +133,7 @@ private:
 
 #if WITH_EDITOR
 	/** Helper function for generating list of currently used names */
-	void GenerateListOfExistingNames(TArray<FName>& CurrentNames) const;
+	void GenerateListOfExistingNames(TSet<FName>& CurrentNames) const;
 
 	/** Helper function for generating a name for a new node, DesiredName can be used to optionally request a name, ComponentClass is mandatory */
 	FName GenerateNewComponentName(const UClass* ComponentClass, FName DesiredName = NAME_None) const;

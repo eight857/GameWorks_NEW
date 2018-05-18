@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -21,7 +21,7 @@ public:
 	 *
 	 * @return Details view interface.
 	 */
-	virtual IDetailsView& GetDetailsView() = 0;
+	virtual IDetailsView* GetDetailsView() = 0;
 
 	/**
 	 * Get this view's Slate widget.

@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tools/SequencerEditTool_Movement.h"
 #include "Editor.h"
 #include "Fonts/FontMeasure.h"
+#include "Styling/CoreStyle.h"
 #include "EditorStyleSet.h"
 #include "SequencerCommonHelpers.h"
 #include "SSequencer.h"
@@ -13,6 +14,7 @@
 #include "Tools/EditToolDragOperations.h"
 #include "IKeyArea.h"
 #include "SBox.h"
+#include "SlateApplication.h"
 
 const FName FSequencerEditTool_Movement::Identifier = "Movement";
 
@@ -69,6 +71,10 @@ FReply FSequencerEditTool_Movement::OnMouseMove(SWidget& OwnerWidget, const FGeo
 			if (DragOperation.IsValid())
 			{
 				DragPosition = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+				
+				float CurrentTime = VirtualTrackArea.PixelToTime(DragPosition.X);
+				Sequencer.UpdateAutoScroll(CurrentTime);
+				
 				DragOperation->OnDrag(MouseEvent, DragPosition, VirtualTrackArea);
 			}
 		}
@@ -103,6 +109,20 @@ bool FSequencerEditTool_Movement::GetHotspotTime(float& HotspotTime) const
 		}
 	}
 	return false;
+}
+
+float FSequencerEditTool_Movement::GetHotspotOffsetTime(float CurrentTime) const
+{
+	//@todo abstract dragging offset from shift
+	if (DelayedDrag->Hotspot.IsValid() && FSlateApplication::Get().GetModifierKeys().IsShiftDown())
+	{
+		TOptional<float> OptionalOffsetTime = DelayedDrag->Hotspot->GetOffsetTime();
+		if (OptionalOffsetTime.IsSet())
+		{
+			return OptionalOffsetTime.GetValue();
+		}
+	}
+	return CurrentTime - OriginalHotspotTime;
 }
 
 TSharedPtr<ISequencerEditToolDragOperation> FSequencerEditTool_Movement::CreateDrag(const FPointerEvent& MouseEvent)
@@ -149,7 +169,16 @@ TSharedPtr<ISequencerEditToolDragOperation> FSequencerEditTool_Movement::CreateD
 				SequencerHelpers::UpdateHoveredNodeFromSelectedSections(Sequencer);
 				SectionHandles.Add(SectionToDrag.GetValue());
 			}
-			return MakeShareable( new FMoveSection( Sequencer, SectionHandles ) );
+			if (MouseEvent.IsShiftDown())
+			{
+				const bool bDraggingByEnd = false;
+				const bool bIsSlipping = true;
+				return MakeShareable( new FResizeSection( Sequencer, SectionHandles, bDraggingByEnd, bIsSlipping ) );
+			}
+			else
+			{
+				return MakeShareable( new FMoveSection( Sequencer, SectionHandles ) );
+			}
 		}
 		// Moving key(s)?
 		else if (HotspotType == ESequencerHotspot::Key)
@@ -239,7 +268,10 @@ FReply FSequencerEditTool_Movement::OnMouseButtonUp(SWidget& OwnerWidget, const 
 				Menu->GetOnMenuDismissed().AddLambda(
 					[=](TSharedRef<IMenu>)
 					{
-						ExistingHotspot->bIsLocked = false;
+						if (ExistingHotspot.IsValid())
+						{
+							ExistingHotspot->bIsLocked = false;
+						}
 						if (SequencerPtr->GetHotspot() == ExistingHotspot)
 						{
 							SequencerPtr->SetHotspot(nullptr);
@@ -277,7 +309,7 @@ int32 FSequencerEditTool_Movement::OnPaint(const FGeometry& AllottedGeometry, co
 			{
 				TSharedRef<SSequencer> SequencerWidget = StaticCastSharedRef<SSequencer>(Sequencer.GetSequencerWidget());
 
-				const FSlateFontInfo SmallLayoutFont(FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 10);			
+				const FSlateFontInfo SmallLayoutFont = FCoreStyle::GetDefaultFontStyle("Bold", 10);
 				const TSharedRef< FSlateFontMeasure > FontMeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 				const FLinearColor DrawColor = FEditorStyle::GetSlateColor("SelectionColor").GetColor(FWidgetStyle());
 				const FVector2D BoxPadding = FVector2D(4.0f, 2.0f);
@@ -345,7 +377,8 @@ int32 FSequencerEditTool_Movement::OnPaint(const FGeometry& AllottedGeometry, co
 				);
 
 				// draw offset string
-				const FString OffsetString = TimeToString(CurrentTime - OriginalHotspotTime, true);
+				float OffsetTime = GetHotspotOffsetTime(CurrentTime);
+				const FString OffsetString = TimeToString(OffsetTime, true);
 				const FVector2D OffsetStringSize = FontMeasureService->Measure(OffsetString, SmallLayoutFont);
 				const FVector2D OffsetPos = FVector2D(NewPos.X + MousePadding, NewPos.Y - 0.5f * OffsetStringSize.Y);
 
@@ -417,11 +450,11 @@ FString FSequencerEditTool_Movement::TimeToString(float Time, bool IsDelta) cons
 			const float FrameRate = 1.0f / Sequencer.GetFixedFrameInterval();
 			const int32 Frame = SequencerHelpers::TimeToFrame(Time, FrameRate);
 
-			return FString::Printf(IsDelta ? TEXT("[%+d]") : TEXT("%d"), Frame);
+			return IsDelta ? FString::Printf(TEXT("[%+d]"), Frame) : FString::Printf(TEXT("%d"), Frame);
 		}
 	}
 
-	return FString::Printf(IsDelta ? TEXT("[%+.3f]") : TEXT("%.3f"), Time);
+	return IsDelta ? FString::Printf(TEXT("[%+.3f]"), Time) : FString::Printf(TEXT("%.3f"), Time);
 }
 
 const ISequencerHotspot* FSequencerEditTool_Movement::GetDragHotspot() const

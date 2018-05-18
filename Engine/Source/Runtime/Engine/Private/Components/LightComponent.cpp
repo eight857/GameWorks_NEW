@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	LightComponent.cpp: LightComponent implementation.
@@ -174,6 +174,21 @@ void ULightComponentBase::OnRegister()
 		UpdateLightSpriteTexture();
 	}
 }
+
+bool ULightComponentBase::CanEditChange(const UProperty* InProperty) const
+{
+	if (InProperty)
+	{
+		FString PropertyName = InProperty->GetName();
+
+		if (PropertyName == GET_MEMBER_NAME_STRING_CHECKED(ULightComponentBase, VolumetricScatteringIntensity))
+		{
+			return Mobility != EComponentMobility::Static;
+		}
+	}
+
+	return Super::CanEditChange(InProperty);
+}
 #endif
 
 bool ULightComponentBase::ShouldCollideWhenPlacing() const
@@ -193,6 +208,7 @@ FBoxSphereBounds ULightComponentBase::GetPlacementExtent() const
 
 FLightSceneProxy::FLightSceneProxy(const ULightComponent* InLightComponent)
 	: LightComponent(InLightComponent)
+	, SceneInterface(InLightComponent->GetScene())
 	, IndirectLightingScale(InLightComponent->IndirectLightingIntensity)
 	, VolumetricScatteringIntensity(FMath::Max(InLightComponent->VolumetricScatteringIntensity, 0.0f))
 	, ShadowResolutionScale(InLightComponent->ShadowResolutionScale)
@@ -210,6 +226,7 @@ FLightSceneProxy::FLightSceneProxy(const ULightComponent* InLightComponent)
 	, bCastTranslucentShadows(InLightComponent->CastTranslucentShadows)
 	, bCastVolumetricShadow(InLightComponent->bCastVolumetricShadow)
 	, bCastShadowsFromCinematicObjectsOnly(InLightComponent->bCastShadowsFromCinematicObjectsOnly)
+	, bForceCachedShadowsForMovablePrimitives(InLightComponent->bForceCachedShadowsForMovablePrimitives)
 	, bAffectTranslucentLighting(InLightComponent->bAffectTranslucentLighting)
 	, bUsedAsAtmosphereSunLight(InLightComponent->IsUsedAsAtmosphereSunLight())
 	, bAffectDynamicIndirectLighting(InLightComponent->bAffectDynamicIndirectLighting)
@@ -226,6 +243,8 @@ FLightSceneProxy::FLightSceneProxy(const ULightComponent* InLightComponent)
 	, FarShadowDistance(0)
 	, FarShadowCascadeCount(0)
 {
+	check(SceneInterface);
+
 	const FLightComponentMapBuildData* MapBuildData = InLightComponent->GetLightComponentMapBuildData();
 	
 	if (MapBuildData && bStaticShadowing && !bStaticLighting)
@@ -247,12 +266,7 @@ FLightSceneProxy::FLightSceneProxy(const ULightComponent* InLightComponent)
 
 	if(LightComponent->IESTexture)
 	{
-		UTextureLightProfile* IESTextureObject = Cast<UTextureLightProfile>(LightComponent->IESTexture);
-
-		if(IESTextureObject)
-		{
-			IESTexture = IESTextureObject;
-		}
+		IESTexture = LightComponent->IESTexture;
 	}
 
 	Color = FLinearColor(InLightComponent->LightColor) * LightBrightness;
@@ -358,6 +372,7 @@ ULightComponent::ULightComponent(const FObjectInitializer& ObjectInitializer)
 	MaxDrawDistance = 0.0f;
 	MaxDistanceFadeRange = 0.0f;
 	bAddedToSceneVisible = false;
+	bForceCachedShadowsForMovablePrimitives = false;
 }
 
 bool ULightComponent::AffectsPrimitive(const UPrimitiveComponent* Primitive) const
@@ -389,17 +404,12 @@ float ULightComponent::ComputeLightBrightness() const
 
 	if(IESTexture)
 	{
-		UTextureLightProfile* IESTextureObject = Cast<UTextureLightProfile>(IESTexture);
-
-		if(IESTextureObject)
+		if(bUseIESBrightness)
 		{
-			if(bUseIESBrightness)
-			{
-				LightBrightness = IESTextureObject->Brightness * IESBrightnessScale;
-			}
-
-			LightBrightness *= IESTextureObject->TextureMultiplier;
+			LightBrightness = IESTexture->Brightness * IESBrightnessScale;
 		}
+
+		LightBrightness *= IESTexture->TextureMultiplier;
 	}
 
 	return LightBrightness;
@@ -447,14 +457,9 @@ void ULightComponent::PostLoad()
 	{
 		if(IESTexture)
 		{
-			UTextureLightProfile* IESTextureObject = Cast<UTextureLightProfile>(IESTexture);
-
-			if(IESTextureObject)
-			{
-				Intensity /= IESTextureObject->TextureMultiplier; // Previous version didn't apply IES texture multiplier, so cancel out
-				IESBrightnessScale = FMath::Pow(IESBrightnessScale, 2.2f); // Previous version applied 2.2 gamma to brightness scale
-				IESBrightnessScale /= IESTextureObject->TextureMultiplier; // Previous version didn't apply IES texture multiplier, so cancel out
-			}
+			Intensity /= IESTexture->TextureMultiplier; // Previous version didn't apply IES texture multiplier, so cancel out
+			IESBrightnessScale = FMath::Pow(IESBrightnessScale, 2.2f); // Previous version applied 2.2 gamma to brightness scale
+			IESBrightnessScale /= IESTexture->TextureMultiplier; // Previous version didn't apply IES texture multiplier, so cancel out
 		}
 	}
 }
@@ -479,10 +484,7 @@ bool ULightComponent::CanEditChange(const UProperty* InProperty) const
 		if (PropertyName == GET_MEMBER_NAME_STRING_CHECKED(ULightComponent, LightFunctionMaterial)
 			|| PropertyName == GET_MEMBER_NAME_STRING_CHECKED(ULightComponent, LightFunctionScale)
 			|| PropertyName == GET_MEMBER_NAME_STRING_CHECKED(ULightComponent, LightFunctionFadeDistance)
-			|| PropertyName == GET_MEMBER_NAME_STRING_CHECKED(ULightComponent, DisabledBrightness)
-			|| PropertyName == GET_MEMBER_NAME_STRING_CHECKED(ULightComponent, IESTexture)
-			|| PropertyName == GET_MEMBER_NAME_STRING_CHECKED(ULightComponent, bUseIESBrightness)
-			|| PropertyName == GET_MEMBER_NAME_STRING_CHECKED(ULightComponent, IESBrightnessScale))
+			|| PropertyName == GET_MEMBER_NAME_STRING_CHECKED(ULightComponent, DisabledBrightness))
 		{
 			if (Mobility == EComponentMobility::Static)
 			{
@@ -575,6 +577,7 @@ void ULightComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChan
 		PropertyName != GET_MEMBER_NAME_STRING_CHECKED(ULightComponent, bCastVolumetricShadow) &&
 		// Point light properties that shouldn't unbuild lighting
 		PropertyName != GET_MEMBER_NAME_STRING_CHECKED(UPointLightComponent, SourceRadius) &&
+		PropertyName != GET_MEMBER_NAME_STRING_CHECKED(UPointLightComponent, SoftSourceRadius) &&
 		PropertyName != GET_MEMBER_NAME_STRING_CHECKED(UPointLightComponent, SourceLength) &&
 		// Directional light properties that shouldn't unbuild lighting
 		PropertyName != GET_MEMBER_NAME_STRING_CHECKED(UDirectionalLightComponent, DynamicShadowDistanceMovableLight) &&
@@ -614,7 +617,8 @@ void ULightComponent::UpdateLightSpriteTexture()
 			bAffectsWorld &&
 			CastShadows &&
 			CastStaticShadows &&
-			PreviewShadowMapChannel == INDEX_NONE)
+			PreviewShadowMapChannel == INDEX_NONE &&
+			(GetWorld() && !GetWorld()->IsPreviewWorld()))
 		{
 			UTexture2D* SpriteTexture = NULL;
 			SpriteTexture = LoadObject<UTexture2D>(NULL, TEXT("/Engine/EditorResources/LightIcons/S_LightError.S_LightError"));
@@ -911,6 +915,16 @@ void ULightComponent::SetShadowBias(float NewValue)
 	}
 }
 
+void ULightComponent::SetForceCachedShadowsForMovablePrimitives(bool bNewValue)
+{
+	if (AreDynamicDataChangesAllowed()
+		&& bForceCachedShadowsForMovablePrimitives != bNewValue)
+	{
+		bForceCachedShadowsForMovablePrimitives = bNewValue;
+		MarkRenderStateDirty();
+	}
+}
+
 // GetDirection
 FVector ULightComponent::GetDirection() const 
 { 
@@ -959,25 +973,24 @@ void ULightComponent::InvalidateLightingCacheDetailed(bool bInvalidateBuildEnque
 /** Invalidates the light's cached lighting with the option to recreate the light Guids. */
 void ULightComponent::InvalidateLightingCacheInner(bool bRecreateLightGuids)
 {
-	// Save the light state for transactions.
-	Modify();
-
-	// Detach the component from the scene for the duration of this function.
-	FComponentReregisterContext ReregisterContext(this);
-
-	// Block until the RT processes the unregister before modifying variables that it may need to access
-	FlushRenderingCommands();
-
-	BeginReleaseResource(&StaticShadowDepthMap);
-
-	if (bRecreateLightGuids)
+	if (HasStaticLighting() || HasStaticShadowing())
 	{
-		// Create new guids for light.
-		UpdateLightGUIDs();
-	}
-	else
-	{
-		ValidateLightGUIDs();
+		// Save the light state for transactions.
+		Modify();
+
+		BeginReleaseResource(&StaticShadowDepthMap);
+
+		if (bRecreateLightGuids)
+		{
+			// Create new guids for light.
+			UpdateLightGUIDs();
+		}
+		else
+		{
+			ValidateLightGUIDs();
+		}
+
+		MarkRenderStateDirty();
 	}
 }
 

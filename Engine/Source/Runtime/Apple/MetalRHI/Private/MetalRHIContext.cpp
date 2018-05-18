@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MetalRHIPrivate.h"
 #include "ShaderCache.h"
@@ -110,6 +110,15 @@ void FMetalRHIComputeContext::RHISetComputeShader(FComputeShaderRHIParamRef Comp
 		Context->InitFrame(false);
 	}
 	FMetalRHICommandContext::RHISetComputeShader(ComputeShader);
+}
+
+void FMetalRHIComputeContext::RHISetComputePipelineState(FRHIComputePipelineState* ComputePipelineState)
+{
+	if (!Context->GetCurrentCommandBuffer())
+	{
+		Context->InitFrame(false);
+	}
+	FMetalRHICommandContext::RHISetComputePipelineState(ComputePipelineState);
 }
 
 void FMetalRHIComputeContext::RHISubmitCommandsHint()

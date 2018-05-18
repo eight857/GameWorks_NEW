@@ -1,12 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HTML5/HTML5PlatformStackWalk.h"
 #include "GenericPlatform/GenericPlatformStackWalk.h"
 #include <ctype.h>
 #include <stdlib.h>
-#if PLATFORM_HTML5_BROWSER
-#	include <emscripten/emscripten.h>
-#endif
+#include <emscripten/emscripten.h>
 #include <string.h>
 
 static char BacktraceLog[4096];
@@ -21,18 +19,17 @@ static void ParseError(FProgramCounterSymbolInfo& out_SymbolInfo)
 
 void FHTML5PlatformStackWalk::ProgramCounterToSymbolInfo(uint64 ProgramCounter,FProgramCounterSymbolInfo& out_SymbolInfo)
 {
-#if PLATFORM_HTML5_BROWSER
 	char* TP = (char*)ProgramCounter;
 	// No module name, SymbolDisplacement, OffsetInModule or PC support
 	out_SymbolInfo.ModuleName[0] = 0;
 	out_SymbolInfo.SymbolDisplacement = 0;
 	out_SymbolInfo.OffsetInModule = 0;
 	out_SymbolInfo.ProgramCounter = 0;
-	for (int Index = 0; Index < FProgramCounterSymbolInfo::MAX_NAME_LENGHT && out_SymbolInfo.FunctionName[Index] != 0; ++Index)
+	for (int Index = 0; Index < FProgramCounterSymbolInfo::MAX_NAME_LENGTH && out_SymbolInfo.FunctionName[Index] != 0; ++Index)
 	{
 		out_SymbolInfo.FunctionName[Index] = 0;
 	}
-	for(int Index = 0; Index < FProgramCounterSymbolInfo::MAX_NAME_LENGHT && out_SymbolInfo.Filename[Index] != 0; ++Index)
+	for(int Index = 0; Index < FProgramCounterSymbolInfo::MAX_NAME_LENGTH && out_SymbolInfo.Filename[Index] != 0; ++Index)
 	{
 		out_SymbolInfo.Filename[Index] = 0;
 	}
@@ -57,7 +54,7 @@ void FHTML5PlatformStackWalk::ProgramCounterToSymbolInfo(uint64 ProgramCounter,F
 	bool ParameterParse=false;
 	while ((!isspace(*Ptr) || ParameterParse))
 	{
-		if(*Ptr == 0 || Out >= FProgramCounterSymbolInfo::MAX_NAME_LENGHT)
+		if(*Ptr == 0 || Out >= FProgramCounterSymbolInfo::MAX_NAME_LENGTH)
 		{
 			return ParseError(out_SymbolInfo);
 		}
@@ -87,7 +84,7 @@ void FHTML5PlatformStackWalk::ProgramCounterToSymbolInfo(uint64 ProgramCounter,F
 	Out=0;
 	while(*Ptr != '\n' && *Ptr != '\r')
 	{
-		if(*Ptr == 0 || Out >= FProgramCounterSymbolInfo::MAX_NAME_LENGHT)
+		if(*Ptr == 0 || Out >= FProgramCounterSymbolInfo::MAX_NAME_LENGTH)
 		{
 			return ParseError(out_SymbolInfo);
 		}
@@ -110,17 +107,13 @@ void FHTML5PlatformStackWalk::ProgramCounterToSymbolInfo(uint64 ProgramCounter,F
 		out_SymbolInfo.LineNumber = atoi(Colon1+1);
 		*Colon1 = 0;
 	}
-#else
-	return ParseError(out_SymbolInfo);
-#endif
 }
 
-void FHTML5PlatformStackWalk::CaptureStackBackTrace(uint64* BackTrace,uint32 MaxDepth,void* Context)
+uint32 FHTML5PlatformStackWalk::CaptureStackBackTrace(uint64* BackTrace,uint32 MaxDepth,void* Context)
 {
-#if PLATFORM_HTML5_BROWSER
 	if (MaxDepth < 1)
 	{
-		return;
+		return 0;
 	}
 
 	--MaxDepth;
@@ -133,14 +126,11 @@ void FHTML5PlatformStackWalk::CaptureStackBackTrace(uint64* BackTrace,uint32 Max
 	}
 
 	BackTrace[SP] = 0;
-#else
-	BackTrace[0] = 0;
-#endif
+	return SP;
 }
 
 int32 FHTML5PlatformStackWalk::GetStackBackTraceString(char* OutputString, int32 MaxLen)
 {
-#if PLATFORM_HTML5_BROWSER
 	auto l = emscripten_get_callstack(EM_LOG_C_STACK|EM_LOG_DEMANGLE, OutputString, MaxLen);
 	char* p = OutputString;
 	while (*p && l) {
@@ -148,7 +138,4 @@ int32 FHTML5PlatformStackWalk::GetStackBackTraceString(char* OutputString, int32
 		p++;
 	}
 	return l;
-#else
-	return 0;
-#endif
 }

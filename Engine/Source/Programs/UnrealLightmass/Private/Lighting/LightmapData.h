@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,15 +8,6 @@
 
 namespace Lightmass
 {
-	/** The light incident for a point on a surface. */
-	class FLightSample : public FLightSampleData
-	{
-	public:
-		/** Initialization constructor. */
-		FLightSample() : FLightSampleData() {}
-		FLightSample(EForceInit) : FLightSampleData() {}
-	};
-
 	/**
 	 * The raw data which is used to construct a 2D light-map.
 	 */

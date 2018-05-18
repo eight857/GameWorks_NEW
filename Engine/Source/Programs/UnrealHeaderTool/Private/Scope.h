@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,7 +13,6 @@ class UDelegateFunction;
 class UStruct;
 class FClassMetaData;
 class FUnrealSourceFile;
-class FUHTMakefile;
 class FFileScope;
 class FStructScope;
 
@@ -119,7 +118,7 @@ public:
 	 *
 	 * @returns Newly added scope.
 	 */
-	static TSharedRef<FScope> AddTypeScope(UStruct* Type, FScope* ParentScope, FUnrealSourceFile* UnrealSourceFile, FUHTMakefile& UHTMakefile);
+	static TSharedRef<FScope> AddTypeScope(UStruct* Type, FScope* ParentScope);
 
 	/**
 	 * Gets structs, enums and delegate functions from this scope.
@@ -262,7 +261,6 @@ private:
 
 	friend struct FScopeArchiveProxy;
 	friend struct FStructScopeArchiveProxy;
-	friend class FUHTMakefile;
 };
 
 /**

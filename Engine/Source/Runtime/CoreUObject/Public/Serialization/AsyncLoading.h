@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AsyncLoading.h: Unreal async loading definitions.
@@ -404,7 +404,7 @@ struct FAsyncPackage : FGCObject
 		return Desc.NameToLoad;
 	}
 
-	void AddCompletionCallback(const FLoadPackageAsyncDelegate& Callback, bool bInternal);
+	void AddCompletionCallback(TUniquePtr<FLoadPackageAsyncDelegate>&& Callback, bool bInternal);
 
 	/** Gets the number of references to this package from other packages in the dependency tree. */
 	FORCEINLINE int32 GetDependencyRefCount() const
@@ -484,23 +484,31 @@ struct FAsyncPackage : FGCObject
 	/** Removes all objects from the list and clears async loading flags */
 	void EmptyReferencedObjects();
 
+	/** Returns the UPackage wrapped by this, if it is valid */
+	UPackage* GetLoadedPackage();
+
+#if WITH_EDITOR
+	/** Gets all assets loaded by this async package, used in the editor */
+	void GetLoadedAssets(TArray<FWeakObjectPtr>& AssetList);
+#endif
+
 private:	
 
 	struct FCompletionCallback
 	{
 		bool bIsInternal;
 		bool bCalled;
-		FLoadPackageAsyncDelegate Callback;
+		TUniquePtr<FLoadPackageAsyncDelegate> Callback;
 
 		FCompletionCallback()
 			: bIsInternal(false)
 			, bCalled(false)
 		{
 		}
-		FCompletionCallback(bool bInInternal, FLoadPackageAsyncDelegate InCallback)
+		FCompletionCallback(bool bInInternal, TUniquePtr<FLoadPackageAsyncDelegate>&& InCallback)
 			: bIsInternal(bInInternal)
 			, bCalled(false)
-			, Callback(InCallback)
+			, Callback(MoveTemp(InCallback))
 		{
 		}
 	};
@@ -551,6 +559,8 @@ private:
 	bool						bLoadHasFinished;
 	/** True if threaded loading has finished for this package */
 	bool						bThreadedLoadingFinished;
+	/** True if this package was created by this async package */
+	bool						bCreatedLinkerRoot;
 	/** The time taken when we started the tick.														*/
 	double						TickStartTime;
 	/** Last object work was performed on. Used for debugging/ logging purposes.						*/
@@ -622,7 +632,7 @@ public:
 	int64 CurrentBlockBytes;
 	TSet<int32> ExportsInThisBlock;
 
-	TMultiMap<FName, FPackageIndex> ObjectNameToImportOrExport;
+	TMap<TPair<FName, FPackageIndex>, FPackageIndex> ObjectNameWithOuterToExport;
 
 	TSet<FWeakAsyncPackagePtr> PackagesIMayBeWaitingForBeforePostload; // these need to be reexamined and perhaps deleted or collapsed
 
@@ -852,7 +862,14 @@ private:
 	 *
 	 * @return true
 	 */
-	EAsyncPackageState::Type FinishObjects();	
+	EAsyncPackageState::Type FinishObjects();
+
+	/**
+	 * Finalizes external dependencies till time limit is exceeded
+	 *
+	 * @return Complete if all dependencies are finished, TimeOut otherwise
+	 */
+	EAsyncPackageState::Type FinishExternalReadDependencies();
 
 	/**
 	 * Function called when pending import package has been loaded.

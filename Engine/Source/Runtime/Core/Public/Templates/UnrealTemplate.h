@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -117,6 +117,24 @@ template <typename T>
 CONSTEXPR SIZE_T GetNum(std::initializer_list<T> List)
 {
 	return List.size();
+}
+
+/**
+ * Returns a non-const pointer type as const.
+ */
+template <typename T>
+FORCEINLINE const T* AsConst(T* Ptr)
+{
+	return Ptr;
+}
+
+/**
+ * Returns a non-const reference type as const.
+ */
+template <typename T>
+FORCEINLINE const T& AsConst(T& Ref)
+{
+	return Ref;
 }
 
 /*----------------------------------------------------------------------------
@@ -244,10 +262,10 @@ private:
  * Usage:
  *  	TGuardValue<bool> GuardSomeBool(bSomeBool, false); // Sets bSomeBool to false, and restores it in dtor.
  */
-template <typename Type>
+template <typename RefType, typename AssignedType = RefType>
 struct TGuardValue : private FNoncopyable
 {
-	TGuardValue(Type& ReferenceValue, const Type& NewValue)
+	TGuardValue(RefType& ReferenceValue, const AssignedType& NewValue)
 	: RefValue(ReferenceValue), OldValue(ReferenceValue)
 	{
 		RefValue = NewValue;
@@ -263,14 +281,14 @@ struct TGuardValue : private FNoncopyable
 	 *
 	 * @return	a const reference to the original data value
 	 */
-	FORCEINLINE const Type& operator*() const
+	FORCEINLINE const AssignedType& operator*() const
 	{
 		return OldValue;
 	}
 
 private:
-	Type& RefValue;
-	Type OldValue;
+	RefType& RefValue;
+	AssignedType OldValue;
 };
 
 
@@ -356,12 +374,32 @@ template <typename T> struct TRemovePointer<T*> { typedef T Type; };
 
 /**
  * MoveTemp will cast a reference to an rvalue reference.
- * This is UE's equivalent of std::move.
+ * This is UE's equivalent of std::move except that it will not compile when passed an rvalue or
+ * const object, because we would prefer to be informed when MoveTemp will have no effect.
  */
 template <typename T>
 FORCEINLINE typename TRemoveReference<T>::Type&& MoveTemp(T&& Obj)
 {
-	return (typename TRemoveReference<T>::Type&&)Obj;
+	typedef typename TRemoveReference<T>::Type CastType;
+
+	// Validate that we're not being passed an rvalue or a const object - the former is redundant, the latter is almost certainly a mistake
+	static_assert(TIsLValueReferenceType<T>::Value, "MoveTemp called on an rvalue");
+	static_assert(!TAreTypesEqual<CastType&, const CastType&>::Value, "MoveTemp called on a const object");
+
+	return (CastType&&)Obj;
+}
+
+/**
+ * MoveTemp will cast a reference to an rvalue reference.
+ * This is UE's equivalent of std::move.  It doesn't static assert like MoveTemp, because it is useful in
+ * templates or macros where it's not obvious what the argument is, but you want to take advantage of move semantics
+ * where you can but not stop compilation.
+ */
+template <typename T>
+FORCEINLINE typename TRemoveReference<T>::Type&& MoveTempIfPossible(T&& Obj)
+{
+	typedef typename TRemoveReference<T>::Type CastType;
+	return (CastType&&)Obj;
 }
 
 /**
@@ -538,9 +576,24 @@ struct TIdentity
 };
 
 /**
- * Equivalent to std::declval.  
+ * Equivalent to std::declval.
  *
  * Note that this function is unimplemented, and is only intended to be used in unevaluated contexts, like sizeof and trait expressions.
  */
 template <typename T>
 T&& DeclVal();
+
+/**
+ * Uses implicit conversion to create an instance of a specific type.
+ * Useful to make things clearer or circumvent unintended type deduction in templates.
+ * Safer than C casts and static_casts, e.g. does not allow down-casts
+ *
+ * @param Obj  The object (usually pointer or reference) to convert.
+ *
+ * @return The object converted to the specified type.
+ */
+template <typename T>
+FORCEINLINE T ImplicitConv(typename TIdentity<T>::Type Obj)
+{
+    return Obj;
+}

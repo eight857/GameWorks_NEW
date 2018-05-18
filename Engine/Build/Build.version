@@ -1,9 +1,9 @@
 {
 	"MajorVersion": 4,
-	"MinorVersion": 17,
-	"PatchVersion": 1,
+	"MinorVersion": 19,
+	"PatchVersion": 2,
 	"Changelist": 0,
-	"CompatibleChangelist": 3573198,
+	"CompatibleChangelist": 3944462,
 	"IsLicenseeVersion": 0,
 	"IsPromotedBuild": 1,
 	"BranchName": ""

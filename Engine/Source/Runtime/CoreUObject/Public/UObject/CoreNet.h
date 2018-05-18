@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,10 +11,10 @@
 #include "Serialization/BitWriter.h"
 #include "Misc/NetworkGuid.h"
 #include "UObject/CoreNetTypes.h"
+#include "UObject/SoftObjectPath.h"
 
 class FOutBunch;
 class INetDeltaBaseState;
-struct FStringAssetReference;
 
 DECLARE_DELEGATE_RetVal_OneParam( bool, FNetObjectIsDynamic, const UObject*);
 
@@ -280,7 +280,7 @@ public:
 
 	virtual FArchive& operator<<(FName& Name) override;
 	virtual FArchive& operator<<(UObject*& Object) override;
-	virtual FArchive& operator<<(FStringAssetReference& Value) override;
+	virtual FArchive& operator<<(FSoftObjectPath& Value) override;
 	virtual FArchive& operator<<(struct FWeakObjectPtr& Value) override;
 };
 
@@ -299,7 +299,7 @@ public:
 
 	virtual FArchive& operator<<(FName& Name) override;
 	virtual FArchive& operator<<(UObject*& Object) override;
-	virtual FArchive& operator<<(FStringAssetReference& Value) override;
+	virtual FArchive& operator<<(FSoftObjectPath& Value) override;
 	virtual FArchive& operator<<(struct FWeakObjectPtr& Value) override;
 };
 
@@ -470,7 +470,7 @@ COREUOBJECT_API void SerializeChecksum(FArchive &Ar, uint32 x, bool ErrorOK);
 /**
 * Values used for initializing UNetConnection and LanBeacon
 */
-enum { MAX_PACKET_SIZE = 512 }; // MTU for the connection
+enum { MAX_PACKET_SIZE = 1024 }; // MTU for the connection
 enum { LAN_BEACON_MAX_PACKET_SIZE = 1024 }; // MTU for the connection
 
 /**

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ParticleBeamTrailVertexFactory.h: Shared Particle Beam and Trail vertex 
@@ -39,19 +39,21 @@ public:
 		, IndexBuffer(nullptr)
 		, FirstIndex(0)
 		, OutTriangleCount(0)
+		, bUsesDynamicParameter(true)
 	{}
 
-	FParticleBeamTrailVertexFactory()
-		: FParticleVertexFactoryBase(PVFT_MAX, ERHIFeatureLevel::Num)
+	FParticleBeamTrailVertexFactory(ERHIFeatureLevel::Type InFeatureLevel)
+		: FParticleVertexFactoryBase(PVFT_MAX, InFeatureLevel)
 		, IndexBuffer(nullptr)
 		, FirstIndex(0)
 		, OutTriangleCount(0)
+		, bUsesDynamicParameter(true)
 	{}
 
 	/**
 	 * Should we cache the material's shadertype on this platform with this vertex factory? 
 	 */
-	static bool ShouldCache(EShaderPlatform Platform, const class FMaterial* Material, const class FShaderType* ShaderType);
+	static bool ShouldCompilePermutation(EShaderPlatform Platform, const class FMaterial* Material, const class FShaderType* ShaderType);
 
 	/**
 	 * Can be overridden by FVertexFactory subclasses to modify their compile environment just before compilation occurs.
@@ -86,7 +88,10 @@ public:
 	 * Set the source vertex buffer that contains particle dynamic parameter data.
 	 */
 	void SetDynamicParameterBuffer(const FVertexBuffer* InDynamicParameterBuffer, uint32 StreamOffset, uint32 Stride);
-
+	inline void SetUsesDynamicParameter(bool bInUsesDynamicParameter)
+	{
+		bUsesDynamicParameter = bInUsesDynamicParameter;
+	}
 
 	/**
 	 * Construct shader parameters for this type of vertex factory.
@@ -117,4 +122,5 @@ private:
 	FIndexBuffer* IndexBuffer;
 	uint32 FirstIndex;
 	int32 OutTriangleCount;
+	bool bUsesDynamicParameter;
 };

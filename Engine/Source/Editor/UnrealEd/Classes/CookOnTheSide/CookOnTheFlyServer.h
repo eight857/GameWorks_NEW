@@ -1,8 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
-
-/*=============================================================================
-CookOnTheFlyServer.h : handles polite cook requests via network ;)
-=============================================================================*/
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,7 +14,7 @@ CookOnTheFlyServer.h : handles polite cook requests via network ;)
 #include "HAL/PlatformProcess.h"
 #include "TickableEditorObject.h"
 #include "IPlatformFileSandboxWrapper.h"
-#include "Interfaces/INetworkFileSystemModule.h"
+#include "INetworkFileSystemModule.h"
 #include "CookOnTheFlyServer.generated.h"
 
 
@@ -68,6 +64,7 @@ enum class ECookByTheBookOptions
 	NoSlatePackages =					0x00000400, // don't include slate content (this cook will probably be missing content unless you know what you are doing)
 	NoInputPackages =					0x00000800, // don't include slate content (this cook will probably be missing content unless you know what you are doing)
 	DisableUnsolicitedPackages =		0x00001000, // don't cook any packages which aren't in the files to cook list (this is really dangerious as if you request a file it will not cook all it's dependencies automatically)
+	FullLoadAndSave =					0x00002000, // Load all packages into memory and save them all at once in one tick for speed reasons. This requires a lot of RAM for large games.
 };
 ENUM_CLASS_FLAGS(ECookByTheBookOptions);
 
@@ -330,7 +327,7 @@ private:
 			check(PlatformNames.Num() == bSucceededSavePackage.Num());
 		}
 		FFilePlatformCookedPackage(const FName& InFilename, const TArray<FName>& InPlatformName, const TArray<bool>& bInSuccededSavePackage) : FFilePlatformRequest(InFilename, InPlatformName), bSucceededSavePackage(bInSuccededSavePackage) { check(PlatformNames.Num() == bSucceededSavePackage.Num()); }
-		FFilePlatformCookedPackage(const FName& InFilename, TArray<FName>&& InPlatformName, const TArray<bool>&& bInSuccededSavePackage) : FFilePlatformRequest(InFilename, MoveTemp(InPlatformName)), bSucceededSavePackage(MoveTemp(bInSuccededSavePackage)) { check(PlatformNames.Num() == bSucceededSavePackage.Num()); }
+		FFilePlatformCookedPackage(const FName& InFilename, TArray<FName>&& InPlatformName, TArray<bool>&& bInSuccededSavePackage) : FFilePlatformRequest(InFilename, MoveTemp(InPlatformName)), bSucceededSavePackage(MoveTemp(bInSuccededSavePackage)) { check(PlatformNames.Num() == bSucceededSavePackage.Num()); }
 		FFilePlatformCookedPackage(const FFilePlatformCookedPackage& InFilePlatformRequest) : FFilePlatformRequest(InFilePlatformRequest.Filename, InFilePlatformRequest.PlatformNames), bSucceededSavePackage(InFilePlatformRequest.bSucceededSavePackage) { check(PlatformNames.Num() == bSucceededSavePackage.Num());  }
 		FFilePlatformCookedPackage(FFilePlatformCookedPackage&& InFilePlatformRequest) : FFilePlatformRequest(MoveTemp(InFilePlatformRequest.Filename), MoveTemp(InFilePlatformRequest.PlatformNames)), bSucceededSavePackage(InFilePlatformRequest.bSucceededSavePackage) { check(PlatformNames.Num() == bSucceededSavePackage.Num()); }
 
@@ -605,7 +602,7 @@ private:
 				Queue.RemoveAt(0);
 				TArray<FName> Platforms = PlatformList.FindChecked(Filename);
 				PlatformList.Remove(Filename);
-				*Result = MoveTemp(FFilePlatformRequest(MoveTemp(Filename), MoveTemp(Platforms)));
+				*Result = FFilePlatformRequest(MoveTemp(Filename), MoveTemp(Platforms));
 				return true;
 			}
 			return false;
@@ -813,6 +810,7 @@ private:
 			bErrorOnEngineContentUse(false),
 			bIsChildCooker(false),
 			bDisableUnsolicitedPackages(false),
+			bFullLoadAndSave(false),
 			ChildCookIdentifier(-1)
 		{ }
 
@@ -845,6 +843,7 @@ private:
 		bool bErrorOnEngineContentUse;
 		bool bIsChildCooker;
 		bool bDisableUnsolicitedPackages;
+		bool bFullLoadAndSave;
 		int32 ChildCookIdentifier;
 		FString ChildCookFilename;
 		TSet<FName> ChildUnsolicitedPackages;
@@ -973,7 +972,10 @@ private:
 
 	/** Map of platform name to asset registry generators, which hold the state of asset registry data for a platform */
 	TMap<FName, FAssetRegistryGenerator*> RegistryGenerators;
-	
+
+	/** List of filenames that may be out of date in the asset registry */
+	TSet<FName> ModifiedAssetFilenames;
+
 	//////////////////////////////////////////////////////////////////////////
 	// iterative ini settings checking
 	// growing list of ini settings which are accessed over the course of the cook
@@ -1089,8 +1091,6 @@ public:
 		bool bGenerateDependenciesForMaps; 
 		bool bErrorOnEngineContentUse; // this is a flag for dlc, will cause the cooker to error if the dlc references engine content
 		int32 NumProcesses;
-		bool bNativizeAssets;
-		FString NativizedPluginPath; // path expressing the desired .uplugin path (optional); will only be utilized if bNativizeAssets is set
 		FCookByTheBookStartupOptions() :
 			CookOptions(ECookByTheBookOptions::None),
 			DLCName(FString()),
@@ -1098,8 +1098,7 @@ public:
 			bGenerateStreamingInstallManifests(false),
 			bGenerateDependenciesForMaps(false),
 			bErrorOnEngineContentUse(false),
-			NumProcesses(0),
-			bNativizeAssets(false)
+			NumProcesses(0)
 		{ }
 	};
 
@@ -1305,8 +1304,6 @@ public:
 	* Callbacks from UObject globals
 	*/
 	void PreGarbageCollect();
-	void OnStringAssetReferenceLoadedPackage(const FName& PackageName);
-
 
 private:
 
@@ -1426,6 +1423,7 @@ private:
 	 */
 	FString HandleNetworkGetSandboxPath();
 
+	void GetCookOnTheFlyUnsolicitedFiles( const FName& PlatformName, TArray<FString>& UnsolicitedFiles );
 
 	/**
 	 * HandleNetworkGetPrecookedList 
@@ -1542,7 +1540,7 @@ private:
 	 * @param RedirectedPaths map of original to redirected object paths
 	 * @return true if the Package contains a redirector false otherwise
 	 */
-	bool ContainsRedirector(const FName& PackageName, TMap<FString,FString>& RedirectedPaths) const;
+	bool ContainsRedirector(const FName& PackageName, TMap<FName, FName>& RedirectedPaths) const;
 	
 	/**
 	 * Calls BeginCacheForCookedPlatformData on all UObjects in the package
@@ -1616,11 +1614,11 @@ private:
 	}
 
 	/**
-	* GetDLCContentPath
+	* GetBaseDirectoryForDLC
 	* 
-	* @return return the path to the source dlc content
+	* @return return the path to the DLC
 	*/
-	FString GetDLCContentPath();
+	FString GetBaseDirectoryForDLC() const;
 
 	inline bool IsCreatingReleaseVersion()
 	{
@@ -1734,6 +1732,8 @@ private:
 
 
 	void GetDependencies( UPackage* Package, TArray<UPackage*> Dependencies );
+
+	uint32 FullLoadAndSave(uint32& CookedPackageCount);
 
 };
 

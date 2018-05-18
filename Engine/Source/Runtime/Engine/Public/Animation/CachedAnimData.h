@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -48,6 +48,9 @@ struct ENGINE_API FCachedAnimStateData
 
 	/** Is State relevant? */
 	bool IsRelevant(UAnimInstance& InAnimInstance) const;
+
+	/** Is State active? */
+	bool IsActiveState(class UAnimInstance& InAnimInstance) const;
 
 private:
 	mutable int32 MachineIndex;

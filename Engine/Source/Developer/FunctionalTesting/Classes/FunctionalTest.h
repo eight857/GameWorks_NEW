@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,11 +9,13 @@
 #include "Math/RandomStream.h"
 #include "GameFramework/Actor.h"
 #include "ProfilingDebugging/ExternalProfiler.h"
+#include "Math/StatisticalFloat.h"
 #include "FunctionalTest.generated.h"
 
 class Error;
 class UBillboardComponent;
 class UTraceQueryTestResults;
+class UWorld;
 
 //Experimental effort at automated cpu captures from the functional testing.
 class FFunctionalTestExternalProfiler : public FScopedExternalProfilerBase
@@ -22,60 +24,6 @@ public:
 	void StartProfiler(const bool bWantPause){ StartScopedTimer(bWantPause); }
 	void StopProfiler(){StopScopedTimer();}
 }; 
-
-// Used to measure a distribution
-struct FStatisticalFloat
-{
-public:
-	FStatisticalFloat()
-		: MinValue(0.0)
-		, MaxValue(0.0)
-		, Accumulator(0.0)
-		, NumSamples(0)
-	{
-	}
-
-	void AddSample(double Value)
-	{
-		if (NumSamples == 0)
-		{
-			MinValue = MaxValue = Value;
-		}
-		else
-		{
-			MinValue = FMath::Min(MinValue, Value);
-			MaxValue = FMath::Max(MaxValue, Value);
-		}
-		Accumulator += Value;
-		++NumSamples;
-	}
-
-	double GetMinValue() const
-	{
-		return MinValue;
-	}
-
-	double GetMaxValue() const
-	{
-		return MaxValue;
-	}
-
-	double GetAvgValue() const
-	{
-		return Accumulator / (double)NumSamples;
-	}
-
-	int32 GetCount() const
-	{
-		return NumSamples;
-	}
-
-private:
-	double MinValue;
-	double MaxValue;
-	double Accumulator;
-	int32 NumSamples;
-};
 
 struct FStatsData
 {
@@ -158,6 +106,10 @@ class FUNCTIONALTESTING_API UAutomationPerformaceHelper : public UObject
 public:
 
 	UAutomationPerformaceHelper();
+
+	// UObject interface
+	virtual UWorld* GetWorld() const override;
+	// End of UObject interface
 
 	//Begin basic stat recording
 
@@ -411,14 +363,14 @@ public:
 	 * @param What	A name to use in the message if the assert fails ("Expected 'What' to be {Expected} but it was {Actual} for context ''")
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Asserts", DisplayName = "Assert Equal (Transform)", meta = ( HidePin = "ContextObject", DefaultToSelf = "ContextObject"))
-	bool AssertEqual_Transform(const FTransform& Actual, const FTransform& Expected, const FString& What, const UObject* ContextObject = nullptr);
+	bool AssertEqual_Transform(const FTransform& Actual, const FTransform& Expected, const FString& What, float Tolerance = 1.e-4, const UObject* ContextObject = nullptr);
 
 	/**
 	 * Assert that two floats are equal within tolerance between two floats.
 	 * @param What	A name to use in the message if the assert fails (What: expected {Actual} to be Equal To {Expected} within Tolerance for context '')
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Asserts", DisplayName = "Assert Equal (Float)", meta = ( HidePin = "ContextObject", DefaultToSelf = "ContextObject"))
-	bool AssertEqual_Float(const float Actual, const float Expected, const FString& What, float Tolerance = 1.e-4, const UObject* ContextObject = nullptr);
+	bool AssertEqual_Float(const float Actual, const float Expected, const FString& What, const float Tolerance = 1.e-4, const UObject* ContextObject = nullptr);
 
 	/**
 	* Assert that two bools are equal
@@ -453,7 +405,7 @@ public:
 	 * @param What	A name to use in the message if the assert fails ("Expected 'What' to be {Expected} but it was {Actual} for context ''")
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Asserts", DisplayName = "Assert Equal (Rotator)", meta = ( HidePin = "ContextObject", DefaultToSelf = "ContextObject"))
-	bool AssertEqual_Rotator(const FRotator Actual, const FRotator Expected, const FString& What, const UObject* ContextObject = nullptr);
+	bool AssertEqual_Rotator(const FRotator Actual, const FRotator Expected, const FString& What, const float Tolerance = 1.e-4, const UObject* ContextObject = nullptr);
 
 	/**
 	 * Assert that the component angles of two rotators are all not equal within a small tolerance.

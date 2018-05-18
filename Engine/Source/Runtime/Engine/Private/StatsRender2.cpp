@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  *
@@ -153,6 +153,10 @@ struct FStatRenderGlobals
 		{
 			SetNewFont( EStatFontTypes::Tiny );
 		}
+		else
+		{
+			SetNewFont(EStatFontTypes::Small);
+		}
 
 		SafeSizeX = InSafeSizeX;
 		bIsStereo = bInIsStereo;
@@ -291,7 +295,6 @@ static void RightJustify( FCanvas* Canvas, const int32 X, const int32 Y, TCHAR c
 
 	int32 StatColumnSpaceSizeX, StatColumnSpaceSizeY;
 	StringSize(Globals.StatFont, StatColumnSpaceSizeX, StatColumnSpaceSizeY, Text);
-
 	Canvas->DrawShadowedString(X + Globals.InterColumnOffset - StatColumnSpaceSizeX, Y, Text, Globals.StatFont, Color);
 }
 
@@ -711,7 +714,7 @@ void RenderArrayOfStats( FCanvas* Canvas, const int32 X, int32& Y, const TArray<
 
 		if (BackgroundTexture != nullptr)
 		{
-			Canvas->DrawTile(X, Y + Globals.GetYOffset(), Globals.AfterNameColumnOffset + Globals.InterColumnOffset * NumColumns, Globals.GetFontHeight(),
+			Canvas->DrawTile(X, Y + Globals.GetYOffset(), Globals.AfterNameColumnOffset + (Globals.InterColumnOffset) * NumColumns, Globals.GetFontHeight(),
 				0, 0, 1, 1,
 				Globals.BackgroundColors[RowIndex & 1], BackgroundTexture, true);
 		}
@@ -793,7 +796,6 @@ static void RenderGroupedWithHierarchy(const FGameThreadStatsData& ViewData, FVi
 			{
 				GroupLongName += FString::Printf(TEXT(" ROOT=%s"), *ViewData.RootFilter);
 			}
-
 			Canvas->DrawShadowedString(X, Y, *GroupLongName, Globals.StatFont, Globals.GroupColor);
 			Y += Globals.GetFontHeight();
 
@@ -865,7 +867,7 @@ void RenderStats(FViewport* Viewport, class FCanvas* Canvas, int32 X, int32 Y, i
 	FStatRenderGlobals& Globals = GetStatRenderGlobals();
 	// SizeX is used to clip/arrange the rendered stats to avoid overlay in stereo mode.
 	const bool bIsStereo = Canvas->IsStereoRendering();
-	Globals.Initialize( Viewport->GetSizeXY().X, Viewport->GetSizeXY().Y, SafeSizeX, bIsStereo );
+	Globals.Initialize( Viewport->GetSizeXY().X/Canvas->GetDPIScale(), Viewport->GetSizeXY().Y/Canvas->GetDPIScale(), SafeSizeX, bIsStereo );
 
 	if( !ViewData->bDrawOnlyRawStats )
 	{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "Animation/DebugSkelMeshComponent.h"
@@ -14,9 +14,11 @@
 #include "AnimPreviewInstance.h"
 #include "Animation/AnimComposite.h"
 #include "Animation/BlendSpaceBase.h"
-#include "SkeletalMeshTypes.h"
+#include "Rendering/SkeletalMeshRenderData.h"
+#include "Rendering/SkeletalMeshModel.h"
 
-#include "ClothingSimulationNv.h"
+#include "Assets/ClothingAsset.h"
+#include "ClothingSimulation.h"
 #include "DynamicMeshBuilder.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
@@ -37,21 +39,17 @@ UDebugSkelMeshComponent::UDebugSkelMeshComponent(const FObjectInitializer& Objec
 	TurnTableSpeedScaling = 1.f;
 	TurnTableMode = EPersonaTurnTableMode::Stopped;
 
-#if WITH_APEX_CLOTHING
-	SectionsDisplayMode = ESectionDisplayMode::None;
-	// always shows cloth morph target when previewing in editor
-	bClothMorphTarget = false;
-#endif //#if WITH_APEX_CLOTHING
-
 	bPauseClothingSimulationWithAnim = false;
 	bPerformSingleClothingTick = false;
+
+	CachedClothBounds = FBoxSphereBounds(ForceInit);
 }
 
 FBoxSphereBounds UDebugSkelMeshComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
 	FBoxSphereBounds Result = Super::CalcBounds(LocalToWorld);
 
-	if (! IsUsingInGameBounds())
+	if (!IsUsingInGameBounds())
 	{
 		// extend bounds by required bones (respecting current LOD) but without root bone
 		if (GetNumComponentSpaceTransforms())
@@ -63,9 +61,23 @@ FBoxSphereBounds UDebugSkelMeshComponent::CalcBounds(const FTransform& LocalToWo
 				FBoneIndexType RequiredBoneIndex = RequiredBones[BoneIndex];
 				BoundingBox += GetBoneMatrix((int32)RequiredBoneIndex).GetOrigin();
 			}
-			Result = Result + FBoxSphereBounds(BoundingBox);
+
+			if (BoundingBox.IsValid)
+			{
+				Result = Result + FBoxSphereBounds(BoundingBox);
+			}			
+		}
+
+		if ( SkeletalMesh )
+		{
+			Result = Result + SkeletalMesh->GetBounds();
 		}
 	}
+
+	if (!FMath::IsNearlyZero(CachedClothBounds.SphereRadius))
+	{
+		Result = Result + CachedClothBounds;
+	}	
 
 	return Result;
 }
@@ -141,7 +153,17 @@ void UDebugSkelMeshComponent::ConsumeRootMotion(const FVector& FloorMin, const F
 			SetRelativeTransform(CurrentTransform);
 		}
 	}
-	else
+}
+
+bool UDebugSkelMeshComponent::GetPreviewRootMotion() const
+{
+	return bPreviewRootMotion;
+}
+
+void UDebugSkelMeshComponent::SetPreviewRootMotion(bool bInPreviewRootMotion)
+{
+	bPreviewRootMotion = bInPreviewRootMotion;
+	if (!bPreviewRootMotion)
 	{
 		if (TurnTableMode == EPersonaTurnTableMode::Stopped)
 		{
@@ -158,26 +180,18 @@ FPrimitiveSceneProxy* UDebugSkelMeshComponent::CreateSceneProxy()
 {
 	FDebugSkelMeshSceneProxy* Result = NULL;
 	ERHIFeatureLevel::Type SceneFeatureLevel = GetWorld()->FeatureLevel;
-	FSkeletalMeshResource* SkelMeshResource = SkeletalMesh ? SkeletalMesh->GetResourceForRendering() : NULL;
+	FSkeletalMeshRenderData* SkelMeshRenderData = SkeletalMesh ? SkeletalMesh->GetResourceForRendering() : NULL;
 
 	// only create a scene proxy for rendering if
 	// properly initialized
-	if( SkelMeshResource && 
-		SkelMeshResource->LODModels.IsValidIndex(PredictedLODLevel) &&
+	if(SkelMeshRenderData &&
+		SkelMeshRenderData->LODRenderData.IsValidIndex(PredictedLODLevel) &&
 		!bHideSkin &&
 		MeshObject)
 	{
 		const FColor WireframeMeshOverlayColor(102,205,170,255);
-		Result = ::new FDebugSkelMeshSceneProxy(this, SkelMeshResource, WireframeMeshOverlayColor);
+		Result = ::new FDebugSkelMeshSceneProxy(this, SkelMeshRenderData, WireframeMeshOverlayColor);
 	}
-
-#if WITH_APEX_CLOTHING
-	if (SectionsDisplayMode == ESectionDisplayMode::None)
-	{
-		SectionsDisplayMode = FindCurrentSectionDisplayMode();
-	}
-
-#endif //#if WITH_APEX_CLOTHING
 
 	return Result;
 }
@@ -265,6 +279,12 @@ void UDebugSkelMeshComponent::InitAnim(bool bForceReinit)
 	{
 		AnimScriptInstance = PreviewInstance;
 		AnimScriptInstance->InitializeAnimation();
+	}
+	else
+	{
+		// Make sure we initialize the preview instance here, as we want the required bones to be up to date
+		// even if we arent using the instance right now.
+		PreviewInstance->InitializeAnimation();
 	}
 
 	if(PostProcessAnimInstance)
@@ -492,9 +512,16 @@ void UDebugSkelMeshComponent::RefreshBoneTransforms(FActorComponentTickFunction*
 		{
 			UncompressedSpaceBases.AddUninitialized(BoneContainer.GetNumBones());
 
+			const bool bUseSource = BoneContainer.ShouldUseSourceData();
+			const bool bUseRaw = BoneContainer.ShouldUseRawData();
+
+			BoneContainer.SetUseSourceData(false);
 			BoneContainer.SetUseRAWData(true);
+
 			GenSpaceBases(UncompressedSpaceBases);
-			BoneContainer.SetUseRAWData(false);
+
+			BoneContainer.SetUseRAWData(bUseRaw);
+			BoneContainer.SetUseSourceData(bUseSource);
 		}
 
 		// Non retargeted pose.
@@ -577,51 +604,46 @@ void UDebugSkelMeshComponent::ClearAnimNotifyErrors(UObject* InSourceNotify)
 		}
 	}
 }
+
+FDelegateHandle UDebugSkelMeshComponent::RegisterExtendedViewportTextDelegate(const FGetExtendedViewportText& InDelegate)
+{
+	ExtendedViewportTextDelegates.Add(InDelegate);
+	return ExtendedViewportTextDelegates.Last().GetHandle();
+}
+
+void UDebugSkelMeshComponent::UnregisterExtendedViewportTextDelegate(const FDelegateHandle& InDelegateHandle)
+{
+	ExtendedViewportTextDelegates.RemoveAll([&InDelegateHandle](const FGetExtendedViewportText& InDelegate)
+	{
+		return InDelegate.GetHandle() == InDelegateHandle;
+	});
+}
+
 #endif
 
 void UDebugSkelMeshComponent::ToggleClothSectionsVisibility(bool bShowOnlyClothSections)
 {
-	FSkeletalMeshResource* SkelMeshResource = GetSkeletalMeshResource();
-	if (SkelMeshResource)
+	FSkeletalMeshRenderData* SkelMeshRenderData = GetSkeletalMeshRenderData();
+	if (SkelMeshRenderData)
 	{
-		PreEditChange(NULL);
-
-		for (int32 LODIndex = 0; LODIndex < SkelMeshResource->LODModels.Num(); LODIndex++)
+		for (int32 LODIndex = 0; LODIndex < SkelMeshRenderData->LODRenderData.Num(); LODIndex++)
 		{
-			FStaticLODModel& LODModel = SkelMeshResource->LODModels[LODIndex];
+			FSkeletalMeshLODRenderData& LODData = SkelMeshRenderData->LODRenderData[LODIndex];
 
-			for (int32 SecIdx = 0; SecIdx < LODModel.Sections.Num(); SecIdx++)
+			for (int32 SecIdx = 0; SecIdx < LODData.RenderSections.Num(); SecIdx++)
 			{
-				FSkelMeshSection& Section = LODModel.Sections[SecIdx];
+				FSkelMeshRenderSection& Section = LODData.RenderSections[SecIdx];
 
-				// toggle visibility between cloth sections and non-cloth sections
-				if (bShowOnlyClothSections)
+				if(Section.HasClothingData())
 				{
-					// enables only cloth sections
-					if (Section.HasClothingData())
-					{
-						Section.bDisabled = false;
-					}
-					else
-					{
-						Section.bDisabled = true;
-					}
+					ShowMaterialSection(Section.MaterialIndex, bShowOnlyClothSections, LODIndex);
 				}
 				else
-				{   // disables cloth sections and also corresponding original sections
-					if (Section.HasClothingData())
-					{
-						Section.bDisabled = true;
-						LODModel.Sections[Section.CorrespondClothSectionIndex].bDisabled = true;
-					}
-					else
-					{
-						Section.bDisabled = false;
-					}
+				{
+					ShowMaterialSection(Section.MaterialIndex, !bShowOnlyClothSections, LODIndex);
 				}
 			}
 		}
-		PostEditChange();
 	}
 }
 
@@ -633,38 +655,13 @@ void UDebugSkelMeshComponent::RestoreClothSectionsVisibility()
 		return;
 	}
 
-	FSkeletalMeshResource* SkelMeshResource = GetSkeletalMeshResource();
-	if (SkelMeshResource)
+	for(int32 LODIndex = 0; LODIndex < GetNumLODs(); LODIndex++)
 	{
-		PreEditChange(NULL);
-
-		for(int32 LODIndex = 0; LODIndex < SkelMeshResource->LODModels.Num(); LODIndex++)
-		{
-			FStaticLODModel& LODModel = SkelMeshResource->LODModels[LODIndex];
-
-			// enables all sections first
-			for(int32 SecIdx = 0; SecIdx < LODModel.Sections.Num(); SecIdx++)
-			{
-				LODModel.Sections[SecIdx].bDisabled = false;
-			}
-
-			// disables corresponding original section to enable the cloth section instead
-			for(int32 SecIdx = 0; SecIdx < LODModel.Sections.Num(); SecIdx++)
-			{
-				FSkelMeshSection& Section = LODModel.Sections[SecIdx];
-
-				if(Section.HasClothingData())
-				{
-					LODModel.Sections[Section.CorrespondClothSectionIndex].bDisabled = true;
-				}
-			}
-		}
-
-		PostEditChange();
+		ShowAllMaterialSections(LODIndex);
 	}
 }
 
-void UDebugSkelMeshComponent::ToggleMeshSectionForCloth(FGuid InClothGuid)
+void UDebugSkelMeshComponent::SetMeshSectionVisibilityForCloth(FGuid InClothGuid, bool bVisibility)
 {
 	if(!InClothGuid.IsValid())
 	{
@@ -672,63 +669,41 @@ void UDebugSkelMeshComponent::ToggleMeshSectionForCloth(FGuid InClothGuid)
 		return;
 	}
 
-	FSkeletalMeshResource* SkelMeshResource = GetSkeletalMeshResource();
-	if (SkelMeshResource)
+	FSkeletalMeshRenderData* SkelMeshRenderData = GetSkeletalMeshRenderData();
+	if(SkelMeshRenderData)
 	{
-		PreEditChange(NULL);
-
-		for (int32 LODIndex = 0; LODIndex < SkelMeshResource->LODModels.Num(); LODIndex++)
+		for(int32 LODIndex = 0; LODIndex < SkelMeshRenderData->LODRenderData.Num(); LODIndex++)
 		{
-			FStaticLODModel& LODModel = SkelMeshResource->LODModels[LODIndex];
+			FSkeletalMeshLODRenderData& LODData = SkelMeshRenderData->LODRenderData[LODIndex];
 
-			for (int32 SecIdx = 0; SecIdx < LODModel.Sections.Num(); SecIdx++)
+			for(int32 SecIdx = 0; SecIdx < LODData.RenderSections.Num(); SecIdx++)
 			{
-				FSkelMeshSection& Section = LODModel.Sections[SecIdx];
+				FSkelMeshRenderSection& Section = LODData.RenderSections[SecIdx];
 
 				// disables cloth section and also corresponding original section for matching cloth asset
-				if (Section.HasClothingData() && Section.ClothingData.AssetGuid == InClothGuid)
+				if(Section.HasClothingData() && Section.ClothingData.AssetGuid == InClothGuid)
 				{
-					Section.bDisabled = !Section.bDisabled;
+					ShowMaterialSection(Section.MaterialIndex, bVisibility, LODIndex);
 				}
 			}
 		}
-		PostEditChange();
 	}
 }
 
 void UDebugSkelMeshComponent::ResetMeshSectionVisibility()
 {
-	FSkeletalMeshResource* SkelMeshResource = GetSkeletalMeshResource();
-	if(SkelMeshResource)
+	for (int32 LODIndex = 0; LODIndex < GetNumLODs(); LODIndex++)
 	{
-		PreEditChange(NULL);
-
-		for(int32 LODIndex = 0; LODIndex < SkelMeshResource->LODModels.Num(); LODIndex++)
-		{
-			FStaticLODModel& LODModel = SkelMeshResource->LODModels[LODIndex];
-
-			for(int32 SecIdx = 0; SecIdx < LODModel.Sections.Num(); SecIdx++)
-			{
-				FSkelMeshSection& Section = LODModel.Sections[SecIdx];
-
-				if(Section.HasClothingData())
-				{
-					Section.bDisabled = false;
-					LODModel.Sections[Section.CorrespondClothSectionIndex].bDisabled = true;
-				}
-			}
-		}
-
-		PostEditChange();
+		ShowAllMaterialSections(LODIndex);
 	}
 }
 
 void UDebugSkelMeshComponent::RebuildClothingSectionsFixedVerts()
 {
-	FSkeletalMeshResource* Resource = SkeletalMesh->GetImportedResource();
+	FSkeletalMeshModel* Resource = SkeletalMesh->GetImportedModel();
 
 	const int32 NumLods = Resource->LODModels.Num();
-	for(FStaticLODModel& LodModel : Resource->LODModels)
+	for (FSkeletalMeshLODModel& LodModel : Resource->LODModels)
 	{
 		SkeletalMesh->PreEditChange(NULL);
 
@@ -767,85 +742,6 @@ void UDebugSkelMeshComponent::RebuildClothingSectionsFixedVerts()
 	}
 
 	ReregisterComponent();
-}
-
-int32 UDebugSkelMeshComponent::FindCurrentSectionDisplayMode()
-{
-	ESectionDisplayMode DisplayMode = ESectionDisplayMode::None;
-
-	FSkeletalMeshResource* SkelMeshResource = GetSkeletalMeshResource();
-	// if this skeletal mesh doesn't have any clothing asset, returns "None"
-	if (!SkelMeshResource || !SkeletalMesh || SkeletalMesh->MeshClothingAssets.Num() == 0)
-	{
-		return ESectionDisplayMode::None;
-	}
-	else
-	{
-		int32 LODIndex;
-		int32 NumLODs = SkelMeshResource->LODModels.Num();
-		for (LODIndex = 0; LODIndex < NumLODs; LODIndex++)
-		{
-			// if find any LOD model which has cloth data, then break
-			if (SkelMeshResource->LODModels[LODIndex].HasClothData())
-			{
-				break;
-			}
-		}
-
-		// couldn't find 
-		if (LODIndex == NumLODs)
-		{
-			return ESectionDisplayMode::None;
-		}
-
-		FStaticLODModel& LODModel = SkelMeshResource->LODModels[LODIndex];
-
-		// firstly, find cloth sections
-		for (int32 SecIdx = 0; SecIdx < LODModel.Sections.Num(); SecIdx++)
-		{
-			FSkelMeshSection& Section = LODModel.Sections[SecIdx];
-
-			if (Section.HasClothingData())
-			{
-				// Normal state if the cloth section is visible and the corresponding section is disabled
-				if (Section.bDisabled == false &&
-					LODModel.Sections[Section.CorrespondClothSectionIndex].bDisabled == true)
-				{
-					DisplayMode = ESectionDisplayMode::ShowOnlyClothSections;
-					break;
-				}
-			}
-		}
-
-		// secondly, find non-cloth sections except cloth-corresponding sections
-		bool bFoundNonClothSection = false;
-
-		for (int32 SecIdx = 0; SecIdx < LODModel.Sections.Num(); SecIdx++)
-		{
-			FSkelMeshSection& Section = LODModel.Sections[SecIdx];
-
-			// not related to cloth sections
-			if (!Section.HasClothingData() &&
-				Section.CorrespondClothSectionIndex < 0)
-			{
-				bFoundNonClothSection = true;
-				if (!Section.bDisabled)
-				{
-					if (DisplayMode == ESectionDisplayMode::ShowOnlyClothSections)
-					{
-						DisplayMode = ESectionDisplayMode::ShowAll;
-					}
-					else
-					{
-						DisplayMode = ESectionDisplayMode::HideOnlyClothSections;
-					}
-				}
-				break;
-			}
-		}
-	}
-
-	return DisplayMode;
 }
 
 void UDebugSkelMeshComponent::CheckClothTeleport()
@@ -909,6 +805,7 @@ void UDebugSkelMeshComponent::RefreshSelectedClothingSkinnedPositions()
 				FClothLODData& LodData = ConcreteAsset->LodData[SelectedClothingLodForPainting];
 
 				FClothingSimulationBase::SkinPhysicsMesh(ConcreteAsset, LodData.PhysicalMeshData, FTransform::Identity, RefToLocals.GetData(), RefToLocals.Num(), SkinnedSelectedClothingPositions, SkinnedSelectedClothingNormals);
+				RebuildCachedClothBounds();
 			}
 		}
 	}
@@ -935,8 +832,20 @@ IClothingSimulation* UDebugSkelMeshComponent::GetMutableClothingSimulation()
 	return ClothingSimulation;
 }
 
-FDebugSkelMeshSceneProxy::FDebugSkelMeshSceneProxy(const UDebugSkelMeshComponent* InComponent, FSkeletalMeshResource* InSkelMeshResource, const FColor& InWireframeOverlayColor /*= FColor::White*/) :
-	FSkeletalMeshSceneProxy(InComponent, InSkelMeshResource)
+void UDebugSkelMeshComponent::RebuildCachedClothBounds()
+{
+	FBox ClothBBox(ForceInit);
+	
+	for ( int32 Index = 0; Index < SkinnedSelectedClothingPositions.Num(); ++Index )
+	{
+		ClothBBox += SkinnedSelectedClothingPositions[Index];
+	}
+
+	CachedClothBounds = FBoxSphereBounds(ClothBBox);
+}
+
+FDebugSkelMeshSceneProxy::FDebugSkelMeshSceneProxy(const UDebugSkelMeshComponent* InComponent, FSkeletalMeshRenderData* InSkelMeshRenderData, const FColor& InWireframeOverlayColor /*= FColor::White*/) :
+	FSkeletalMeshSceneProxy(InComponent, InSkelMeshRenderData)
 {
 	DynamicData = nullptr;
 	WireframeColor = FLinearColor(InWireframeOverlayColor);
@@ -947,6 +856,12 @@ FDebugSkelMeshSceneProxy::FDebugSkelMeshSceneProxy(const UDebugSkelMeshComponent
 	}
 }
 
+SIZE_T FDebugSkelMeshSceneProxy::GetTypeHash() const
+{
+	static size_t UniquePointer;
+	return reinterpret_cast<size_t>(&UniquePointer);
+}
+
 void FDebugSkelMeshSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, uint32 VisibilityMap, FMeshElementCollector& Collector) const
 {
 	if(!DynamicData || DynamicData->bDrawMesh)
@@ -954,7 +869,6 @@ void FDebugSkelMeshSceneProxy::GetDynamicMeshElements(const TArray<const FSceneV
 		GetMeshElementsConditionallySelectable(Views, ViewFamily, /*bSelectable=*/true, VisibilityMap, Collector);
 	}
 
-	//@todo - the rendering thread should never read from UObjects directly!  These are race conditions, the properties should be mirrored on the proxy
 	if(MeshObject && DynamicData && (DynamicData->bDrawNormals || DynamicData->bDrawTangents || DynamicData->bDrawBinormals))
 	{
 		for(int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
@@ -970,74 +884,77 @@ void FDebugSkelMeshSceneProxy::GetDynamicMeshElements(const TArray<const FSceneV
 	{
 		if(DynamicData->SkinnedPositions.Num() > 0 && DynamicData->ClothingVisiblePropertyValues.Num() > 0)
 		{
-			FDynamicMeshBuilder MeshBuilderSurface;
-			FDynamicMeshBuilder MeshBuilderWireframe;
-
-			const TArray<uint32>& Indices = DynamicData->ClothingSimIndices;
-			const TArray<FVector>& Vertices = DynamicData->SkinnedPositions;
-			const TArray<FVector>& Normals = DynamicData->SkinnedNormals;
-
-			float* ValueArray = DynamicData->ClothingVisiblePropertyValues.GetData();
-
-			const int32 NumVerts = Vertices.Num();
-
-			const FLinearColor Magenta = FLinearColor(1.0f, 0.0f, 1.0f);
-			for(int32 VertIndex = 0; VertIndex < NumVerts; ++VertIndex)
+			if (Views.Num())
 			{
-				FDynamicMeshVertex Vert;
+				FDynamicMeshBuilder MeshBuilderSurface(Views[0]->GetFeatureLevel());
+				FDynamicMeshBuilder MeshBuilderWireframe(Views[0]->GetFeatureLevel());
 
-				Vert.Position = Vertices[VertIndex];
-				Vert.TextureCoordinate = {1.0f, 1.0f};
-				Vert.TangentZ = DynamicData->bFlipNormal ? -Normals[VertIndex] : Normals[VertIndex];
+				const TArray<uint32>& Indices = DynamicData->ClothingSimIndices;
+				const TArray<FVector>& Vertices = DynamicData->SkinnedPositions;
+				const TArray<FVector>& Normals = DynamicData->SkinnedNormals;
 
-				float CurrValue = ValueArray[VertIndex];
-				float Range = DynamicData->PropertyViewMax - DynamicData->PropertyViewMin;
-				float ClampedViewValue = FMath::Clamp(CurrValue, DynamicData->PropertyViewMin, DynamicData->PropertyViewMax);
-				const FLinearColor Color = CurrValue == 0.0f ? Magenta : (FLinearColor::White * ((ClampedViewValue - DynamicData->PropertyViewMin) / Range));
-				Vert.Color = Color.ToFColor(true);
+				float* ValueArray = DynamicData->ClothingVisiblePropertyValues.GetData();
 
-				MeshBuilderSurface.AddVertex(Vert);
-				MeshBuilderWireframe.AddVertex(Vert);
-			}
+				const int32 NumVerts = Vertices.Num();
 
-			const int32 NumIndices = Indices.Num();
-			for(int32 TriBaseIndex = 0; TriBaseIndex < NumIndices; TriBaseIndex += 3)
-			{
-				if(DynamicData->bFlipNormal)
+				const FLinearColor Magenta = FLinearColor(1.0f, 0.0f, 1.0f);
+				for (int32 VertIndex = 0; VertIndex < NumVerts; ++VertIndex)
 				{
-					MeshBuilderSurface.AddTriangle(Indices[TriBaseIndex], Indices[TriBaseIndex + 2], Indices[TriBaseIndex + 1]);
-					MeshBuilderWireframe.AddTriangle(Indices[TriBaseIndex], Indices[TriBaseIndex + 2], Indices[TriBaseIndex + 1]);
+					FDynamicMeshVertex Vert;
+
+					Vert.Position = Vertices[VertIndex];
+					Vert.TextureCoordinate[0] = { 1.0f, 1.0f };
+					Vert.TangentZ = DynamicData->bFlipNormal ? -Normals[VertIndex] : Normals[VertIndex];
+
+					float CurrValue = ValueArray[VertIndex];
+					float Range = DynamicData->PropertyViewMax - DynamicData->PropertyViewMin;
+					float ClampedViewValue = FMath::Clamp(CurrValue, DynamicData->PropertyViewMin, DynamicData->PropertyViewMax);
+					const FLinearColor Color = CurrValue == 0.0f ? Magenta : (FLinearColor::White * ((ClampedViewValue - DynamicData->PropertyViewMin) / Range));
+					Vert.Color = Color.ToFColor(true);
+
+					MeshBuilderSurface.AddVertex(Vert);
+					MeshBuilderWireframe.AddVertex(Vert);
 				}
-				else
+
+				const int32 NumIndices = Indices.Num();
+				for (int32 TriBaseIndex = 0; TriBaseIndex < NumIndices; TriBaseIndex += 3)
 				{
-					MeshBuilderSurface.AddTriangle(Indices[TriBaseIndex], Indices[TriBaseIndex + 1], Indices[TriBaseIndex + 2]);
-					MeshBuilderWireframe.AddTriangle(Indices[TriBaseIndex], Indices[TriBaseIndex + 1], Indices[TriBaseIndex + 2]);
+					if (DynamicData->bFlipNormal)
+					{
+						MeshBuilderSurface.AddTriangle(Indices[TriBaseIndex], Indices[TriBaseIndex + 2], Indices[TriBaseIndex + 1]);
+						MeshBuilderWireframe.AddTriangle(Indices[TriBaseIndex], Indices[TriBaseIndex + 2], Indices[TriBaseIndex + 1]);
+					}
+					else
+					{
+						MeshBuilderSurface.AddTriangle(Indices[TriBaseIndex], Indices[TriBaseIndex + 1], Indices[TriBaseIndex + 2]);
+						MeshBuilderWireframe.AddTriangle(Indices[TriBaseIndex], Indices[TriBaseIndex + 1], Indices[TriBaseIndex + 2]);
+					}
 				}
-			}
 
-			// Set material params
-			UMaterialInstanceDynamic* SurfaceMID = GEngine->ClothPaintMaterialInstance;
-			check(SurfaceMID);
-			UMaterialInstanceDynamic* WireMID = GEngine->ClothPaintMaterialWireframeInstance;
-			check(WireMID);
+				// Set material params
+				UMaterialInstanceDynamic* SurfaceMID = GEngine->ClothPaintMaterialInstance;
+				check(SurfaceMID);
+				UMaterialInstanceDynamic* WireMID = GEngine->ClothPaintMaterialWireframeInstance;
+				check(WireMID);
 
-			SurfaceMID->SetScalarParameterValue(FName("ClothOpacity"), DynamicData->ClothMeshOpacity);
-			WireMID->SetScalarParameterValue(FName("ClothOpacity"), DynamicData->ClothMeshOpacity);
+				SurfaceMID->SetScalarParameterValue(FName("ClothOpacity"), DynamicData->ClothMeshOpacity);
+				WireMID->SetScalarParameterValue(FName("ClothOpacity"), DynamicData->ClothMeshOpacity);
 
-			SurfaceMID->SetScalarParameterValue(FName("BackfaceCull"), DynamicData->bCullBackface ? 1.0f : 0.0f);
-			WireMID->SetScalarParameterValue(FName("BackfaceCull"), true);
+				SurfaceMID->SetScalarParameterValue(FName("BackfaceCull"), DynamicData->bCullBackface ? 1.0f : 0.0f);
+				WireMID->SetScalarParameterValue(FName("BackfaceCull"), true);
 
-			FMaterialRenderProxy* MatProxySurface = SurfaceMID->GetRenderProxy(false);
-			FMaterialRenderProxy* MatProxyWireframe = WireMID->GetRenderProxy(false);
+				FMaterialRenderProxy* MatProxySurface = SurfaceMID->GetRenderProxy(false);
+				FMaterialRenderProxy* MatProxyWireframe = WireMID->GetRenderProxy(false);
 
-			if(MatProxySurface && MatProxyWireframe)
-			{
-				const int32 NumViews = Views.Num();
-				for(int32 ViewIndex = 0; ViewIndex < NumViews; ++ViewIndex)
+				if (MatProxySurface && MatProxyWireframe)
 				{
-					const FSceneView* View = Views[ViewIndex];
-					MeshBuilderSurface.GetMesh(GetLocalToWorld(), MatProxySurface, SDPG_Foreground, false, false, ViewIndex, Collector);
-					MeshBuilderWireframe.GetMesh(GetLocalToWorld(), MatProxyWireframe, SDPG_Foreground, false, false, ViewIndex, Collector);
+					const int32 NumViews = Views.Num();
+					for (int32 ViewIndex = 0; ViewIndex < NumViews; ++ViewIndex)
+					{
+						const FSceneView* View = Views[ViewIndex];
+						MeshBuilderSurface.GetMesh(GetLocalToWorld(), MatProxySurface, SDPG_Foreground, false, false, ViewIndex, Collector);
+						MeshBuilderWireframe.GetMesh(GetLocalToWorld(), MatProxyWireframe, SDPG_Foreground, false, false, ViewIndex, Collector);
+					}
 				}
 			}
 		}

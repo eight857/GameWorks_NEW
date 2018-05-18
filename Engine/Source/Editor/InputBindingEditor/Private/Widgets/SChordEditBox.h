@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -32,7 +32,7 @@ public:
 	 *
 	 * @param InArgs The Slate argument list.
 	 */
-	void Construct( const FArguments& InArgs, TSharedPtr<FUICommandInfo> InputCommand );
+	void Construct( const FArguments& InArgs, TSharedPtr<FUICommandInfo> InputCommand, EMultipleKeyBindingIndex ChordIndex );
 private:
 
 	/** @return Border image for the text box based on the hovered and focused state */

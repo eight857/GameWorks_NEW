@@ -1,11 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TwoBoneIK.h"
 
 namespace AnimationCore
 {
-
-	PRAGMA_DISABLE_OPTIMIZATION
 
 void SolveTwoBoneIK(FTransform& InOutRootTransform, FTransform& InOutJointTransform, FTransform& InOutEndTransform, const FVector& JointTarget, const FVector& Effector, bool bAllowStretching, float StartStretchRatio, float MaxStretchScale)
 {
@@ -185,7 +183,5 @@ void SolveTwoBoneIK(const FVector& RootPos, const FVector& JointPos, const FVect
 		OutJointPos = RootPos + (ProjJointDist * DesiredDir) + (JointLineDist * JointBendDir);
 	}
 }
-
-PRAGMA_ENABLE_OPTIMIZATION
 
 }

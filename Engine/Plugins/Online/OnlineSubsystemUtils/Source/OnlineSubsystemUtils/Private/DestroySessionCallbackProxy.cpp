@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DestroySessionCallbackProxy.h"
 #include "EngineGlobals.h"
@@ -35,7 +35,7 @@ void UDestroySessionCallbackProxy::Activate()
 		if (Sessions.IsValid())
 		{
 			DelegateHandle = Sessions->AddOnDestroySessionCompleteDelegate_Handle(Delegate);
-			Sessions->DestroySession(GameSessionName);
+			Sessions->DestroySession(NAME_GameSession);
 
 			// OnCompleted will get called, nothing more to do now
 			return;

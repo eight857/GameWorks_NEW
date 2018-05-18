@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SequencerUtilities.h"
 #include "Misc/Paths.h"
@@ -10,6 +10,7 @@
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SButton.h"
+#include "Styling/CoreStyle.h"
 #include "EditorStyleSet.h"
 #include "SequencerTrackNode.h"
 #include "MovieSceneTrack.h"
@@ -37,7 +38,7 @@ static EVisibility GetRolloverVisibility(TAttribute<bool> HoverState, TWeakPtr<S
 
 TSharedRef<SWidget> FSequencerUtilities::MakeAddButton(FText HoverText, FOnGetContent MenuContent, const TAttribute<bool>& HoverState)
 {
-	FSlateFontInfo SmallLayoutFont( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 8 );
+	FSlateFontInfo SmallLayoutFont = FCoreStyle::GetDefaultFontStyle("Regular", 8);
 
 	TSharedRef<STextBlock> ComboButtonText = SNew(STextBlock)
 		.Text(HoverText)
@@ -82,7 +83,7 @@ TSharedRef<SWidget> FSequencerUtilities::MakeAddButton(FText HoverText, FOnGetCo
 	return ComboButton;
 }
 
-void FSequencerUtilities::PopulateMenu_CreateNewSection(FMenuBuilder& MenuBuilder, int32 RowIndex, UMovieSceneTrack* Track, TSharedPtr<ISequencer> InSequencer)
+void FSequencerUtilities::PopulateMenu_CreateNewSection(FMenuBuilder& MenuBuilder, int32 RowIndex, UMovieSceneTrack* Track, TWeakPtr<ISequencer> InSequencer)
 {
 	if (!Track)
 	{
@@ -91,8 +92,14 @@ void FSequencerUtilities::PopulateMenu_CreateNewSection(FMenuBuilder& MenuBuilde
 	
 	auto CreateNewSection = [Track, InSequencer, RowIndex](EMovieSceneBlendType BlendType)
 	{
-		const float StartAtTime = InSequencer->GetLocalTime();
-		TRange<float> VisibleRange = InSequencer->GetViewRange();
+		TSharedPtr<ISequencer> Sequencer = InSequencer.Pin();
+		if (!Sequencer.IsValid())
+		{
+			return;
+		}
+
+		const float StartAtTime = Sequencer->GetLocalTime();
+		TRange<float> VisibleRange = Sequencer->GetViewRange();
 
 		FScopedTransaction Transaction(LOCTEXT("AddSectionTransactionText", "Add Section"));
 		if (UMovieSceneSection* NewSection = Track->CreateNewSection())
@@ -115,7 +122,7 @@ void FSequencerUtilities::PopulateMenu_CreateNewSection(FMenuBuilder& MenuBuilde
 			Track->AddSection(*NewSection);
 			Track->UpdateEasing();
 
-			InSequencer->NotifyMovieSceneDataChanged(EMovieSceneDataChangeType::MovieSceneStructureItemAdded);
+			Sequencer->NotifyMovieSceneDataChanged(EMovieSceneDataChangeType::MovieSceneStructureItemAdded);
 		}
 		else
 		{
@@ -140,14 +147,14 @@ void FSequencerUtilities::PopulateMenu_CreateNewSection(FMenuBuilder& MenuBuilde
 	}
 }
 
-void FSequencerUtilities::PopulateMenu_SetBlendType(FMenuBuilder& MenuBuilder, UMovieSceneSection* Section)
+void FSequencerUtilities::PopulateMenu_SetBlendType(FMenuBuilder& MenuBuilder, UMovieSceneSection* Section, TWeakPtr<ISequencer> InSequencer)
 {
-	PopulateMenu_SetBlendType(MenuBuilder, TArray<TWeakObjectPtr<UMovieSceneSection>>({ Section }));
+	PopulateMenu_SetBlendType(MenuBuilder, TArray<TWeakObjectPtr<UMovieSceneSection>>({ Section }), InSequencer);
 }
 
-void FSequencerUtilities::PopulateMenu_SetBlendType(FMenuBuilder& MenuBuilder, const TArray<TWeakObjectPtr<UMovieSceneSection>>& InSections)
+void FSequencerUtilities::PopulateMenu_SetBlendType(FMenuBuilder& MenuBuilder, const TArray<TWeakObjectPtr<UMovieSceneSection>>& InSections, TWeakPtr<ISequencer> InSequencer)
 {
-	auto Execute = [InSections](EMovieSceneBlendType BlendType)
+	auto Execute = [InSections, InSequencer](EMovieSceneBlendType BlendType)
 	{
 		FScopedTransaction Transaction(LOCTEXT("SetBlendType", "Set Blend Type"));
 		for (TWeakObjectPtr<UMovieSceneSection> WeakSection : InSections)
@@ -157,6 +164,12 @@ void FSequencerUtilities::PopulateMenu_SetBlendType(FMenuBuilder& MenuBuilder, c
 				Section->Modify();
 				Section->SetBlendType(BlendType);
 			}
+		}
+			
+		TSharedPtr<ISequencer> Sequencer = InSequencer.Pin();
+		if (Sequencer.IsValid())
+		{
+			Sequencer->NotifyMovieSceneDataChanged(EMovieSceneDataChangeType::TrackValueChanged);
 		}
 	};
 

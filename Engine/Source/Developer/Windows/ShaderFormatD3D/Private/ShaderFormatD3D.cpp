@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ShaderFormatD3D.h"
 #include "ModuleInterface.h"
@@ -28,7 +28,7 @@ class FShaderFormatD3D : public IShaderFormat
 	}
 
 public:
-	virtual uint16 GetVersion(FName Format) const override
+	virtual uint32 GetVersion(FName Format) const override
 	{
 		CheckFormat(Format);
 		if (Format == NAME_PCD3D_SM5) 

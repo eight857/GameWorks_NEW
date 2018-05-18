@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "UnrealHeaderTool.h"
@@ -53,7 +53,7 @@ INT32_MAIN_INT32_ARGC_TCHAR_ARGV()
 	}
 
 	FString ShortCmdLine = FCommandLine::RemoveExeName(*CmdLine);
-	ShortCmdLine = ShortCmdLine.Trim();	
+	ShortCmdLine.TrimStartInline();	
 
 	// Get game name from the commandline. It will later be used to load the correct ini files.
 	FString ModuleInfoFilename;

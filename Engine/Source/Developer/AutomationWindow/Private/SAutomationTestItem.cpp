@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SAutomationTestItem.h"
 #include "Modules/ModuleManager.h"
-#include "Interfaces/IAutomationReport.h"
-#include "Interfaces/IAutomationControllerModule.h"
+#include "IAutomationReport.h"
+#include "IAutomationControllerModule.h"
 #include "SlateOptMacros.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/Images/SImage.h"

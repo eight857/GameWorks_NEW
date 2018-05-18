@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -156,7 +156,7 @@ protected:
 		// maps that belong to the project
 		MenuBuilder.BeginSection(NAME_None, LOCTEXT("ProjectMapsSectionHeader", "Project"));
 		{
-			IFileManager::Get().FindFilesRecursive(MapNames, *FPaths::GameContentDir(), *MapFileWildCard, true, false);
+			IFileManager::Get().FindFilesRecursive(MapNames, *FPaths::ProjectContentDir(), *MapFileWildCard, true, false);
 			MapNames.Sort([](const FString& A, const FString& B) { return FPaths::GetBaseFilename(A) < FPaths::GetBaseFilename(B); });
 
 			for (int32 i = 0; i < MapNames.Num(); i++)

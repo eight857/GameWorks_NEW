@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TranslationPickerFloatingWindow.h"
 #include "Internationalization/Culture.h"
@@ -142,7 +142,7 @@ void STranslationPickerFloatingWindow::Tick( const FGeometry& AllottedGeometry, 
 	}
 
 	// kind of a hack, but we need to maintain keyboard focus otherwise we wont get our keypress to 'pick'
-	FSlateApplication::Get().SetKeyboardFocus(SharedThis(this), EKeyboardFocusCause::SetDirectly);
+	FSlateApplication::Get().SetKeyboardFocus(SharedThis(this), EFocusCause::SetDirectly);
 	if (ParentWindow.IsValid())
 	{
 		FVector2D WindowSize = ParentWindow.Pin()->GetSizeInScreen();

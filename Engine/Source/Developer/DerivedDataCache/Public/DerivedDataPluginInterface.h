@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -36,6 +36,13 @@ public:
 	* @return	true if this plugin is threadsafe
 	**/
 	virtual bool IsBuildThreadsafe() const = 0;
+
+	/** Indicated that this plugin generates deterministic data. This is used for DDC verification */
+	virtual bool IsDeterministic() const { return false; }
+
+	/** Indicated that this plugin generates deterministic data. This is used for DDC verification */
+	virtual FString GetDebugContextString() const { return TEXT("Unknown Context"); }
+
 	/** 
 	* Does the work of deriving the data. 
 	* @param	OutData	Array of bytes to fill in with the result data

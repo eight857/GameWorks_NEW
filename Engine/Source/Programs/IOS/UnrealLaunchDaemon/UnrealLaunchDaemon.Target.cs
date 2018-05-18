@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.Collections.Generic;
@@ -16,22 +16,11 @@ public class UnrealLaunchDaemonTarget : TargetRules
 		AdditionalPlugins.Add("UdpMessaging");
 
 		LaunchModuleName = "UnrealLaunchDaemon";
-	}
 
-	//
-	// TargetRules interface.
-	//
+		bCompileLeanAndMeanUE = true;
+		bBuildEditor = false;
+		bCompileAgainstEngine = false;
 
-	public override void SetupGlobalEnvironment(
-		TargetInfo Target,
-		ref LinkEnvironmentConfiguration OutLinkEnvironmentConfiguration,
-		ref CPPEnvironmentConfiguration OutCPPEnvironmentConfiguration
-		)
-	{
-		UEBuildConfiguration.bCompileLeanAndMeanUE = true;
-		UEBuildConfiguration.bBuildEditor = false;
-		UEBuildConfiguration.bCompileAgainstEngine = false;
-
-		OutLinkEnvironmentConfiguration.bHasExports = false;
+		bHasExports = false;
 	}
 }

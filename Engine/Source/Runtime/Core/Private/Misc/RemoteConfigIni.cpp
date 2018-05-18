@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/RemoteConfigIni.h"
 #include "Async/AsyncWork.h"
@@ -396,9 +396,9 @@ static const TCHAR* SpecialCharMap[NUM_SPECIAL_CHARS][2] =
 	{ TEXT("{"), TEXT("~OpenBracket~") },
 	{ TEXT("}"), TEXT("~CloseBracket~") },
 	{ TEXT("\""), TEXT("~Quote~") },
-	{ TEXT("\\"), TEXT("~Backslash~")  },
-	{ TEXT("/"), TEXT("~Forwardslash~")  },
-	{ TEXT("|"), TEXT("~Bar~")  }
+	{ TEXT("\\"), TEXT("~Backslash~") },
+	{ TEXT("/"), TEXT("~Forwardslash~") },
+	{ TEXT("|"), TEXT("~Bar~") }
 };
 
 
@@ -432,7 +432,7 @@ FString FRemoteConfig::GenerateRemotePath(const TCHAR* Filename)
 	FString PathSuffix = GConfig->GetStr(TEXT("RemoteConfiguration"), TEXT("ConfigPathSuffix"), GEngineIni);
 	FString UserName = FPlatformProcess::UserName(false);
 		
-	return FString::Printf(TEXT("%s/%s/%s/%s/%s.ini"), *PathPrefix, *UserName, *PathSuffix, FApp::GetGameName(), *BaseFilename);
+	return FString::Printf(TEXT("%s/%s/%s/%s/%s.ini"), *PathPrefix, *UserName, *PathSuffix, FApp::GetProjectName(), *BaseFilename);
 }
 
 

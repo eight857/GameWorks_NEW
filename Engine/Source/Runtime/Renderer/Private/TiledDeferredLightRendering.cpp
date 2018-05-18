@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	TiledDeferredLightRendering.cpp: Implementation of tiled deferred shading
@@ -82,14 +82,14 @@ class FTiledDeferredLightingCS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FTiledDeferredLightingCS,Global)
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZEX"), GDeferredLightTileSizeX);
 		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZEY"), GDeferredLightTileSizeY);
 		OutEnvironment.SetDefine(TEXT("MAX_LIGHTS"), GMaxNumTiledDeferredLights);
@@ -117,7 +117,7 @@ public:
 	CA_SUPPRESS(6262);
 	void SetParameters(
 		FRHICommandList& RHICmdList, 
-		const FSceneView& View, 
+		const FViewInfo& View, 
 		int32 ViewIndex,
 		int32 NumViews,
 		const TArray<FSortedLightSceneInfo, SceneRenderingAllocator>& SortedLights, 
@@ -162,28 +162,15 @@ public:
 				const FSortedLightSceneInfo& SortedLightInfo = SortedLights[StartIndex + LightIndex];
 				const FLightSceneInfo* const LightSceneInfo = SortedLightInfo.LightSceneInfo;
 
-				FVector NormalizedLightDirection;
-				FVector2D SpotAngles;
-				float SourceRadius;
-				float SourceLength;
-				float MinRoughness;
+				FLightParameters LightParameters;
 
-				// Get the light parameters
-				LightSceneInfo->Proxy->GetParameters(
-					LightData.LightPositionAndInvRadius[LightIndex],
-					LightData.LightColorAndFalloffExponent[LightIndex],
-					NormalizedLightDirection,
-					SpotAngles,
-					SourceRadius,
-					SourceLength,
-					MinRoughness);
+				LightSceneInfo->Proxy->GetParameters(LightParameters);
+
+				LightData.LightPositionAndInvRadius[LightIndex] = LightParameters.LightPositionAndInvRadius;
+				LightData.LightColorAndFalloffExponent[LightIndex] = LightParameters.LightColorAndFalloffExponent;
 
 				if (LightSceneInfo->Proxy->IsInverseSquared())
 				{
-					// Correction for lumen units
-					LightData.LightColorAndFalloffExponent[LightIndex].X *= 16.0f;
-					LightData.LightColorAndFalloffExponent[LightIndex].Y *= 16.0f;
-					LightData.LightColorAndFalloffExponent[LightIndex].Z *= 16.0f;
 					LightData.LightColorAndFalloffExponent[LightIndex].W = 0;
 				}
 
@@ -197,12 +184,16 @@ public:
 
 				{
 					// SpotlightMaskAndMinRoughness, >0:Spotlight, MinRoughness = abs();
-					float W = FMath::Max(0.0001f, MinRoughness) * ((LightSceneInfo->Proxy->GetLightType() == LightType_Spot) ? 1 : -1);
+					float W = FMath::Max(0.0001f, LightParameters.LightMinRoughness) * ((LightSceneInfo->Proxy->GetLightType() == LightType_Spot) ? 1 : -1);
 
-					LightData2.LightDirectionAndSpotlightMaskAndMinRoughness[LightIndex] = FVector4(NormalizedLightDirection, W);
+					LightData2.LightDirectionAndSpotlightMaskAndMinRoughness[LightIndex] = FVector4(LightParameters.NormalizedLightDirection, W);
 				}
 
-				LightData2.SpotAnglesAndSourceRadiusAndSimpleLighting[LightIndex] = FVector4(SpotAngles.X, SpotAngles.Y, SourceRadius, SourceLength);
+				LightData2.SpotAnglesAndSourceRadiusAndSimpleLighting[LightIndex] = FVector4(
+						LightParameters.SpotAngles.X,
+						LightParameters.SpotAngles.Y,
+						LightParameters.LightSourceRadius,
+						LightParameters.LightSourceLength);
 
 				int32 ShadowMapChannel = LightSceneInfo->Proxy->GetShadowMapChannel();
 
@@ -227,12 +218,6 @@ public:
 				LightData2.LightDirectionAndSpotlightMaskAndMinRoughness[LightIndex] = FVector4(FVector(1, 0, 0), 0);
 				LightData2.SpotAnglesAndSourceRadiusAndSimpleLighting[LightIndex] = FVector4(-2, 1, 0, 1);
 				LightData2.ShadowMapChannelMask[LightIndex] = FVector4(0, 0, 0, 0);
-
-				if( SimpleLight.Exponent == 0.0f )
-				{
-					// Correction for lumen units
-					LightData.LightColorAndFalloffExponent[LightIndex] *= 16.0f;
-				}
 			}
 		}
 

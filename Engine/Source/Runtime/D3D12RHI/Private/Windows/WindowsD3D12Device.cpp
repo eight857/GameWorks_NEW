@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	WindowsD3D12Device.cpp: Windows D3D device RHI implementation.
@@ -8,6 +8,7 @@
 #include "Modules/ModuleManager.h"
 #include "AllowWindowsPlatformTypes.h"
 	#include <delayimp.h>
+	#include "amd_ags.h"
 #include "HideWindowsPlatformTypes.h"
 
 #include "HardwareInfo.h"
@@ -71,6 +72,8 @@ namespace RHIConsoleVariables
 }
 using namespace D3D12RHI;
 
+static bool bIsQuadBufferStereoEnabled = false;
+
 /** This function is used as a SEH filter to catch only delay load exceptions. */
 static bool IsDelayLoadException(PEXCEPTION_POINTERS ExceptionPointers)
 {
@@ -124,6 +127,15 @@ static D3D_FEATURE_LEVEL GetAllowedD3DFeatureLevel()
 		RHIConsoleVariables::FeatureSetLimit == 10)
 	{
 		AllowedFeatureLevel = D3D_FEATURE_LEVEL_10_0;
+	}
+
+	if (bIsQuadBufferStereoEnabled)
+	{
+		if (AllowedFeatureLevel == D3D_FEATURE_LEVEL_10_0)
+		{
+			UE_LOG(LogD3D12RHI, Warning, TEXT("D3D Feature Level overriden from 10.0 to 11.1 due to quad_buffer_stereo"));
+		}
+		AllowedFeatureLevel = D3D_FEATURE_LEVEL_11_1;
 	}
 	return AllowedFeatureLevel;
 }
@@ -195,6 +207,50 @@ static bool SafeTestD3D12CreateDevice(IDXGIAdapter* Adapter, D3D_FEATURE_LEVEL M
 	return false;
 }
 
+static bool SupportsHDROutput(FD3D12DynamicRHI* D3DRHI)
+{
+	// Determines if any displays support HDR
+	check(D3DRHI && D3DRHI->GetNumAdapters() >= 1);
+
+	bool bSupportsHDROutput = false;
+	const int32 NumAdapters = D3DRHI->GetNumAdapters();
+	for (int32 AdapterIndex = 0; AdapterIndex < NumAdapters; ++AdapterIndex)
+	{
+		FD3D12Adapter& Adapter = D3DRHI->GetAdapter(AdapterIndex);
+		IDXGIAdapter* DXGIAdapter = Adapter.GetAdapter();
+
+		for (uint32 DisplayIndex = 0; true; ++DisplayIndex)
+		{
+			TRefCountPtr<IDXGIOutput> DXGIOutput;
+			if (S_OK != DXGIAdapter->EnumOutputs(DisplayIndex, DXGIOutput.GetInitReference()))
+			{
+				break;
+			}
+
+			TRefCountPtr<IDXGIOutput6> Output6;
+			if (SUCCEEDED(DXGIOutput->QueryInterface(IID_PPV_ARGS(Output6.GetInitReference()))))
+			{
+				DXGI_OUTPUT_DESC1 OutputDesc;
+				VERIFYD3D12RESULT(Output6->GetDesc1(&OutputDesc));
+
+				// Check for HDR support on the display.
+				const bool bDisplaySupportsHDROutput = (OutputDesc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020);
+				if (bDisplaySupportsHDROutput)
+				{
+					UE_LOG(LogD3D12RHI, Log, TEXT("HDR output is supported on adapter %i, display %u:"), AdapterIndex, DisplayIndex);
+					UE_LOG(LogD3D12RHI, Log, TEXT("\t\tMinLuminance = %f"), OutputDesc.MinLuminance);
+					UE_LOG(LogD3D12RHI, Log, TEXT("\t\tMaxLuminance = %f"), OutputDesc.MaxLuminance);
+					UE_LOG(LogD3D12RHI, Log, TEXT("\t\tMaxFullFrameLuminance = %f"), OutputDesc.MaxFullFrameLuminance);
+
+					bSupportsHDROutput = true;
+				}
+			}
+		}
+	}
+
+	return bSupportsHDROutput;
+}
+
 bool FD3D12DynamicRHIModule::IsSupported()
 {
 	// If not computed yet
@@ -263,9 +319,8 @@ void FD3D12DynamicRHIModule::FindAdapter()
 #endif
 
 	// Allow HMD to override which graphics adapter is chosen, so we pick the adapter where the HMD is connected
-	int32 HmdGraphicsAdapter = IHeadMountedDisplayModule::IsAvailable() ? IHeadMountedDisplayModule::Get().GetGraphicsAdapter() : -1;
-	bool bUseHmdGraphicsAdapter = HmdGraphicsAdapter >= 0;
-	int32 CVarExplicitAdapterValue = bUseHmdGraphicsAdapter ? HmdGraphicsAdapter : CVarGraphicsAdapter.GetValueOnGameThread();
+	uint64 HmdGraphicsAdapterLuid = IHeadMountedDisplayModule::IsAvailable() ? IHeadMountedDisplayModule::Get().GetGraphicsAdapterLuid() : 0;
+	int32 CVarExplicitAdapterValue = HmdGraphicsAdapterLuid == 0 ? CVarGraphicsAdapter.GetValueOnGameThread() : -2;
 
 	const bool bFavorNonIntegrated = CVarExplicitAdapterValue == -1;
 
@@ -333,10 +388,13 @@ void FD3D12DynamicRHIModule::FindAdapter()
 				// we don't allow the PerfHUD adapter
 				const bool bSkipPerfHUDAdapter = bIsPerfHUD && !bAllowPerfHUD;
 
+				// the HMD wants a specific adapter, not this one
+				const bool bSkipHmdGraphicsAdapter = HmdGraphicsAdapterLuid != 0 && FMemory::Memcmp(&HmdGraphicsAdapterLuid, &AdapterDesc.AdapterLuid, sizeof(LUID)) != 0;
+
 				// the user wants a specific adapter, not this one
 				const bool bSkipExplicitAdapter = CVarExplicitAdapterValue >= 0 && AdapterIndex != CVarExplicitAdapterValue;
 
-				const bool bSkipAdapter = bSkipRequestedWARP || bSkipPerfHUDAdapter || bSkipExplicitAdapter;
+				const bool bSkipAdapter = bSkipRequestedWARP || bSkipPerfHUDAdapter || bSkipHmdGraphicsAdapter || bSkipExplicitAdapter;
 
 				if (!bSkipAdapter)
 				{
@@ -407,7 +465,7 @@ FDynamicRHI* FD3D12DynamicRHIModule::CreateRHI(ERHIFeatureLevel::Type RequestedF
 void FD3D12DynamicRHIModule::StartupModule()
 {
 #if USE_PIX
-	static FString WindowsPixDllRelativePath("../../Binaries/ThirdParty/Windows/DirectX/x64");
+	static FString WindowsPixDllRelativePath("../../../Engine/Binaries/ThirdParty/Windows/DirectX/x64");
 	static FString WindowsPixDll("WinPixEventRuntime.dll");
 	UE_LOG(LogD3D12RHI, Log, TEXT("Loading %s for PIX profiling (from %s)."), WindowsPixDll.GetCharArray().GetData(), WindowsPixDllRelativePath.GetCharArray().GetData());
 	WindowsPixDllHandle = FPlatformProcess::GetDllHandle(*FPaths::Combine(*WindowsPixDllRelativePath, *WindowsPixDll));
@@ -449,6 +507,17 @@ void FD3D12DynamicRHI::Init()
 
 	const DXGI_ADAPTER_DESC& AdapterDesc = GetAdapter().GetD3DAdapterDesc();
 
+	// Need to set GRHIVendorId before calling IsRHIDevice* functions
+	GRHIVendorId = AdapterDesc.VendorId;
+
+	// Initialize the AMD AGS utility library, when running on an AMD device
+	if (IsRHIDeviceAMD())
+	{
+		check(AmdAgsContext == nullptr);
+		// agsInit should be called before D3D device creation
+		agsInit(&AmdAgsContext, nullptr, nullptr);
+	}
+
 	// Create a device chain for each of the adapters we have choosen. This could be a single discrete card,
 	// a set discrete cards linked together (i.e. SLI/Crossfire) an Integrated device or any combination of the above
 	for (FD3D12Adapter*& Adapter : ChosenAdapters)
@@ -457,10 +526,27 @@ void FD3D12DynamicRHI::Init()
 		Adapter->InitializeDevices();
 	}
 
+	uint32 AmdSupportedExtensionFlags = 0;
+	if (AmdAgsContext)
+	{
+		// Initialize AMD driver extensions
+		agsDriverExtensionsDX12_Init(AmdAgsContext, GetAdapter().GetD3DDevice(), &AmdSupportedExtensionFlags);
+	}
+
+	// Warn if we are trying to use RGP frame markers but are either running on a non-AMD device
+	// or using an older AMD driver without RGP marker support
+	if (GEmitRgpFrameMarkers && !IsRHIDeviceAMD())
+	{
+		UE_LOG(LogD3D12RHI, Warning, TEXT("Attempting to use RGP frame markers on a non-AMD device."));
+	}
+	else if (GEmitRgpFrameMarkers && (AmdSupportedExtensionFlags & AGS_DX12_EXTENSION_USER_MARKERS) == 0)
+	{
+		UE_LOG(LogD3D12RHI, Warning, TEXT("Attempting to use RGP frame markers without driver support. Update AMD driver."));
+	}
+
 	GTexturePoolSize = 0;
 
 	GRHIAdapterName = AdapterDesc.Description;
-	GRHIVendorId = AdapterDesc.VendorId;
 	GRHIDeviceId = AdapterDesc.DeviceId;
 	GRHIDeviceRevision = AdapterDesc.Revision;
 
@@ -502,11 +588,6 @@ void FD3D12DynamicRHI::Init()
 	{
 		// Clamp to 1 GB if we're less than 64-bit
 		FD3D12GlobalStats::GTotalGraphicsMemory = FMath::Min(FD3D12GlobalStats::GTotalGraphicsMemory, 1024ll * 1024ll * 1024ll);
-	}
-	else
-	{
-		// Clamp to 1.9 GB if we're 64-bit
-		FD3D12GlobalStats::GTotalGraphicsMemory = FMath::Min(FD3D12GlobalStats::GTotalGraphicsMemory, 1945ll * 1024ll * 1024ll);
 	}
 
 	if (GPoolSizeVRAMPercentage > 0)
@@ -562,10 +643,24 @@ void FD3D12DynamicRHI::Init()
 		ResourceIt->InitDynamicRHI();
 	}
 
+	{
+		GRHISupportsHDROutput = SupportsHDROutput(this);
+
+		// Specify the desired HDR pixel format.
+		// Possible values are:
+		//	1) PF_FloatRGBA - FP16 format that allows for linear gamma. This is the current engine default.
+		//					r.HDR.Display.ColorGamut = 2 (Rec2020 / BT2020)
+		//					r.HDR.Display.OutputDevice = 5 or 6 (ScRGB)
+		//	2) PF_A2B10G10R10 - Save memory vs FP16 as well as allow for possible performance improvements 
+		//						in fullscreen by avoiding format conversions.
+		//					r.HDR.Display.ColorGamut = 2 (Rec2020 / BT2020)
+		//					r.HDR.Display.OutputDevice = 3 or 4 (ST-2084)
+		GRHIHDRDisplayOutputFormat = PF_A2B10G10R10;
+	}
+
 	FHardwareInfo::RegisterHardwareInfo(NAME_RHI, TEXT("D3D12"));
 
 	GRHISupportsTextureStreaming = true;
-	GRHIRequiresEarlyBackBufferRenderTarget = false;
 	GRHISupportsFirstInstance = true;
 
 	// Indicate that the RHI needs to use the engine's deferred deletion queue.

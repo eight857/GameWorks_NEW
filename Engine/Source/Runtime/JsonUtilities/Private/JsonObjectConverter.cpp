@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "JsonObjectConverter.h"
 #include "Internationalization/Culture.h"
@@ -622,12 +622,12 @@ bool FJsonObjectConverter::JsonValueToUProperty(TSharedPtr<FJsonValue> JsonValue
 		return false;
 	}
 
-	bool bArrayProperty = Property->IsA<UArrayProperty>();
+	bool bArrayOrSetProperty = Property->IsA<UArrayProperty>() || Property->IsA<USetProperty>();
 	bool bJsonArray = JsonValue->Type == EJson::Array;
 
 	if (!bJsonArray)
 	{
-		if (bArrayProperty)
+		if (bArrayOrSetProperty)
 		{
 			UE_LOG(LogJson, Error, TEXT("JsonValueToUProperty - Attempted to import TArray from non-array JSON key"));
 			return false;			
@@ -642,7 +642,7 @@ bool FJsonObjectConverter::JsonValueToUProperty(TSharedPtr<FJsonValue> JsonValue
 	}
 
 	// In practice, the ArrayDim == 1 check ought to be redundant, since nested arrays of UPropertys are not supported
-	if (bArrayProperty && Property->ArrayDim == 1)
+	if (bArrayOrSetProperty && Property->ArrayDim == 1)
 	{
 		// Read into TArray
 		return ConvertScalarJsonValueToUProperty(JsonValue, Property, OutValue, CheckFlags, SkipFlags);
@@ -727,3 +727,45 @@ bool FJsonObjectConverter::JsonAttributesToUStruct(const TMap< FString, TSharedP
 	return true;
 }
 
+FFormatNamedArguments FJsonObjectConverter::ParseTextArgumentsFromJson(const TSharedPtr<const FJsonObject>& JsonObject)
+{
+	FFormatNamedArguments NamedArgs;
+	if (JsonObject.IsValid())
+	{
+		for (const auto& It : JsonObject->Values)
+		{
+			if (!It.Value.IsValid())
+				continue;
+
+			switch (It.Value->Type)
+			{
+			case EJson::Number:
+				// number
+				NamedArgs.Emplace(It.Key, It.Value->AsNumber());
+				break;
+			case EJson::String:
+				// culture invariant string
+				NamedArgs.Emplace(It.Key, FText::FromString(It.Value->AsString()));
+				break;
+			case EJson::Object:
+			{
+				// localized string
+				FText TextOut;
+				if (FJsonObjectConverter::GetTextFromObject(It.Value->AsObject().ToSharedRef(), TextOut))
+				{
+					NamedArgs.Emplace(It.Key, TextOut);
+				}
+				else
+				{
+					UE_LOG(LogJson, Error, TEXT("Unable to apply Json parameter %s (could not parse object)"), *It.Key);
+				}
+			}
+			break;
+			default:
+				UE_LOG(LogJson, Error, TEXT("Unable to apply Json parameter %s (bad type)"), *It.Key);
+				break;
+			}
+		}
+	}
+	return NamedArgs;
+}

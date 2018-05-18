@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PhysicsEngine/ConstraintInstance.h"
 #include "UObject/FrameworkObjectVersion.h"
@@ -12,6 +12,7 @@
 #include "Logging/TokenizedMessage.h"
 #include "Logging/MessageLog.h"
 #include "Misc/UObjectToken.h"
+#include "HAL/LowLevelMemTracker.h"
 
 #if WITH_EDITOR
 #include "UObject/UnrealType.h"
@@ -62,6 +63,8 @@ physx::PxD6Joint* FConstraintInstance::GetUnbrokenJoint_AssumesLocked() const
 {
 	return (ConstraintData && !(ConstraintData->getConstraintFlags()&PxConstraintFlag::eBROKEN)) ? ConstraintData : nullptr;
 }
+
+#endif // WITH_PHYSX
 
 #if WITH_EDITOR
 void FConstraintProfileProperties::SyncChangedConstraintProperties(FPropertyChangedChainEvent& PropertyChangedEvent)
@@ -124,6 +127,8 @@ void FConstraintProfileProperties::SyncChangedConstraintProperties(FPropertyChan
 }
 #endif
 
+#if WITH_PHYSX
+
 bool FConstraintInstance::ExecuteOnUnbrokenJointReadOnly(TFunctionRef<void(const physx::PxD6Joint*)> Func) const
 {
 	if(ConstraintData)
@@ -164,6 +169,7 @@ FConstraintProfileProperties::FConstraintProfileProperties()
 	, LinearBreakThreshold(300.f)
 	, AngularBreakThreshold(500.f)
 	, bDisableCollision(false)
+	, bParentDominates(false)
 	, bEnableProjection(true)
 	, bAngularBreakable(false)
 	, bLinearBreakable(false)
@@ -459,6 +465,8 @@ bool GetPActors_AssumesLocked(const FBodyInstance* Body1, const FBodyInstance* B
 
 bool FConstraintInstance::CreatePxJoint_AssumesLocked(physx::PxRigidActor* PActor1, physx::PxRigidActor* PActor2, physx::PxScene* PScene)
 {
+	LLM_SCOPE(ELLMTag::PhysX);
+
 	ConstraintData = nullptr;
 
 	FTransform Local1 = GetRefFrame(EConstraintFrame::Frame1);
@@ -535,6 +543,15 @@ void FConstraintProfileProperties::UpdatePhysXConstraintFlags_AssumesLocked(PxD6
 
 		Joint->setProjectionLinearTolerance(ProjectionLinearTolerance);
 		Joint->setProjectionAngularTolerance(FMath::DegreesToRadians(ProjectionAngularTolerance));
+	}
+
+	if(bParentDominates)
+	{
+		Joint->setInvMassScale0(0.0f);
+		Joint->setInvMassScale1(1.0f);
+
+		Joint->setInvInertiaScale0(0.0f);
+		Joint->setInvInertiaScale1(1.0f);
 	}
 
 	Joint->setConstraintFlags(Flags);
@@ -773,7 +790,6 @@ void FConstraintInstance::SetRefFrame(EConstraintFrame::Type Frame, const FTrans
 {
 #if WITH_PHYSX
 	PxJointActorIndex::Enum PxFrame = U2PConstraintFrame(Frame);
-#endif
 	if(Frame == EConstraintFrame::Frame1)
 	{
 		Pos1 = RefFrame.GetTranslation();
@@ -787,13 +803,12 @@ void FConstraintInstance::SetRefFrame(EConstraintFrame::Type Frame, const FTrans
 		SecAxis2 = RefFrame.GetUnitAxis( EAxis::Y );
 	}
 
-#if WITH_PHYSX
 	ExecuteOnUnbrokenJointReadWrite([&] (PxD6Joint* Joint)
 	{
 		PxTransform PxRefFrame = U2PTransform(RefFrame);
 		Joint->setLocalPose(PxFrame, PxRefFrame);
 	});
-#endif
+#endif // WITH_PHYSX
 
 }
 
@@ -801,7 +816,6 @@ void FConstraintInstance::SetRefPosition(EConstraintFrame::Type Frame, const FVe
 {
 #if WITH_PHYSX
 	PxJointActorIndex::Enum PxFrame = U2PConstraintFrame(Frame);
-#endif
 
 	if (Frame == EConstraintFrame::Frame1)
 	{
@@ -812,14 +826,13 @@ void FConstraintInstance::SetRefPosition(EConstraintFrame::Type Frame, const FVe
 		Pos2 = RefPosition;
 	}
 
-#if WITH_PHYSX
 	ExecuteOnUnbrokenJointReadWrite([&] (PxD6Joint* Joint)
 	{
 		PxTransform PxRefFrame = ConstraintData->getLocalPose(PxFrame);
 		PxRefFrame.p = U2PVector(RefPosition);
 		Joint->setLocalPose(PxFrame, PxRefFrame);
 	});
-#endif
+#endif // WITH_PHYSX
 }
 
 void FConstraintInstance::SetRefOrientation(EConstraintFrame::Type Frame, const FVector& PriAxis, const FVector& SecAxis)
@@ -827,7 +840,6 @@ void FConstraintInstance::SetRefOrientation(EConstraintFrame::Type Frame, const 
 #if WITH_PHYSX
 	PxJointActorIndex::Enum PxFrame = U2PConstraintFrame(Frame);
 	FVector RefPos;
-#endif
 		
 	if (Frame == EConstraintFrame::Frame1)
 	{
@@ -841,15 +853,14 @@ void FConstraintInstance::SetRefOrientation(EConstraintFrame::Type Frame, const 
 		PriAxis2 = PriAxis;
 		SecAxis2 = SecAxis;
 	}
-	
-#if WITH_PHYSX
+
 	ExecuteOnUnbrokenJointReadWrite([&] (PxD6Joint* Joint)
 	{
 		FTransform URefTransform = FTransform(PriAxis, SecAxis, PriAxis ^ SecAxis, RefPos);
 		PxTransform PxRefFrame = U2PTransform(URefTransform);
 		Joint->setLocalPose(PxFrame, PxRefFrame);
 	});
-#endif
+#endif // WITH_PHYSX
 }
 
 /** Get the position of this constraint in world space. */
@@ -1385,18 +1396,47 @@ FConstraintInstance * FConstraintInstance::Alloc()
 
 void FConstraintInstance::EnableProjection()
 {
+#if WITH_PHYSX
 	ProfileInstance.bEnableProjection = true;
 	SCOPED_SCENE_WRITE_LOCK(ConstraintData->getScene());
 	ConstraintData->setProjectionLinearTolerance(ProfileInstance.ProjectionLinearTolerance);
 	ConstraintData->setProjectionAngularTolerance(ProfileInstance.ProjectionAngularTolerance);
 	ConstraintData->setConstraintFlag(PxConstraintFlag::ePROJECTION, true);
+#endif // WITH_PHYSX
 }
 
 void FConstraintInstance::DisableProjection()
 {
+#if WITH_PHYSX
 	ProfileInstance.bEnableProjection = false;
 	SCOPED_SCENE_WRITE_LOCK(ConstraintData->getScene());
 	ConstraintData->setConstraintFlag(PxConstraintFlag::ePROJECTION, false);
+#endif // WITH_PHYSX
 }
+
+void FConstraintInstance::EnableParentDominates()
+{
+#if WITH_PHYSX
+	ProfileInstance.bParentDominates = true;
+	SCOPED_SCENE_WRITE_LOCK(ConstraintData->getScene());
+	ConstraintData->setInvMassScale0(0.0f);
+	ConstraintData->setInvMassScale1(1.0f);
+	ConstraintData->setInvInertiaScale0(0.0f);
+	ConstraintData->setInvInertiaScale1(1.0f);
+#endif // WITH_PHYSX
+}
+
+void FConstraintInstance::DisableParentDominates()
+{
+#if WITH_PHYSX
+	ProfileInstance.bParentDominates = false;
+	SCOPED_SCENE_WRITE_LOCK(ConstraintData->getScene());
+	ConstraintData->setInvMassScale0(1.0f);
+	ConstraintData->setInvMassScale1(1.0f);
+	ConstraintData->setInvInertiaScale0(1.0f);
+	ConstraintData->setInvInertiaScale1(1.0f);
+#endif // WITH_PHYSX
+}
+
 
 #undef LOCTEXT_NAMESPACE

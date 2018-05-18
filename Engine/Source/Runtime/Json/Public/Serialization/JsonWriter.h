@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -164,6 +164,17 @@ public:
 
 		PrintPolicy::WriteSpace(Stream);
 		PreviousTokenWritten = WriteValueOnly(MoveTemp(Value));
+	}
+
+	template<class ElementType>
+	void WriteValue(const FString& Identifier, const TArray<ElementType>& Array)
+	{
+		WriteArrayStart(Identifier);
+		for (int Idx = 0; Idx < Array.Num(); Idx++)
+		{
+			WriteValue(Array[Idx]);
+		}
+		WriteArrayEnd();
 	}
 
 	void WriteValue(const FString& Identifier, const TCHAR* Value)

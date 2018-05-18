@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AudioThread.cpp: Audio thread implementation.
@@ -11,6 +11,7 @@
 #include "Misc/CoreStats.h"
 #include "UObject/UObjectGlobals.h"
 #include "Audio.h"
+#include "HAL/LowLevelMemTracker.h"
 
 //
 // Globals
@@ -21,6 +22,21 @@ TAutoConsoleVariable<int32> CVarSuspendAudioThread(TEXT("AudioThread.SuspendAudi
 
 int32 GCVarAboveNormalAudioThreadPri = 0;
 TAutoConsoleVariable<int32> CVarAboveNormalAudioThreadPri(TEXT("AudioThread.AboveNormalPriority"), GCVarAboveNormalAudioThreadPri, TEXT("0=Normal, 1=AboveNormal"), ECVF_Default);
+
+static int32 GCVarEnableBatchProcessing = 1;
+TAutoConsoleVariable<int32> CVarEnableBatchProcessing(
+	TEXT("AudioThread.EnableBatchProcessing"),
+	GCVarEnableBatchProcessing,
+	TEXT("Enables batch processing audio thread commands.\n")
+	TEXT("0: Not Enabled, 1: Enabled"),
+	ECVF_Default); 
+
+static int32 GBatchAudioAsyncBatchSize = 128;
+static FAutoConsoleVariableRef CVarBatchParticleAsyncBatchSize(
+	TEXT("AudioThread.BatchAsyncBatchSize"),
+	GBatchAudioAsyncBatchSize,
+	TEXT("When AudioThread.EnableBatchProcessing = 1, controls the number of audio commands grouped together for threading.")
+);
 
 struct FAudioThreadInteractor
 {
@@ -63,7 +79,6 @@ bool FAudioThread::bUseThreadedAudio = false;
 uint32 FAudioThread::CachedAudioThreadId = 0;
 FRunnable* FAudioThread::AudioThreadRunnable = nullptr;
 
-
 /** The audio thread main loop */
 void AudioThreadMain( FEvent* TaskGraphBoundSyncEvent )
 {
@@ -84,14 +99,14 @@ FAudioThread::FAudioThread()
 {
 	TaskGraphBoundSyncEvent	= FPlatformProcess::GetSynchEventFromPool(true);
 
-	FCoreUObjectDelegates::PreGarbageCollect.AddRaw(this, &FAudioThread::OnPreGarbageCollect);
-	FCoreUObjectDelegates::PostGarbageCollect.AddRaw(this, &FAudioThread::OnPostGarbageCollect);
+	FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddRaw(this, &FAudioThread::OnPreGarbageCollect);
+	FCoreUObjectDelegates::GetPostGarbageCollect().AddRaw(this, &FAudioThread::OnPostGarbageCollect);
 }
 
 FAudioThread::~FAudioThread()
 {
-	FCoreUObjectDelegates::PreGarbageCollect.RemoveAll(this);
-	FCoreUObjectDelegates::PostGarbageCollect.RemoveAll(this);
+	FCoreUObjectDelegates::GetPreGarbageCollectDelegate().RemoveAll(this);
+	FCoreUObjectDelegates::GetPostGarbageCollect().RemoveAll(this);
 
 	FPlatformProcess::ReturnSynchEventToPool(TaskGraphBoundSyncEvent);
 	TaskGraphBoundSyncEvent = nullptr;
@@ -128,6 +143,7 @@ void FAudioThread::ResumeAudioThread()
 		FPlatformMisc::MemoryBarrier();
 		bIsAudioThreadRunning = true;
 	}
+	ProcessAllCommands();
 }
 
 void FAudioThread::OnPreGarbageCollect()
@@ -153,8 +169,12 @@ void FAudioThread::Exit()
 
 uint32 FAudioThread::Run()
 {
+	LLM_SCOPE(ELLMTag::Audio);
+
+	FMemory::SetupTLSCachesOnCurrentThread();
 	FPlatformProcess::SetupAudioThread();
 	AudioThreadMain( TaskGraphBoundSyncEvent );
+	FMemory::ClearAndDisableTLSCachesOnCurrentThread();
 	return 0;
 }
 
@@ -170,17 +190,81 @@ void FAudioThread::SetUseThreadedAudio(const bool bInUseThreadedAudio)
 	}
 }
 
+struct FAudioAsyncBatcher
+{
+	FGraphEventArray DispatchEvent;
+	int32 NumBatched = 0;
+
+
+	FGraphEventArray* GetAsyncPrereq()
+	{
+		check(IsInGameThread());
+#if !WITH_EDITOR
+		if (GCVarEnableBatchProcessing)
+		{
+			if (NumBatched >= GBatchAudioAsyncBatchSize || !DispatchEvent.Num() || !DispatchEvent[0].GetReference() || DispatchEvent[0]->IsComplete())
+			{
+				Flush();
+			}
+			if (DispatchEvent.Num() == 0)
+			{
+				check(NumBatched == 0);
+				DispatchEvent.Add(FGraphEvent::CreateGraphEvent());
+			}
+			NumBatched++;
+			return &DispatchEvent;
+		}
+#endif
+		return nullptr;
+	}
+
+	void Flush()
+	{
+		check(IsInGameThread());
+		if (NumBatched)
+		{
+			check(DispatchEvent.Num() && DispatchEvent[0].GetReference() && !DispatchEvent[0]->IsComplete());
+			FGraphEventRef Dispatch = DispatchEvent[0];
+			TFunction<void()> FlushAudioCommands = [Dispatch]()
+			{
+				TArray<FBaseGraphTask*> NewTasks;
+				Dispatch->DispatchSubsequents(NewTasks);
+			};
+
+			FFunctionGraphTask::CreateAndDispatchWhenReady(MoveTemp(FlushAudioCommands), TStatId(), nullptr, ENamedThreads::AudioThread);
+
+			DispatchEvent.Empty();
+			NumBatched = 0;
+		}
+	}
+
+};
+
+static FAudioAsyncBatcher GAudioAsyncBatcher;
+
 void FAudioThread::RunCommandOnAudioThread(TFunction<void()> InFunction, const TStatId InStatId)
 {
 	check(FPlatformTLS::GetCurrentThreadId() == GGameThreadId);
 	if (bIsAudioThreadRunning)
 	{
-		FFunctionGraphTask::CreateAndDispatchWhenReady(MoveTemp(InFunction), InStatId, nullptr, ENamedThreads::AudioThread);
+		FFunctionGraphTask::CreateAndDispatchWhenReady(MoveTemp(InFunction), InStatId, GAudioAsyncBatcher.GetAsyncPrereq(), ENamedThreads::AudioThread);
 	}
 	else
 	{
 		FScopeCycleCounter ScopeCycleCounter(InStatId);
 		InFunction();
+	}
+}
+
+void FAudioThread::ProcessAllCommands()
+{
+	if (bIsAudioThreadRunning)
+	{
+		GAudioAsyncBatcher.Flush();
+	}
+	else
+	{
+		check(!GAudioAsyncBatcher.NumBatched);
 	}
 }
 
@@ -249,6 +333,9 @@ void FAudioThread::StopAudioThread()
 	// unregister
 	IConsoleManager::Get().RegisterThreadPropagation();
 
+	FAudioCommandFence Fence;
+	Fence.BeginFence();
+	Fence.Wait();
 	FGraphEventRef QuitTask = TGraphTask<FReturnGraphTask>::CreateTask(nullptr, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(ENamedThreads::AudioThread);
 
 	{
@@ -278,8 +365,9 @@ void FAudioCommandFence::BeginFence()
 			STAT_FNullGraphTask_FenceAudioCommand,
 			STATGROUP_TaskGraphTasks);
 
-		CompletionEvent = TGraphTask<FNullGraphTask>::CreateTask(NULL, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(
+		CompletionEvent = TGraphTask<FNullGraphTask>::CreateTask(GAudioAsyncBatcher.GetAsyncPrereq(), ENamedThreads::GameThread).ConstructAndDispatchWhenReady(
 			GET_STATID(STAT_FNullGraphTask_FenceAudioCommand), ENamedThreads::AudioThread);
+		FAudioThread::ProcessAllCommands();
 	}
 	else
 	{
@@ -289,6 +377,7 @@ void FAudioCommandFence::BeginFence()
 
 bool FAudioCommandFence::IsFenceComplete() const
 {
+	FAudioThread::ProcessAllCommands();
 	check(FPlatformTLS::GetCurrentThreadId() == GGameThreadId); // this could be relaxed, but for now, we are going to require all fences are set from the GT
 	if (!CompletionEvent.GetReference() || CompletionEvent->IsComplete())
 	{
@@ -304,6 +393,7 @@ bool FAudioCommandFence::IsFenceComplete() const
  */
 void FAudioCommandFence::Wait(bool bProcessGameThreadTasks) const
 {
+	FAudioThread::ProcessAllCommands();
 	if (!IsFenceComplete()) // this checks the current thread
 	{
 		QUICK_SCOPE_CYCLE_COUNTER(STAT_FAudioCommandFence_Wait);

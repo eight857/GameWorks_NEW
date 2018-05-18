@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "Sound/SoundAttenuation.h"
 #include "EngineDefines.h"
 #include "AudioDevice.h"
+#include "UObject/AnimPhysObjectVersion.h"
 
 /*-----------------------------------------------------------------------------
 	USoundAttenuation implementation.
@@ -38,6 +39,24 @@ void FSoundAttenuationSettings::PostSerialize(const FArchive& Ar)
 			break;
 		}
 	}
+
+	if (Ar.IsLoading() && Ar.CustomVer(FAnimPhysObjectVersion::GUID) < FAnimPhysObjectVersion::AllowMultipleAudioPluginSettings)
+	{
+		if (SpatializationPluginSettings_DEPRECATED)
+		{
+			PluginSettings.SpatializationPluginSettingsArray.Add(SpatializationPluginSettings_DEPRECATED);
+		}
+
+		if (OcclusionPluginSettings_DEPRECATED)
+		{
+			PluginSettings.OcclusionPluginSettingsArray.Add(OcclusionPluginSettings_DEPRECATED);
+		}
+
+		if (ReverbPluginSettings_DEPRECATED)
+		{
+			PluginSettings.ReverbPluginSettingsArray.Add(ReverbPluginSettings_DEPRECATED);
+		}
+	}
 }
 
 float FSoundAttenuationSettings::GetFocusPriorityScale(const struct FGlobalFocusSettings& FocusSettings, float FocusFactor) const
@@ -70,17 +89,21 @@ bool FSoundAttenuationSettings::operator==(const FSoundAttenuationSettings& Othe
 			&& bSpatialize			    == Other.bSpatialize
 			&& dBAttenuationAtMax	    == Other.dBAttenuationAtMax
 			&& OmniRadius				== Other.OmniRadius
+			&& bApplyNormalizationToStereoSounds == Other.bApplyNormalizationToStereoSounds
 			&& StereoSpread				== Other.StereoSpread
 			&& DistanceAlgorithm	    == Other.DistanceAlgorithm
 			&& AttenuationShape		    == Other.AttenuationShape
-			&& bAttenuateWithLPF	    == Other.bAttenuateWithLPF
-			&& LPFRadiusMin			    == Other.LPFRadiusMin
-			&& LPFRadiusMax			    == Other.LPFRadiusMax
+			&& bAttenuateWithLPF		== Other.bAttenuateWithLPF
+			&& LPFRadiusMin				== Other.LPFRadiusMax
 			&& FalloffDistance		    == Other.FalloffDistance
 			&& AttenuationShapeExtents	== Other.AttenuationShapeExtents
-			&& SpatializationAlgorithm  == Other.SpatializationAlgorithm
-			&& LPFFrequencyAtMin == Other.LPFFrequencyAtMin
-			&& LPFFrequencyAtMax == Other.LPFFrequencyAtMax
+			&& SpatializationAlgorithm == Other.SpatializationAlgorithm
+			&& PluginSettings.SpatializationPluginSettingsArray == Other.PluginSettings.SpatializationPluginSettingsArray
+			&& LPFFrequencyAtMax		== Other.LPFFrequencyAtMax
+			&& LPFFrequencyAtMin		== Other.LPFFrequencyAtMin
+			&& HPFFrequencyAtMax		== Other.HPFFrequencyAtMax
+			&& HPFFrequencyAtMin		== Other.HPFFrequencyAtMin
+			&& bEnableLogFrequencyScaling == Other.bEnableLogFrequencyScaling
 			&& bEnableListenerFocus == Other.bEnableListenerFocus
 			&& FocusAzimuth				== Other.FocusAzimuth
 			&& NonFocusAzimuth			== Other.NonFocusAzimuth
@@ -88,7 +111,18 @@ bool FSoundAttenuationSettings::operator==(const FSoundAttenuationSettings& Othe
 			&& FocusPriorityScale		== Other.FocusPriorityScale
 			&& NonFocusPriorityScale	== Other.NonFocusPriorityScale
 			&& FocusVolumeAttenuation	== Other.FocusVolumeAttenuation
-			&& NonFocusVolumeAttenuation == Other.NonFocusVolumeAttenuation);
+			&& NonFocusVolumeAttenuation == Other.NonFocusVolumeAttenuation
+			&& OcclusionTraceChannel	== Other.OcclusionTraceChannel
+			&& OcclusionLowPassFilterFrequency == Other.OcclusionLowPassFilterFrequency
+			&& OcclusionVolumeAttenuation == Other.OcclusionVolumeAttenuation
+			&& OcclusionInterpolationTime == Other.OcclusionInterpolationTime
+			&& PluginSettings.OcclusionPluginSettingsArray	== Other.PluginSettings.OcclusionPluginSettingsArray
+			&& bEnableReverbSend		== Other.bEnableReverbSend
+			&& PluginSettings.ReverbPluginSettingsArray		== Other.PluginSettings.ReverbPluginSettingsArray
+			&& ReverbWetLevelMin		== Other.ReverbWetLevelMin
+			&& ReverbWetLevelMax		== Other.ReverbWetLevelMax
+			&& ReverbDistanceMin		== Other.ReverbDistanceMin
+			&& ReverbDistanceMax		== Other.ReverbDistanceMax);
 }
 
 void FSoundAttenuationSettings::CollectAttenuationShapesForVisualization(TMultiMap<EAttenuationShape::Type, AttenuationShapeDetails>& ShapeDetailsMap) const

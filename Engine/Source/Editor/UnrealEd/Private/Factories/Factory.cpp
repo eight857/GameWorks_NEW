@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Factories/Factory.h"
 #include "Misc/MessageDialog.h"
@@ -29,7 +29,6 @@ FMD5Hash UFactory::FileHash;
 
 // This needs to be greater than 0 to allow factories to have both higher and lower priority than the default
 const int32 UFactory::DefaultImportPriority = 100;
-bool UFactory::bAllowOneTimeWarningMessages = true;
 
 
 UFactory::UFactory(const FObjectInitializer& ObjectInitializer)

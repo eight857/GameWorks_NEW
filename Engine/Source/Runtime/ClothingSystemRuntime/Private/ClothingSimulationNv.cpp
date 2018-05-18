@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ClothingSimulationNv.h"
 
@@ -25,11 +25,13 @@
 #endif
 
 #include "PhysicsEngine/PhysicsAsset.h"
+#include "SkeletalRenderPublic.h"
 
 DECLARE_CYCLE_STAT(TEXT("Compute Clothing Normals"), STAT_NvClothComputeNormals, STATGROUP_Physics);
 DECLARE_CYCLE_STAT(TEXT("Internal Solve"), STAT_NvClothInternalSolve, STATGROUP_Physics);
 DECLARE_CYCLE_STAT(TEXT("Update Collisions"), STAT_NvClothUpdateCollisions, STATGROUP_Physics);
 DECLARE_CYCLE_STAT(TEXT("Fill Context"), STAT_NvClothFillContext, STATGROUP_Physics);
+DECLARE_CYCLE_STAT(TEXT("Update Anim Drive"), STAT_NvClothUpdateAnimDrive, STATGROUP_Physics);
 
 FClothingSimulationNv::FClothingSimulationNv()
 {
@@ -85,7 +87,7 @@ void FClothingSimulationNv::CreateActor(USkeletalMeshComponent* InOwnerComponent
 		TArray<FVector> SkinnedNormals;
 		TArray<NvClothSupport::ClothTri> Tris;
 		TArray<NvClothSupport::ClothQuad> Quads;
-		TArray<float> InvMasses;
+		TArray<float> InvMasses = PhysMesh.InverseMasses;
 
 		const int32 NumVerts = PhysMesh.Vertices.Num();
 		const int32 NumTriangles = PhysMesh.Indices.Num() / 3;
@@ -119,9 +121,31 @@ void FClothingSimulationNv::CreateActor(USkeletalMeshComponent* InOwnerComponent
 		MeshDesc.triangles.data = Tris.GetData();
 		MeshDesc.triangles.count = Tris.Num();
 		MeshDesc.triangles.stride = Tris.GetTypeSize();
-		MeshDesc.invMasses.data = InvMasses.GetData();
-		MeshDesc.invMasses.count = InvMasses.Num();
-		MeshDesc.invMasses.stride = InvMasses.GetTypeSize();
+
+		// Only set up inverse masses here if we aren't completely skinned, otherwise we will fail
+		// constraint creation
+		bool bHasValidMasses = false;
+		for(const float& InvMass : InvMasses)
+		{
+			if(InvMass > 0.0f)
+			{
+				bHasValidMasses = true;
+				break;
+			}
+		}
+
+		if(bHasValidMasses)
+		{
+			MeshDesc.invMasses.data = InvMasses.GetData();
+			MeshDesc.invMasses.count = InvMasses.Num();
+			MeshDesc.invMasses.stride = InvMasses.GetTypeSize();
+		}
+		else
+		{
+			MeshDesc.invMasses.data = nullptr;
+			MeshDesc.invMasses.count = 0;
+			MeshDesc.invMasses.stride = 0;
+		}
 
 		// NvCloth works better with quad meshes, so we need to build one from our triangle data
 		FClothingSystemRuntimeModule& ClothingModule = FModuleManager::Get().LoadModuleChecked<FClothingSystemRuntimeModule>("ClothingSystemRuntime");
@@ -179,6 +203,9 @@ void FClothingSimulationNv::CreateActor(USkeletalMeshComponent* InOwnerComponent
 		NewCloth->setRotation(U2PQuat(RootBoneWorldTransform.GetRotation()));
 		NewCloth->clearInertia();
 
+		// Set the fluid density scale correctly for our units (Nv using metres, UE using centimetres)
+		NewCloth->setFluidDensity(1.0f / NvClothSupport::Constants::UnitConversionScaleCube);
+
 		// Keep track of our asset
 		NewActor.AssetCreatedFrom = Asset;
 
@@ -187,18 +214,16 @@ void FClothingSimulationNv::CreateActor(USkeletalMeshComponent* InOwnerComponent
 		{
 			// Initialise storage arrays for data that will be generated during the sim step
 			NewActor.CurrentNormals.AddDefaulted(NumVerts);
-			NewActor.SkinnedPhysicsMeshPositions.AddZeroed(NumVerts);
-			NewActor.SkinnedPhysicsMeshNormals.AddZeroed(NumVerts);
-
-			NewActor.SkinnedPhysicsMeshPositions = SkinnedVerts;
+			NewActor.SkinnedPhysicsMeshPositions[0] = SkinnedVerts;
+			NewActor.SkinnedPhysicsMeshPositions[1] = SkinnedVerts;
 			NewActor.SkinnedPhysicsMeshNormals = SkinnedNormals;
 		}
 	}
 
-	ApplyClothConfig(Asset->ClothConfig, NewActor, InOwnerComponent);
+	ApplyClothConfig(Asset->ClothConfig, NewActor);
 
 	// Pull collisions from the specified physics asset inside the clothing asset
-	ExtractActorCollisions(InOwnerComponent, Asset, NewActor);
+	ExtractActorCollisions(Asset, NewActor);
 
 	// Always start at zero, we'll pick up the right one before we simulate on the first tick
 	CurrentMeshLodIndex = 0;
@@ -221,10 +246,12 @@ void FClothingSimulationNv::CreateActor(USkeletalMeshComponent* InOwnerComponent
 	}
 }
 
-void FClothingSimulationNv::ExtractActorCollisions(USkeletalMeshComponent* InOwnerComponent, UClothingAsset* Asset, FClothingActorNv &InActor)
+void FClothingSimulationNv::ExtractActorCollisions(UClothingAsset* Asset, FClothingActorNv &InActor)
 {
 	// Build collision data for this Actor
-	USkeletalMesh* TargetMesh = InOwnerComponent->SkeletalMesh;
+	USkeletalMesh* TargetMesh = CastChecked<USkeletalMesh>(Asset->GetOuter());
+	InActor.ExtractedCollisions.Reset();
+
 	if(UPhysicsAsset* PhysAsset = Asset->PhysicsAsset)
 	{
 		bool bAddedBodies = false;
@@ -283,7 +310,7 @@ void FClothingSimulationNv::ExtractActorCollisions(USkeletalMeshComponent* InOwn
 	}
 }
 
-void FClothingSimulationNv::ApplyClothConfig(FClothConfig &Config, FClothingActorNv &InActor, USkeletalMeshComponent* InOwnerComponent)
+void FClothingSimulationNv::ApplyClothConfig(FClothConfig &Config, FClothingActorNv &InActor)
 {
 	// These calculations convert our damping and drag values to a value closer to the way APEX used them.
 	// This allows us to not break old assets, and expectations from the old system
@@ -360,6 +387,17 @@ void FClothingSimulationNv::ApplyClothConfig(FClothConfig &Config, FClothingActo
 			LodCloth->setDragCoefficient(Config.WindDragCoefficient);
 			LodCloth->setLiftCoefficient(Config.WindLiftCoefficient);
 		}
+		else
+		{
+			LodCloth->setDragCoefficient(0.0f);
+			LodCloth->setLiftCoefficient(0.0f);
+		}
+
+		if(InActor.WindMethod == EClothingWindMethod::Legacy && Config.WindMethod == EClothingWindMethod::Accurate)
+		{
+			// Need to clear out particle accelerations here otherwise legacy wind effects will stay applied
+			LodCloth->clearParticleAccelerations();
+		}
 
 		LodCloth->setSolverFrequency(Config.SolverFrequency);
 		LodCloth->setStiffnessFrequency(Config.StiffnessFrequency);
@@ -382,21 +420,14 @@ void FClothingSimulationNv::ApplyClothConfig(FClothConfig &Config, FClothingActo
 		LodCloth->setAngularInertia(U2PVector(Config.AngularInertiaScale));
 		LodCloth->setCentrifugalInertia(U2PVector(Config.CentrifugalInertiaScale));
 
-		// Setup gravity from the world, if available
-		float GravityZStrength = -981.0f;
-		if(UWorld* CurrentWorld = InOwnerComponent->GetWorld())
-		{
-			GravityZStrength = CurrentWorld->GetGravityZ();
-		}
-
-		LodCloth->setGravity(U2PVector(FVector(0.0f, 0.0f, GravityZStrength) * Config.GravityScale));
-
 		LodCloth->setTetherConstraintScale(Config.TetherLimit);
 		LodCloth->setTetherConstraintStiffness(Config.TetherStiffness);
 	}
 
 	InActor.CollisionThickness = Config.CollisionThickness;
 	InActor.WindMethod = Config.WindMethod;
+	InActor.CurrentAnimDriveSpringStiffness = Config.AnimDriveSpringStiffness;
+	InActor.CurrentAnimDriveDamperStiffness = Config.AnimDriveDamperStiffness;
 }
 
 IClothingSimulationContext* FClothingSimulationNv::CreateContext()
@@ -452,17 +483,20 @@ void FClothingSimulationNv::Simulate(IClothingSimulationContext* InContext)
 			continue;
 		}
 
+		// Set up scratch arrays
+		FClothingActorScratchData& Scratch = Actor.Scratch;
+		Scratch.Reset();
+
 		// Conditional rebuild. if bCollisionsDirty is set, will rebuild the aggregated collisions
 		Actor.ConditionalRebuildCollisions();
-
-		// To build motion constraints (max distances) we need to skin the entire physics mesh
-		// this call also updates our fixed particles to avoid iterating the particle list a second time
 
 		// Component space root bone transform for this actor
 		FTransform RootBoneTransform = NvContext->BoneTransforms[Actor.AssetCreatedFrom->ReferenceBoneIndex];
 
+		// To build motion constraints (max distances) we need to skin the entire physics mesh
+		// this call also updates our fixed particles to avoid iterating the particle list a second time
 		const FClothPhysicalMeshData& PhysMesh = Actor.AssetCreatedFrom->LodData[Actor.CurrentLodIndex].PhysicalMeshData;
-		FClothingSimulationBase::SkinPhysicsMesh(Actor.AssetCreatedFrom, PhysMesh, RootBoneTransform, NvContext->RefToLocals.GetData(), NvContext->RefToLocals.Num(), Actor.SkinnedPhysicsMeshPositions, Actor.SkinnedPhysicsMeshNormals);
+		FClothingSimulationBase::SkinPhysicsMesh(Actor.AssetCreatedFrom, PhysMesh, RootBoneTransform, NvContext->RefToLocals.GetData(), NvContext->RefToLocals.Num(), Actor.SkinnedPhysicsMeshPositions[Actor.CurrentSkinnedPositionIndex], Actor.SkinnedPhysicsMeshNormals);
 
 		nv::cloth::Cloth* CurrentCloth = Actor.LodData[Actor.CurrentLodIndex].Cloth;
 
@@ -471,14 +505,15 @@ void FClothingSimulationNv::Simulate(IClothingSimulationContext* InContext)
 
 		if(bReset)
 		{
+			const TArray<FVector>& CurrSkinnedPositions = Actor.GetCurrentSkinnedPositions();
 			nv::cloth::Range<PxVec4> CurrParticles = CurrentCloth->getCurrentParticles();
 			nv::cloth::Range<PxVec4> PrevParticles = CurrentCloth->getPreviousParticles();
 			const int32 NumParticles = CurrentCloth->getNumParticles();
-			check(NumParticles == Actor.SkinnedPhysicsMeshPositions.Num());
+			check(NumParticles == CurrSkinnedPositions.Num());
 
 			for(int32 ParticleIndex = 0; ParticleIndex < NumParticles; ++ParticleIndex)
 			{
-				CurrParticles[ParticleIndex] = physx::PxVec4(U2PVector(Actor.SkinnedPhysicsMeshPositions[ParticleIndex]), CurrParticles[ParticleIndex].w);
+				CurrParticles[ParticleIndex] = physx::PxVec4(U2PVector(CurrSkinnedPositions[ParticleIndex]), CurrParticles[ParticleIndex].w);
 				PrevParticles[ParticleIndex] = CurrParticles[ParticleIndex];
 			}
 
@@ -490,20 +525,27 @@ void FClothingSimulationNv::Simulate(IClothingSimulationContext* InContext)
 		CurrentCloth->setTranslation(U2PVector(RootBoneWorldTransform.GetTranslation()));
 		CurrentCloth->setRotation(U2PQuat(RootBoneWorldTransform.GetRotation()));
 
+		if(Actor.bUseGravityOverride)
+		{
+			CurrentCloth->setGravity(U2PVector(Actor.AssetCreatedFrom->ClothConfig.GravityScale * Actor.GravityOverride));
+		}
+		else
+		{
+			CurrentCloth->setGravity(U2PVector(Actor.AssetCreatedFrom->ClothConfig.GravityScale * NvContext->WorldGravity));
+		}
+
 		if(bTeleport)
 		{
 			CurrentCloth->clearInertia();
 		}
 
 		Actor.UpdateMotionConstraints(NvContext);
-
+		
 		{
 			SCOPE_CYCLE_COUNTER(STAT_NvClothUpdateCollisions);
 			// Set collision spheres for this frame
 			FClothCollisionData& CollisionData = Actor.AggregatedCollisions;
 
-			TArray<physx::PxVec4> SphereData;
-			SphereData.Reserve(CollisionData.Spheres.Num());
 			for(FClothCollisionPrim_Sphere& Sphere : CollisionData.Spheres)
 			{
 				FVector SphereLocation = Sphere.LocalPosition;
@@ -520,40 +562,36 @@ void FClothingSimulationNv::Simulate(IClothingSimulationContext* InContext)
 					}
 				}
 
-				SphereData.Add(physx::PxVec4(U2PVector(SphereLocation), Sphere.Radius + Actor.CollisionThickness));
+				Scratch.SphereData.Add(physx::PxVec4(U2PVector(SphereLocation), Sphere.Radius + Actor.CollisionThickness));
 			}
 
-			CurrentCloth->setSpheres(NvClothSupport::CreateRange(SphereData), 0, CurrentCloth->getNumSpheres());
+			CurrentCloth->setSpheres(NvClothSupport::CreateRange(Scratch.SphereData), 0, CurrentCloth->getNumSpheres());
 
 			const int32 NumCapsules = CollisionData.SphereConnections.Num();
-			TArray<uint32> CapsuleSphereIndices;
-			CapsuleSphereIndices.Reserve(NumCapsules * 2);
 
 			for(FClothCollisionPrim_SphereConnection& Capsule : CollisionData.SphereConnections)
 			{
-				CapsuleSphereIndices.Add(Capsule.SphereIndices[0]);
-				CapsuleSphereIndices.Add(Capsule.SphereIndices[1]);
+				Scratch.CapsuleSphereIndices.Add(Capsule.SphereIndices[0]);
+				Scratch.CapsuleSphereIndices.Add(Capsule.SphereIndices[1]);
 			}
 
-			CurrentCloth->setCapsules(NvClothSupport::CreateRange(CapsuleSphereIndices), 0, CurrentCloth->getNumCapsules());
+			CurrentCloth->setCapsules(NvClothSupport::CreateRange(Scratch.CapsuleSphereIndices), 0, CurrentCloth->getNumCapsules());
 
-			TArray<physx::PxVec4> CollisionPlanes;
-			TArray<uint32> ConvexMasks;
 			for(FClothCollisionPrim_Convex& Convex : CollisionData.Convexes)
 			{
-				if(CollisionPlanes.Num() >= 32)
+				if(Scratch.PlaneData.Num() >= 32)
 				{
 					// Skip, there's too many planes to collide against
 					continue;
 				}
 
-				ConvexMasks.AddZeroed();
-				uint32& ConvexMask = ConvexMasks.Last();
+				Scratch.ConvexMasks.AddZeroed();
+				uint32& ConvexMask = Scratch.ConvexMasks.Last();
 
 				for(FPlane& ConvexPlane : Convex.Planes)
 				{
-					CollisionPlanes.AddDefaulted();
-					physx::PxVec4& NewPlane = CollisionPlanes.Last();
+					Scratch.PlaneData.AddDefaulted();
+					physx::PxVec4& NewPlane = Scratch.PlaneData.Last();
 
 					FPlane TempPlane = ConvexPlane.TransformBy(RootBoneTransform.ToMatrixWithScale().Inverse());
 
@@ -562,20 +600,21 @@ void FClothingSimulationNv::Simulate(IClothingSimulationContext* InContext)
 					NewPlane.z = TempPlane.Z;
 					NewPlane.w = -TempPlane.W;
 
-					ConvexMask |= (1 << (CollisionPlanes.Num() - 1));
+					ConvexMask |= (1 << (Scratch.PlaneData.Num() - 1));
 
-					if(CollisionPlanes.Num() >= 32)
+					if(Scratch.PlaneData.Num() >= 32)
 					{
 						break;
 					}
 				}
 			}
 
-			CurrentCloth->setPlanes(NvClothSupport::CreateRange(CollisionPlanes), 0, CurrentCloth->getNumPlanes());
-			CurrentCloth->setConvexes(NvClothSupport::CreateRange(ConvexMasks), 0, CurrentCloth->getNumConvexes());
+			CurrentCloth->setPlanes(NvClothSupport::CreateRange(Scratch.PlaneData), 0, CurrentCloth->getNumPlanes());
+			CurrentCloth->setConvexes(NvClothSupport::CreateRange(Scratch.ConvexMasks), 0, CurrentCloth->getNumConvexes());
 		}
 
-		Actor.UpdateWind(NvContext, RootBoneWorldTransform.InverseTransformVector(NvContext->WindVelocity));
+		Actor.UpdateWind(NvContext, NvContext->WindVelocity);
+		Actor.UpdateAnimDrive(NvContext);
 	}
 
 	// Sim
@@ -610,6 +649,9 @@ void FClothingSimulationNv::Simulate(IClothingSimulationContext* InContext)
 
 		// Store off the timestep (needed for velocity calculation)
 		Actor.PreviousTimestep = NvContext->DeltaSeconds;
+
+		// Flip the skin buffer
+		Actor.CurrentSkinnedPositionIndex = (Actor.CurrentSkinnedPositionIndex + 1) % 2;
 	}
 }
 
@@ -679,7 +721,7 @@ void FClothingSimulationNv::DestroyContext(IClothingSimulationContext* InContext
 	delete InContext;
 }
 
-void FClothingSimulationNv::GetSimulationData(TMap<int32, FClothSimulData>& OutData, USkeletalMeshComponent* InOwnerComponent, USkeletalMeshComponent* InOverrideComponent) const
+void FClothingSimulationNv::GetSimulationData(TMap<int32, FClothSimulData>& OutData, USkeletalMeshComponent* InOwnerComponent, USkinnedMeshComponent* InOverrideComponent) const
 {
 	const int32 NumActors = Actors.Num();
 
@@ -708,7 +750,7 @@ void FClothingSimulationNv::GetSimulationData(TMap<int32, FClothSimulData>& OutD
 			continue;
 		}
 
-		FClothSimulData& ClothData = OutData.Add(Actor.SimDataIndex);
+		FClothSimulData& ClothData = OutData.FindOrAdd(Actor.SimDataIndex);
 		const int32 CurrentClothingLod = Actor.CurrentLodIndex;
 
 		{
@@ -720,13 +762,17 @@ void FClothingSimulationNv::GetSimulationData(TMap<int32, FClothSimulData>& OutD
 
 			const uint32 NumParticles = Actor.LodData[CurrentClothingLod].Cloth->getNumParticles();
 			
+			ClothData.Reset();
+			
+			ClothData.Transform = RootBoneTransform;
+
 			nv::cloth::MappedRange<physx::PxVec4> Particles = Actor.LodData[CurrentClothingLod].Cloth->getCurrentParticles();
 			for(uint32 ParticleIdx = 0; ParticleIdx < NumParticles; ++ParticleIdx)
 			{
 				physx::PxVec4& Particle = Particles[ParticleIdx];
 
-				ClothData.Positions.Add(RootBoneTransform.TransformPosition(P2UVector(Particle)));
-				ClothData.Normals.Add(RootBoneTransform.TransformVector(Actor.CurrentNormals[ParticleIdx]));
+				ClothData.Positions.Add(P2UVector(Particle));
+				ClothData.Normals.Add(Actor.CurrentNormals[ParticleIdx]);
 			}
 		}
 		
@@ -801,6 +847,7 @@ bool FClothingSimulationNv::ShouldSimulate() const
 FBoxSphereBounds FClothingSimulationNv::GetBounds(const USkeletalMeshComponent* InOwnerComponent) const
 {
 	FBoxSphereBounds CurrentBounds(FVector(0.0f), FVector(0.0f), 0.0f);
+	bool bFirstActor = true;
 
 	const bool bUsingMaster = InOwnerComponent->MasterPoseComponent.IsValid();
 	const USkinnedMeshComponent* ActualComponent = bUsingMaster ? InOwnerComponent->MasterPoseComponent.Get() : InOwnerComponent;
@@ -836,7 +883,15 @@ FBoxSphereBounds FClothingSimulationNv::GetBounds(const USkeletalMeshComponent* 
 			FVector Center = SimBoneTransformCS.TransformPosition(P2UVector(LodData.Cloth->getBoundingBoxCenter()));
 			FVector HalfExtents = SimBoneTransformCS.TransformVector(P2UVector(LodData.Cloth->getBoundingBoxScale()));
 	
-			CurrentBounds = CurrentBounds + FBox(Center - HalfExtents, Center + HalfExtents);
+			if(bFirstActor)
+			{
+				bFirstActor = false;
+				CurrentBounds = FBox(Center - HalfExtents, Center + HalfExtents);
+			}
+			else
+			{
+				CurrentBounds = CurrentBounds + FBox(Center - HalfExtents, Center + HalfExtents);
+			}
 		}
 	}
 
@@ -1055,7 +1110,7 @@ void FClothingSimulationNv::DebugDraw_PhysMesh(USkeletalMeshComponent* OwnerComp
 
 				const FLinearColor LineColor = MaxDist0 < SMALL_NUMBER && MaxDist1 < SMALL_NUMBER ? FColor::Magenta : FColor::White;
 
-				PDI->DrawLine(Start, End, LineColor, SDPG_World, 0.05f, 0.5f);
+				PDI->DrawLine(Start, End, LineColor, SDPG_World, 0.0f , 0.001f);
 			}
 		}
 	}
@@ -1079,13 +1134,14 @@ void FClothingSimulationNv::DebugDraw_Normals(USkeletalMeshComponent* OwnerCompo
 		const uint32 NumParticles = CurrentCloth->getNumParticles();
 		nv::cloth::MappedRange<physx::PxVec4> Particles = CurrentCloth->getCurrentParticles();
 		const TArray<FVector>& Normals = Actor.CurrentNormals;
+		FTransform RootBoneTransform = OwnerComponent->GetComponentSpaceTransforms()[Actor.AssetCreatedFrom->ReferenceBoneIndex];
 
 		for(uint32 ParticleIndex = 0; ParticleIndex < NumParticles; ++ParticleIndex)
 		{
-			FVector Position = P2UVector(Particles[ParticleIndex]);
-			FVector Normal = Normals[ParticleIndex];
+			FVector Position = RootBoneTransform.TransformPosition(P2UVector(Particles[ParticleIndex]));
+			FVector Normal = RootBoneTransform.TransformVector(Normals[ParticleIndex]);
 
-			PDI->DrawLine(Position, Position + Normal * 20.0f, FLinearColor::White, SDPG_World, 0.2f);
+			PDI->DrawLine(Position, Position + Normal * 20.0f, FLinearColor::White, SDPG_World, 0.0f, 0.001f);
 		}
 	}
 }
@@ -1100,41 +1156,45 @@ void FClothingSimulationNv::DebugDraw_Collision(USkeletalMeshComponent* OwnerCom
 		}
 
 		const FClothCollisionData& CollisionData = Actor.AggregatedCollisions;
+		const TArray<int32>& UsedBones = Actor.AssetCreatedFrom->UsedBoneIndices;
 
 		for(const FClothCollisionPrim_SphereConnection& Connection : CollisionData.SphereConnections)
 		{
 			const FClothCollisionPrim_Sphere& Sphere0 = CollisionData.Spheres[Connection.SphereIndices[0]];
 			const FClothCollisionPrim_Sphere& Sphere1 = CollisionData.Spheres[Connection.SphereIndices[1]];
 
-			const int32 MappedIndex0 = Actor.AssetCreatedFrom->UsedBoneIndices[Sphere0.BoneIndex];
-			const int32 MappedIndex1 = Actor.AssetCreatedFrom->UsedBoneIndices[Sphere1.BoneIndex];
-
-			if(MappedIndex0 != INDEX_NONE && MappedIndex1 != INDEX_NONE)
+			if(UsedBones.IsValidIndex(Sphere0.BoneIndex) && UsedBones.IsValidIndex(Sphere1.BoneIndex))
 			{
-				FVector Center0 = OwnerComponent->GetBoneMatrix(MappedIndex0).TransformPosition(Sphere0.LocalPosition);
-				FVector Center1 = OwnerComponent->GetBoneMatrix(MappedIndex1).TransformPosition(Sphere1.LocalPosition);
+				const int32 MappedIndex0 = UsedBones[Sphere0.BoneIndex];
+				const int32 MappedIndex1 = UsedBones[Sphere1.BoneIndex];
 
-				// Draws just the sides of a tapered capsule specified by provided Spheres that can have different radii.  Does not draw the spheres, just the sleeve.
-				// Extent geometry endpoints not necessarily coplanar with sphere origins (uses hull horizon)
-				// Otherwise uses the great-circle cap assumption.
-				const float AngleIncrement = 30.0f;   // if parameter added for number of sides, then set this to be:  = 360.0f / NumSides; 
-				FVector Separation = Center1 - Center0;
-				float Distance = Separation.Size();
-				if(Separation.IsNearlyZero() || Distance <= FMath::Abs(Sphere0.Radius - Sphere1.Radius))
+				if(MappedIndex0 != INDEX_NONE && MappedIndex1 != INDEX_NONE)
 				{
-					continue;
-				}
-				FQuat CapsuleOrientation = FQuat::FindBetween(FVector(0, 0, 1), Separation.GetSafeNormal());
-				float OffsetZ = true ? -(Sphere1.Radius - Sphere0.Radius) / Distance : 0.0f;
-				float ScaleXY = FMath::Sqrt(1.0f - FMath::Square(OffsetZ));
-				FVector VertexPrevious = CapsuleOrientation.RotateVector(FVector(ScaleXY, 0, OffsetZ));
-				for(float Angle = AngleIncrement; Angle <= 360.0f; Angle += AngleIncrement)  // iterate over unit circle about capsule's major axis (which is orientation.AxisZ)
-				{
-					FVector VertexCurrent = CapsuleOrientation.RotateVector(FVector(FMath::Cos(FMath::DegreesToRadians(Angle))*ScaleXY, FMath::Sin(FMath::DegreesToRadians(Angle))*ScaleXY, OffsetZ));
-					PDI->DrawLine(Center0 + VertexCurrent  * Sphere0.Radius, Center1 + VertexCurrent * Sphere1.Radius, FColor::Cyan, SDPG_World, 0.2f);  // capsule side segment between spheres
-					PDI->DrawLine(Center0 + VertexPrevious * Sphere0.Radius, Center0 + VertexCurrent * Sphere0.Radius, FColor::Cyan, SDPG_World, 0.2f);  // cap-circle segment on sphere S0
-					PDI->DrawLine(Center1 + VertexPrevious * Sphere1.Radius, Center1 + VertexCurrent * Sphere1.Radius, FColor::Cyan, SDPG_World, 0.2f);  // cap-circle segment on sphere S1
-					VertexPrevious = VertexCurrent;
+					FVector Center0 = OwnerComponent->GetBoneMatrix(MappedIndex0).TransformPosition(Sphere0.LocalPosition);
+					FVector Center1 = OwnerComponent->GetBoneMatrix(MappedIndex1).TransformPosition(Sphere1.LocalPosition);
+
+					// Draws just the sides of a tapered capsule specified by provided Spheres that can have different radii.  Does not draw the spheres, just the sleeve.
+					// Extent geometry endpoints not necessarily coplanar with sphere origins (uses hull horizon)
+					// Otherwise uses the great-circle cap assumption.
+					const float AngleIncrement = 30.0f;   // if parameter added for number of sides, then set this to be:  = 360.0f / NumSides; 
+					FVector Separation = Center1 - Center0;
+					float Distance = Separation.Size();
+					if(Separation.IsNearlyZero() || Distance <= FMath::Abs(Sphere0.Radius - Sphere1.Radius))
+					{
+						continue;
+					}
+					FQuat CapsuleOrientation = FQuat::FindBetween(FVector(0, 0, 1), Separation.GetSafeNormal());
+					float OffsetZ = true ? -(Sphere1.Radius - Sphere0.Radius) / Distance : 0.0f;
+					float ScaleXY = FMath::Sqrt(1.0f - FMath::Square(OffsetZ));
+					FVector VertexPrevious = CapsuleOrientation.RotateVector(FVector(ScaleXY, 0, OffsetZ));
+					for(float Angle = AngleIncrement; Angle <= 360.0f; Angle += AngleIncrement)  // iterate over unit circle about capsule's major axis (which is orientation.AxisZ)
+					{
+						FVector VertexCurrent = CapsuleOrientation.RotateVector(FVector(FMath::Cos(FMath::DegreesToRadians(Angle))*ScaleXY, FMath::Sin(FMath::DegreesToRadians(Angle))*ScaleXY, OffsetZ));
+						PDI->DrawLine(Center0 + VertexCurrent  * Sphere0.Radius, Center1 + VertexCurrent * Sphere1.Radius, FColor::Cyan, SDPG_World, 0.0f, 0.001f);  // capsule side segment between spheres
+						PDI->DrawLine(Center0 + VertexPrevious * Sphere0.Radius, Center0 + VertexCurrent * Sphere0.Radius, FColor::Cyan, SDPG_World, 0.0f, 0.001f);  // cap-circle segment on sphere S0
+						PDI->DrawLine(Center1 + VertexPrevious * Sphere1.Radius, Center1 + VertexCurrent * Sphere1.Radius, FColor::Cyan, SDPG_World, 0.0f, 0.001f);  // cap-circle segment on sphere S1
+						VertexPrevious = VertexCurrent;
+					}
 				}
 			}
 		}
@@ -1143,17 +1203,15 @@ void FClothingSimulationNv::DebugDraw_Collision(USkeletalMeshComponent* OwnerCom
 		{
 			const FClothCollisionPrim_Sphere& Sphere = CollisionData.Spheres[SphereIndex];
 
-			const int32 MappedBoneIndex = Actor.AssetCreatedFrom->UsedBoneIndices[Sphere.BoneIndex];
-
-			if(MappedBoneIndex != INDEX_NONE)
+			if(UsedBones.IsValidIndex(Sphere.BoneIndex) && UsedBones[Sphere.BoneIndex] != INDEX_NONE)
 			{
-				FMatrix BoneMatrix = OwnerComponent->GetBoneMatrix(MappedBoneIndex);
+				FMatrix BoneMatrix = OwnerComponent->GetBoneMatrix(UsedBones[Sphere.BoneIndex]);
 				FVector ActualPosition = BoneMatrix.TransformPosition(Sphere.LocalPosition);
 
 				FTransform SphereTransform(BoneMatrix);
 				SphereTransform.SetTranslation(ActualPosition);
 
-				DrawWireSphere(PDI, SphereTransform, FColor::Cyan, Sphere.Radius, 12, SDPG_World, 0.2f);
+				DrawWireSphere(PDI, SphereTransform, FColor::Cyan, Sphere.Radius, 12, SDPG_World, 0.0f, 0.001f);
 			}
 			else
 			{
@@ -1162,7 +1220,7 @@ void FClothingSimulationNv::DebugDraw_Collision(USkeletalMeshComponent* OwnerCom
 				FTransform SphereTransform;
 				SphereTransform.SetTranslation(ActualPosition);
 
-				DrawWireSphere(PDI, SphereTransform, FColor::Red, Sphere.Radius, 12, SDPG_World, 0.2f);
+				DrawWireSphere(PDI, SphereTransform, FColor::Red, Sphere.Radius, 12, SDPG_World, 0.0f, 0.001f);
 			}
 		}
 	}
@@ -1180,15 +1238,22 @@ void FClothingSimulationNv::DebugDraw_Backstops(USkeletalMeshComponent* OwnerCom
 		const FClothingActorNv::FActorLodData& LodData = Actor.LodData[Actor.CurrentLodIndex];
 		const UClothingAsset* Asset = Actor.AssetCreatedFrom;
 		const FClothPhysicalMeshData& MeshData = Asset->LodData[Actor.CurrentLodIndex].PhysicalMeshData;
+		FTransform RootBoneTransform = OwnerComponent->GetComponentSpaceTransforms()[Actor.AssetCreatedFrom->ReferenceBoneIndex];
 
-		const int32 NumVerts = Actor.SkinnedPhysicsMeshPositions.Num();
+		if(!MeshData.HasBackStops())
+		{
+			continue;
+		}
+
+		const TArray<FVector>& SkinnedPositions = Actor.GetCurrentSkinnedPositions();
+		const int32 NumVerts = SkinnedPositions.Num();
 		check(NumVerts == Actor.SkinnedPhysicsMeshNormals.Num());
 		check(NumVerts == MeshData.MaxDistances.Num());
 
 		for(int32 VertIndex = 0; VertIndex < NumVerts; ++VertIndex)
 		{
-			const FVector& Position = Actor.SkinnedPhysicsMeshPositions[VertIndex];
-			const FVector& Normal = Actor.SkinnedPhysicsMeshNormals[VertIndex];
+			const FVector& Position = RootBoneTransform.TransformPosition(SkinnedPositions[VertIndex]);
+			const FVector& Normal = RootBoneTransform.TransformVector(Actor.SkinnedPhysicsMeshNormals[VertIndex]);
 			
 			float BackstopDistance = MeshData.BackstopDistances[VertIndex];
 			const float BackstopRadius = MeshData.BackstopRadiuses[VertIndex];
@@ -1209,14 +1274,14 @@ void FClothingSimulationNv::DebugDraw_Backstops(USkeletalMeshComponent* OwnerCom
 				FVector Start = Position;
 				FVector End = Start + Normal * BackstopDistance;
 
-				PDI->DrawLine(Start, End, FColor::Red, SDPG_World, 0.2f);
+				PDI->DrawLine(Start, End, FColor::Red, SDPG_World, 0.0f, 0.001f);
 			}
 			else if(BackstopDistance < 0.0f)
 			{
 				FVector Start = Position;
 				FVector End = Start + Normal * BackstopDistance;
 
-				PDI->DrawLine(Start, End, FColor::Blue, SDPG_World, 0.2f);
+				PDI->DrawLine(Start, End, FColor::Blue, SDPG_World, 0.0f, 0.001f);
 			}
 			else
 			{
@@ -1238,18 +1303,20 @@ void FClothingSimulationNv::DebugDraw_MaxDistances(USkeletalMeshComponent* Owner
 		const FClothingActorNv::FActorLodData& LodData = Actor.LodData[Actor.CurrentLodIndex];
 		const UClothingAsset* Asset = Actor.AssetCreatedFrom;
 		const FClothPhysicalMeshData& MeshData = Asset->LodData[Actor.CurrentLodIndex].PhysicalMeshData;
+		FTransform RootBoneTransform = OwnerComponent->GetComponentSpaceTransforms()[Actor.AssetCreatedFrom->ReferenceBoneIndex];
 
-		const int32 NumVerts = Actor.SkinnedPhysicsMeshPositions.Num();
+		const TArray<FVector>& SkinnedPositions = Actor.GetCurrentSkinnedPositions();
+		const int32 NumVerts = SkinnedPositions.Num();
 		check(NumVerts == Actor.SkinnedPhysicsMeshNormals.Num());
 		check(NumVerts == MeshData.MaxDistances.Num());
 
 		for(int32 VertIndex = 0; VertIndex < NumVerts; ++VertIndex)
 		{
-			const FVector& Position = Actor.SkinnedPhysicsMeshPositions[VertIndex];
-			const FVector& Normal = Actor.SkinnedPhysicsMeshNormals[VertIndex];
+			const FVector& Position = RootBoneTransform.TransformPosition(SkinnedPositions[VertIndex]);
+			const FVector& Normal = RootBoneTransform.TransformVector(Actor.SkinnedPhysicsMeshNormals[VertIndex]);
 			const float& MaxDistance = MeshData.MaxDistances[VertIndex];
 
-			PDI->DrawLine(Position, Position + Normal * MaxDistance, FColor::White, SDPG_World, 0.2f);
+			PDI->DrawLine(Position, Position + Normal * MaxDistance, FColor::White, SDPG_World, 0.0f, 0.001f);
 		}
 	}
 }
@@ -1277,7 +1344,6 @@ void FClothingSimulationNv::DebugDraw_SelfCollision(USkeletalMeshComponent* Owne
 
 		const float SelfCollisionThickness = Config.SelfCollisionRadius;
 
-		
 		const FClothLODData& LodData = Asset->LodData[Actor.CurrentLodIndex];
 		const FClothPhysicalMeshData& PhysMesh = LodData.PhysicalMeshData;
 
@@ -1293,18 +1359,79 @@ void FClothingSimulationNv::DebugDraw_SelfCollision(USkeletalMeshComponent* Owne
 		for(int32 SelfColIdx = 0; SelfColIdx < PhysMesh.SelfCollisionIndices.Num(); ++SelfColIdx)
 		{
 			FVector ParticlePosition = RootBoneTransform.TransformPosition(P2UVector(Particles[PhysMesh.SelfCollisionIndices[SelfColIdx]]));
-			DrawWireSphere(PDI, ParticlePosition, FColor::White, SelfCollisionThickness, 8, SDPG_World, 0.2f);
+			DrawWireSphere(PDI, ParticlePosition, FColor::White, SelfCollisionThickness, 8, SDPG_World, 0.0f, 0.001f);
+		}
+	}
+}
+
+void FClothingSimulationNv::DebugDraw_AnimDrive(USkeletalMeshComponent* OwnerComponent, FPrimitiveDrawInterface* PDI) const
+{
+	for(const FClothingActorNv& Actor : Actors)
+	{
+		if(Actor.CurrentLodIndex == INDEX_NONE)
+		{
+			// Actor not currently valid due to LOD system
+			continue;
+		}
+
+		const UClothingAsset* Asset = Actor.AssetCreatedFrom;
+		const FClothPhysicalMeshData& PhysMesh = Asset->LodData[Actor.CurrentLodIndex].PhysicalMeshData;
+		const TArray<uint32>& Indices = PhysMesh.Indices;
+		FTransform RootBoneTransform = OwnerComponent->GetComponentSpaceTransforms()[Actor.AssetCreatedFrom->ReferenceBoneIndex];
+
+		const TArray<FVector> SkinnedPositions = Actor.GetCurrentSkinnedPositions();
+
+		const int32 NumMeshTris = PhysMesh.Indices.Num() / 3;
+
+		for(int32 TriIdx = 0; TriIdx < NumMeshTris; ++TriIdx)
+		{
+			const int32 BaseIndex = TriIdx * 3;
+
+			for(int32 SubIndex = 0; SubIndex < 3; ++SubIndex)
+			{
+				const int32 NextIndex = (SubIndex + 1) % 3;
+
+				FVector Start = RootBoneTransform.TransformPosition(SkinnedPositions[Indices[BaseIndex + SubIndex]]);
+				FVector End = RootBoneTransform.TransformPosition(SkinnedPositions[Indices[BaseIndex + NextIndex]]);
+
+				PDI->DrawLine(Start, End, FLinearColor(0.6f, 0.6f, 0.6f, 0.1f), SDPG_World, 0.0f, 0.001f);
+			}
 		}
 	}
 }
 
 #endif
 
+void FClothingSimulationNv::RefreshClothConfig()
+{
+	checkSlow(IsInGameThread());
+
+	for(FClothingActorNv& Actor : Actors)
+	{
+		ApplyClothConfig(Actor.AssetCreatedFrom->ClothConfig, Actor);
+	}
+}
+
+void FClothingSimulationNv::RefreshPhysicsAsset()
+{
+	checkSlow(IsInGameThread());
+
+	for(FClothingActorNv& Actor : Actors)
+	{
+		ExtractActorCollisions(Actor.AssetCreatedFrom, Actor);
+	}
+}
+
 FClothingActorNv::FClothingActorNv() 
-	: CurrentLodIndex(INDEX_NONE)
+	: CurrentAnimDriveSpringStiffness(0.0f)
+	, CurrentAnimDriveDamperStiffness(0.0f)
+	, bUseGravityOverride(false)
+	, GravityOverride(0.0f, 0.0f, 0.0f)
+	, CurrentLodIndex(INDEX_NONE)
 	, bCollisionsDirty(true)
 	, SimDataIndex(INDEX_NONE)
 	, WindMethod(EClothingWindMethod::Legacy)
+	, CurrentSkinnedPositionIndex(0)
 	, PreviousTimestep(0.0f)
 {
 
@@ -1314,7 +1441,7 @@ void FClothingActorNv::SkinPhysicsMesh(FClothingSimulationContextNv* InContext)
 {
 	const FClothPhysicalMeshData& PhysMesh = AssetCreatedFrom->LodData[CurrentLodIndex].PhysicalMeshData;
 	FTransform RootBoneTransform = InContext->BoneTransforms[AssetCreatedFrom->ReferenceBoneIndex];
-	FClothingSimulationBase::SkinPhysicsMesh(AssetCreatedFrom, PhysMesh, RootBoneTransform, InContext->RefToLocals.GetData(), InContext->RefToLocals.Num(), SkinnedPhysicsMeshPositions, SkinnedPhysicsMeshNormals);
+	FClothingSimulationBase::SkinPhysicsMesh(AssetCreatedFrom, PhysMesh, RootBoneTransform, InContext->RefToLocals.GetData(), InContext->RefToLocals.Num(), SkinnedPhysicsMeshPositions[CurrentSkinnedPositionIndex], SkinnedPhysicsMeshNormals);
 }
 
 void FClothingActorNv::UpdateMotionConstraints(FClothingSimulationContextNv* InContext)
@@ -1328,26 +1455,31 @@ void FClothingActorNv::UpdateMotionConstraints(FClothingSimulationContextNv* InC
 
 	check(CurrentCloth);
 
-	TArray<float>& MaxDistances = AssetCreatedFrom->LodData[CurrentLodIndex].PhysicalMeshData.MaxDistances;
-	TArray<float>& BackstopDistances = AssetCreatedFrom->LodData[CurrentLodIndex].PhysicalMeshData.BackstopDistances;
-	TArray<float>& BackstopRadiuses = AssetCreatedFrom->LodData[CurrentLodIndex].PhysicalMeshData.BackstopRadiuses;
+	FClothPhysicalMeshData& PhysMesh = AssetCreatedFrom->LodData[CurrentLodIndex].PhysicalMeshData;
+	TArray<float>& MaxDistances = PhysMesh.MaxDistances;
+	TArray<float>& BackstopDistances = PhysMesh.BackstopDistances;
+	TArray<float>& BackstopRadiuses = PhysMesh.BackstopRadiuses;
+	const TArray<FVector>& CurrentSkinnedPositions = GetCurrentSkinnedPositions();
 
 	nv::cloth::Range<physx::PxVec4> MotionConstraints = CurrentCloth->getMotionConstraints();
 	const int32 NumMotionConstraints = CurrentCloth->getNumMotionConstraints();
-	check(NumMotionConstraints <= SkinnedPhysicsMeshPositions.Num());
+	check(NumMotionConstraints <= CurrentSkinnedPositions.Num());
 
 	for(int32 ConstraintIndex = 0; ConstraintIndex < NumMotionConstraints; ++ConstraintIndex)
 	{
-		MotionConstraints[ConstraintIndex] = physx::PxVec4(U2PVector(SkinnedPhysicsMeshPositions[ConstraintIndex]), MaxDistances[ConstraintIndex] * InContext->MaxDistanceScale);
+		MotionConstraints[ConstraintIndex] = physx::PxVec4(U2PVector(CurrentSkinnedPositions[ConstraintIndex]), MaxDistances[ConstraintIndex] * InContext->MaxDistanceScale);
 	}
 
-	nv::cloth::Range<physx::PxVec4> SeparationConstraints = CurrentCloth->getSeparationConstraints();
-	const int32 NumSeparationConstraints = CurrentCloth->getNumSeparationConstraints();
-	check(NumSeparationConstraints <= SkinnedPhysicsMeshNormals.Num());
-
-	for(int32 ConstraintIndex = 0; ConstraintIndex < NumSeparationConstraints; ++ConstraintIndex)
+	if(PhysMesh.HasBackStops())
 	{
-		SeparationConstraints[ConstraintIndex] = physx::PxVec4(U2PVector(SkinnedPhysicsMeshPositions[ConstraintIndex] - BackstopDistances[ConstraintIndex] * SkinnedPhysicsMeshNormals[ConstraintIndex]), BackstopRadiuses[ConstraintIndex]);
+		nv::cloth::Range<physx::PxVec4> SeparationConstraints = CurrentCloth->getSeparationConstraints();
+		const int32 NumSeparationConstraints = CurrentCloth->getNumSeparationConstraints();
+		check(NumSeparationConstraints <= SkinnedPhysicsMeshNormals.Num());
+
+		for(int32 ConstraintIndex = 0; ConstraintIndex < NumSeparationConstraints; ++ConstraintIndex)
+		{
+			SeparationConstraints[ConstraintIndex] = physx::PxVec4(U2PVector(CurrentSkinnedPositions[ConstraintIndex] - BackstopDistances[ConstraintIndex] * SkinnedPhysicsMeshNormals[ConstraintIndex]), BackstopRadiuses[ConstraintIndex]);
+		}
 	}
 }
 
@@ -1360,7 +1492,10 @@ void FClothingActorNv::UpdateWind(FClothingSimulationContextNv* InContext, const
 
 		case EClothingWindMethod::Legacy:
 		{
-			TArray<FVector> ParticleVelocities;
+			const FTransform RootBoneWorldTransform = InContext->BoneTransforms[AssetCreatedFrom->ReferenceBoneIndex] * InContext->ComponentToWorld;
+			const FVector TransformedWindVelocity = RootBoneWorldTransform.InverseTransformVector(InWindVelocity);
+
+			TArray<FVector>& ParticleVelocities = Scratch.ParticleVelocities;
 			CalculateParticleVelocities(ParticleVelocities);
 
 			const TArray<float>& MaxDistances = AssetCreatedFrom->LodData[CurrentLodIndex].PhysicalMeshData.MaxDistances;
@@ -1371,7 +1506,7 @@ void FClothingActorNv::UpdateWind(FClothingSimulationContextNv* InContext, const
 			for(int32 AccelerationIndex = 0; AccelerationIndex < NumAccelerations; ++AccelerationIndex)
 			{
 				const FVector& Velocity = ParticleVelocities[AccelerationIndex];
-				FVector VelocityDelta = (InWindVelocity * 2500.0f - Velocity);
+				FVector VelocityDelta = (TransformedWindVelocity * 2500.0f - Velocity);
 
 				if(MaxDistances[AccelerationIndex] > 0.0f && !VelocityDelta.IsZero())
 				{
@@ -1390,7 +1525,7 @@ void FClothingActorNv::UpdateWind(FClothingSimulationContextNv* InContext, const
 
 		case EClothingWindMethod::Accurate:
 		{
-			const physx::PxVec3 PxWindVelocity = U2PVector(InWindVelocity);
+			const physx::PxVec3 PxWindVelocity = U2PVector(InWindVelocity * NvClothSupport::Constants::UnitConversionScale);
 			LodData[CurrentLodIndex].Cloth->setWindVelocity((PxWindVelocity));
 		}
 		break;
@@ -1430,8 +1565,11 @@ void FClothingActorNv::CalculateParticleVelocities(TArray<FVector>& OutVelocitie
 	nv::cloth::Range<physx::PxVec4> PreviousPositions = LodData[CurrentLodIndex].Cloth->getPreviousParticles();
 	nv::cloth::Range<physx::PxVec4> CurrentPositions = LodData[CurrentLodIndex].Cloth->getCurrentParticles();
 
-	OutVelocities.Reset();
-	OutVelocities.AddDefaulted(NumParticles);
+	if(OutVelocities.Num() != NumParticles)
+	{
+		OutVelocities.Reset();
+		OutVelocities.AddDefaulted(NumParticles);
+	}
 
 	for(int32 ParticleIndex = 0; ParticleIndex < NumParticles; ++ParticleIndex)
 	{
@@ -1440,6 +1578,68 @@ void FClothingActorNv::CalculateParticleVelocities(TArray<FVector>& OutVelocitie
 
 		OutVelocities[ParticleIndex] = (NewPosition - OldPosition) * InverseTimestep;
 	}
+}
+
+void FClothingActorNv::UpdateAnimDrive(FClothingSimulationContextNv* InContext)
+{
+	SCOPE_CYCLE_COUNTER(STAT_NvClothUpdateAnimDrive);
+
+	FClothPhysicalMeshData& PhysMesh = AssetCreatedFrom->LodData[CurrentLodIndex].PhysicalMeshData;
+
+	if(PhysMesh.HasAnimDrive())
+	{
+		TArray<float>& AnimDrives = PhysMesh.AnimDriveMultipliers;
+		const TArray<FVector> CurrentSkinPositions = GetCurrentSkinnedPositions();
+		const TArray<FVector> PreviousSkinPositions = GetPreviousSkinnedPositions();
+
+		FActorLodData& CurrLodData = LodData[CurrentLodIndex];
+
+		int32 NumAccelerations = CurrLodData.Cloth->getNumParticleAccelerations();
+		checkSlow(NumAccelerations == 0 || NumAccelerations == AnimDrives.Num());
+		nv::cloth::Range<physx::PxVec4> Accelerations = CurrLodData.Cloth->getParticleAccelerations();
+
+		nv::cloth::Range<const physx::PxVec4> Locations = CurrLodData.Cloth->getCurrentParticles();
+		nv::cloth::Range<const physx::PxVec4> PrevLocations = CurrLodData.Cloth->getPreviousParticles();
+
+		for(int32 ParticleIdx = 0; ParticleIdx < NumAccelerations; ++ParticleIdx)
+		{
+			physx::PxVec4 Location = Locations[ParticleIdx];
+
+			// W Component of location is the inverse mass of the particle in NvCloth (0 -> Infinite mass)
+			if(Location.w == 0.0f)
+			{
+				continue;
+			}
+
+			const FVector ToSkinned = CurrentSkinPositions[ParticleIdx] - P2UVector(Location);
+			const FVector ParticleVelocity = P2UVector(Locations[ParticleIdx] - PrevLocations[ParticleIdx]);
+			const FVector SkinnedVelocity = CurrentSkinPositions[ParticleIdx] - PreviousSkinPositions[ParticleIdx];
+
+			// accel = (kX - bv)/m (spring with damper)
+			const FVector AddedAcceleration = ((CurrentAnimDriveSpringStiffness * AnimDrives[ParticleIdx] * ToSkinned) - (CurrentAnimDriveDamperStiffness * (ParticleVelocity - SkinnedVelocity))) / (1.0f / Location.w);
+
+			Accelerations[ParticleIdx] += physx::PxVec4(U2PVector(AddedAcceleration), 0.0f);
+		}
+	}
+}
+
+const TArray<FVector>& FClothingActorNv::GetCurrentSkinnedPositions() const
+{
+	return SkinnedPhysicsMeshPositions[CurrentSkinnedPositionIndex];
+}
+
+const TArray<FVector>& FClothingActorNv::GetPreviousSkinnedPositions() const
+{
+	return SkinnedPhysicsMeshPositions[(CurrentSkinnedPositionIndex + 1) % 2];
+}
+
+void FClothingActorScratchData::Reset()
+{
+	SphereData.Reset();
+	CapsuleSphereIndices.Reset();
+	PlaneData.Reset();
+	ConvexMasks.Reset();
+	ParticleVelocities.Reset();
 }
 
 #endif

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CoreMinimal.h"
@@ -76,6 +76,8 @@
 #include "ScriptDisassembler.h"
 #include "IAssetTools.h"
 #include "AssetToolsModule.h"
+#include "IContentBrowserSingleton.h"
+#include "ContentBrowserModule.h"
 #include "Editor/GeometryMode/Public/GeometryEdMode.h"
 #include "AssetRegistryModule.h"
 #include "Matinee/MatineeActor.h"
@@ -465,7 +467,7 @@ UPackage* UUnrealEdEngine::GeneratePackageThumbnailsIfRequired( const TCHAR* Str
 					// thumbnail so the Content Browser can check for non-existent assets in the background
 					if( bNeedEmptyThumbnail )
 					{
-						UPackage* MyOutermostPackage = CastChecked< UPackage >( CurObject->GetOutermost() );
+						UPackage* MyOutermostPackage = CurObject->GetOutermost();
 						ThumbnailTools::CacheEmptyThumbnail( CurObject->GetFullName(), MyOutermostPackage );
 					}
 				}
@@ -507,6 +509,28 @@ bool UUnrealEdEngine::HandleModalTestCommand( const TCHAR* Str, FOutputDevice& A
 	GEditor->EditorAddModalWindow( ModalWindow );
 
 	UE_LOG(LogUnrealEdSrv, Log,  TEXT("User response was: %s"), MessageBox->GetResponse() ? TEXT("OK") : TEXT("Cancel") );
+	return true;
+}
+
+bool UUnrealEdEngine::HandleDisallowExportCommand(const TCHAR* Str, FOutputDevice& Ar)
+{
+	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+
+	TArray<FAssetData> SelectedAssets;
+	ContentBrowserModule.Get().GetSelectedAssets(SelectedAssets);
+
+	for (const FAssetData& AssetData : SelectedAssets)
+	{
+		UObject* Object = AssetData.GetAsset();
+		if (Object)
+		{
+			UPackage* Package = Object->GetOutermost();
+			Package->SetPackageFlags(EPackageFlags::PKG_DisallowExport);
+			Package->MarkPackageDirty();
+			UE_LOG(LogUnrealEdSrv, Log, TEXT("Marked '%s' as not exportable"), *Object->GetName());
+		}
+	}
+
 	return true;
 }
 
@@ -696,6 +720,12 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 	if( FParse::Command(&Str, TEXT("ModalTest") ) )
 	{
 		HandleModalTestCommand( Str, Ar );
+		return true;
+	}
+
+	if (FParse::Command(&Str, TEXT("DisallowExport")))
+	{
+		HandleDisallowExportCommand(Str, Ar);
 		return true;
 	}
 
@@ -1002,7 +1032,7 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 					{
 						Mesh->Modify();
 
-						GWarn->StatusUpdate(MeshIndex + 1, SelectedMeshes.Num(), FText::Format(NSLOCTEXT("UnrealEd", "ScalingStaticMeshes_Value", "Static Mesh: %s"), FText::FromString(Mesh->GetName())));
+						GWarn->StatusUpdate(MeshIndex + 1, SelectedMeshes.Num(), FText::Format(NSLOCTEXT("UnrealEd", "ScalingStaticMeshes_Value", "Static Mesh: {0}"), FText::FromString(Mesh->GetName())));
 
 						FStaticMeshSourceModel& Model = Mesh->SourceModels[0];
 
@@ -1132,6 +1162,11 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 			FString ReplaceStr;
 			FParse::Value(Str, TEXT("Replace="), ReplaceStr );
 
+			FString AutoCheckOutStr;
+			FParse::Value(Str, TEXT("AutoCheckOut="), AutoCheckOutStr);
+			AutoCheckOutStr = AutoCheckOutStr.ToLower();
+			bool bAutoCheckOut = (AutoCheckOutStr == "yes" || AutoCheckOutStr == "true" || AutoCheckOutStr == "1");
+
 			GWarn->BeginSlowTask(NSLOCTEXT("UnrealEd", "RenamingAssets", "Renaming Assets"), true, true);
 
 			FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
@@ -1178,7 +1213,7 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 
 			if( AssetsToRename.Num() > 0 )
 			{
-				AssetTools.RenameAssets( AssetsToRename );
+				AssetTools.RenameAssetsWithDialog( AssetsToRename, bAutoCheckOut );
 			}
 
 			GWarn->EndSlowTask();
@@ -1804,7 +1839,7 @@ TArray<FPoly*> GetSelectedPolygons()
 						int32 NumTriangles = MeshLodZero.GetNumTriangles();
 						int32 NumVertices = MeshLodZero.GetNumVertices();
 			
-						const FPositionVertexBuffer& PositionVertexBuffer = MeshLodZero.PositionVertexBuffer;
+						const FPositionVertexBuffer& PositionVertexBuffer = MeshLodZero.VertexBuffers.PositionVertexBuffer;
 						FIndexArrayView Indices = MeshLodZero.DepthOnlyIndexBuffer.GetArrayView();
 
 						for ( int32 TriangleIndex = 0; TriangleIndex < NumTriangles; TriangleIndex++ )
@@ -2815,29 +2850,35 @@ bool UUnrealEdEngine::Exec_Actor( UWorld* InWorld, const TCHAR* Str, FOutputDevi
 
 				INodeNameAdapter NodeNameAdapter;
 				UnFbx::FFbxExporter* Exporter = UnFbx::FFbxExporter::GetInstance();
-				Exporter->CreateDocument();
-				for ( FSelectionIterator It( GetSelectedActorIterator() ) ; It ; ++It )
+				//Show the fbx export dialog options
+				bool ExportCancel = false;
+				bool ExportAll = false;
+				Exporter->FillExportOptions(false, true, FileName, ExportCancel, ExportAll);
+				if (!ExportCancel)
 				{
-					AActor* Actor = static_cast<AActor*>( *It );
-					if (Actor->IsA(AActor::StaticClass()))
+					Exporter->CreateDocument();
+					for (FSelectionIterator It(GetSelectedActorIterator()); It; ++It)
 					{
-						if (Actor->IsA(AStaticMeshActor::StaticClass()))
+						AActor* Actor = static_cast<AActor*>(*It);
+						if (Actor->IsA(AActor::StaticClass()))
 						{
-							Exporter->ExportStaticMesh(Actor, CastChecked<AStaticMeshActor>(Actor)->GetStaticMeshComponent(), NodeNameAdapter);
-						}
-						else if (Actor->IsA(ASkeletalMeshActor::StaticClass()))
-						{
-							Exporter->ExportSkeletalMesh(Actor, CastChecked<ASkeletalMeshActor>(Actor)->GetSkeletalMeshComponent(), NodeNameAdapter);
-						}
-						else if (Actor->IsA(ABrush::StaticClass()))
-						{
-							Exporter->ExportBrush( CastChecked<ABrush>(Actor), NULL, true, NodeNameAdapter );
+							if (Actor->IsA(AStaticMeshActor::StaticClass()))
+							{
+								Exporter->ExportStaticMesh(Actor, CastChecked<AStaticMeshActor>(Actor)->GetStaticMeshComponent(), NodeNameAdapter);
+							}
+							else if (Actor->IsA(ASkeletalMeshActor::StaticClass()))
+							{
+								Exporter->ExportSkeletalMesh(Actor, CastChecked<ASkeletalMeshActor>(Actor)->GetSkeletalMeshComponent(), NodeNameAdapter);
+							}
+							else if (Actor->IsA(ABrush::StaticClass()))
+							{
+								Exporter->ExportBrush(CastChecked<ABrush>(Actor), NULL, true, NodeNameAdapter);
+							}
 						}
 					}
+					Exporter->WriteToFile(*FileName);
 				}
-				Exporter->WriteToFile(*FileName);
 			}
-
 			return true;
 		}
 

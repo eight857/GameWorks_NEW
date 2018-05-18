@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,13 +8,11 @@
 #include "Modules/ModuleInterface.h"
 #include "Containers/Queue.h"
 
-/** Temporary version-check macro for BeginHandshaking function, for backwards-compatibility. */
-#define PACKETHANDLER_HAS_BEGINHANDSHAKING 1
-
 PACKETHANDLER_API DECLARE_LOG_CATEGORY_EXTERN(PacketHandlerLog, Log, All);
 
 
 class HandlerComponent;
+class FEncryptionComponent;
 class ReliabilityHandlerComponent;
 
 
@@ -197,8 +195,9 @@ public:
 	 * @param Mode					The mode the manager should be initialized in
 	 * @param InMaxPacketBits		The maximum supported packet size
 	 * @param bConnectionlessOnly	Whether or not this is a connectionless-only manager (ignores .ini components)
+	 * @param InProvider			The analytics provider
 	 */
-	void Initialize(Handler::Mode Mode, uint32 InMaxPacketBits, bool bConnectionlessOnly=false);
+	void Initialize(Handler::Mode Mode, uint32 InMaxPacketBits, bool bConnectionlessOnly=false, TSharedPtr<class IAnalyticsProvider> InProvider=nullptr);
 
 	/**
 	 * Used for external initialization of delegates
@@ -329,6 +328,11 @@ public:
 		return Outgoing_Internal(Packet, CountBits, true, Address);
 	}
 
+	/** Returns a pointer to the component set as the encryption handler, if any. */
+	TSharedPtr<FEncryptionComponent> GetEncryptionComponent();
+
+	/** Returns a pointer to the first component in the HandlerComponents array with the specified name. */
+	TSharedPtr<HandlerComponent> GetComponentByName(FName ComponentName) const;
 
 protected:
 	/**
@@ -510,6 +514,8 @@ private:
 	/** The HandlerComponent pipeline, for processing incoming/outgoing packets */
 	TArray<TSharedPtr<HandlerComponent>> HandlerComponents;
 
+	/** A direct pointer to the component configured as the encryption component. Will also be present in the HandlerComponents array. */
+	TSharedPtr<FEncryptionComponent> EncryptionComponent;
 
 	/** The maximum supported packet size (reflects UNetConnection::MaxPacket) */
 	uint32 MaxPacketBits;
@@ -543,6 +549,9 @@ private:
 	/** Whether or not outgoing packets bypass the handler */
 	bool bRawSend;
 
+	/** The analytics provider */
+	TSharedPtr<class IAnalyticsProvider> Provider;
+	
 	/** Whether or not component handshaking has begun */
 	bool bBeganHandshaking;
 };
@@ -559,6 +568,11 @@ public:
 	 * Base constructor
 	 */
 	HandlerComponent();
+
+	/**
+	 * Constructor that accepts a name
+	 */
+	explicit HandlerComponent(FName InName);
 
 	/**
 	 * Base destructor
@@ -667,6 +681,16 @@ public:
 	 */
 	virtual int32 GetReservedPacketBits() PURE_VIRTUAL(Handler::Component::GetReservedPacketBits, return -1;);
 
+	/** Returns the name of this component. */
+	FName GetName() const { return Name; }
+
+	/**
+	* Sets the analytics provider that can be used to send analytics events as needed.
+	*
+	* @param Provider The analytics provider
+	*/
+	virtual void SetAnalyticsProvider(TSharedPtr<class IAnalyticsProvider> Provider) {}
+
 protected:
 	/**
 	 * Sets the state of the handler
@@ -704,6 +728,9 @@ private:
 
 	/** Whether this handler is fully initialized on both remote and local */
 	bool bInitialized;
+
+	/* The name of this component */
+	FName Name;
 };
 
 /**

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VREditorMotionControllerInteractor.h"
 #include "GenericPlatform/GenericApplicationMessageHandler.h"
@@ -23,6 +23,7 @@
 #include "EngineGlobals.h"
 #include "IMotionController.h"
 #include "IHeadMountedDisplay.h"
+#include "IXRTrackingSystem.h"
 #include "MotionControllerComponent.h"
 #include "Features/IModularFeatures.h"
 #include "Engine/Selection.h"
@@ -34,6 +35,7 @@
 #include "VREditorActions.h"
 #include "VREditorAssetContainer.h"
 #include "VRModeSettings.h"
+#include "XRMotionControllerBase.h" // for FXRMotionControllerBase::Left/RightHandSourceId and GetHandEnumForSourceName()
 
 namespace VREd
 {
@@ -51,12 +53,14 @@ namespace VREd
 	static FAutoConsoleVariable LaserRadiusScaleWhenOverUI( TEXT( "VREd.LaserRadiusScaleWhenOverUI" ), 0.25f, TEXT( "How much to scale down the size of the laser pointer radius when over UI" ) );
 	static FAutoConsoleVariable HoverBallRadiusScaleWhenOverUI(TEXT("VREd.HoverBallRadiusScaleWhenOverUI"), 0.4f, TEXT("How much to scale down the size of the hover ball when over UI"));
 	//Trigger
-	static FAutoConsoleVariable TriggerDeadZone_Vive( TEXT( "VI.TriggerDeadZone_Vive" ), 0.01f, TEXT( "Trigger dead zone.  The trigger must be fully released before we'll trigger a new 'light press'" ) );
-	static FAutoConsoleVariable TriggerDeadZone_Rift( TEXT( "VI.TriggerDeadZone_Rift" ), 0.15f, TEXT( "Trigger dead zone.  The trigger must be fully released before we'll trigger a new 'light press'" ) );
+	static FAutoConsoleVariable TriggerTouchThreshold_Vive(TEXT("VI.TriggerTouchThreshold_Vive"), 0.025f, TEXT("Minimum trigger threshold before we consider the trigger 'touched'"));
+	static FAutoConsoleVariable TriggerTouchThreshold_Rift(TEXT("VI.TriggerTouchThreshold_Rift"), 0.15f, TEXT("Minimum trigger threshold before we consider the trigger 'touched'"));
+	static FAutoConsoleVariable TriggerDeadZone_Vive( TEXT( "VI.TriggerDeadZone_Vive" ), 0.25f, TEXT( "Trigger dead zone.  The trigger must be fully released before we'll trigger a new 'light press'" ) );
+	static FAutoConsoleVariable TriggerDeadZone_Rift( TEXT( "VI.TriggerDeadZone_Rift" ), 0.25f, TEXT( "Trigger dead zone.  The trigger must be fully released before we'll trigger a new 'light press'" ) );
 	static FAutoConsoleVariable TriggerFullyPressedThreshold_Vive( TEXT( "VI.TriggerFullyPressedThreshold_Vive" ), 0.90f, TEXT( "Minimum trigger threshold before we consider the trigger 'fully pressed'" ) );
 	static FAutoConsoleVariable TriggerFullyPressedThreshold_Rift( TEXT( "VI.TriggerFullyPressedThreshold_Rift" ), 0.99f, TEXT( "Minimum trigger threshold before we consider the trigger 'fully pressed'" ) );
 
-	static FAutoConsoleVariable TrackpadAbsoluteDragSpeed( TEXT( "VREd.TrackpadAbsoluteDragSpeed" ), 40.0f, TEXT( "How fast objects move toward or away when you drag on the touchpad while carrying them" ) );
+	static FAutoConsoleVariable TrackpadAbsoluteDragSpeed( TEXT( "VREd.TrackpadAbsoluteDragSpeed" ), 80.0f, TEXT( "How fast objects move toward or away when you drag on the touchpad while carrying them" ) );
 	static FAutoConsoleVariable TrackpadRelativeDragSpeed( TEXT( "VREd.TrackpadRelativeDragSpeed" ), 8.0f, TEXT( "How fast objects move toward or away when you hold a direction on an analog stick while carrying them" ) );
 	static FAutoConsoleVariable TrackpadStopImpactAtLaserBuffer( TEXT( "VREd.TrackpadStopImpactAtLaserBuffer" ), 0.4f, TEXT( "Required amount to slide with input to stop transforming to end of laser" ) );
 	static FAutoConsoleVariable InvertTrackpadVertical( TEXT( "VREd.InvertTrackpadVertical" ), 1, TEXT( "Toggles inverting the touch pad vertical axis" ) );
@@ -72,6 +76,9 @@ namespace VREd
 	static FAutoConsoleVariable SequencerScrubMax(TEXT("VREd.SequencerScrubMax"), 2.0f, TEXT("Max fast forward or fast reverse magnitude"));
 
 }
+
+static const FName OculusDeviceType(TEXT("OculusHMD"));
+static const FName SteamVRDeviceType(TEXT("SteamVR"));
 
 const FName UVREditorMotionControllerInteractor::TrackpadPositionX = FName( "TrackpadPositionX" );
 const FName UVREditorMotionControllerInteractor::TrackpadPositionY = FName( "TrackpadPositionY" );
@@ -109,7 +116,7 @@ UVREditorMotionControllerInteractor::UVREditorMotionControllerInteractor() :
 	HoverMeshComponent( nullptr ),
 	HoverPointLightComponent( nullptr ),
 	HandMeshMID( nullptr ),
-	ControllerHandSide( EControllerHand::Pad ),
+	ControllerMotionSource( NAME_None ),
 	bHaveMotionController( false ),
 	bIsTriggerFullyPressed( false ),
 	bIsTriggerPressed( false ),
@@ -134,9 +141,9 @@ void UVREditorMotionControllerInteractor::Init( class UVREditorMode* InVRMode )
 	Super::Init( InVRMode );
 	bHaveMotionController = true;
 
-	const EHMDDeviceType::Type HMDDeviceType = GetVRMode().GetHMDDeviceType();
+	const FName HMDDeviceType = GetVRMode().GetHMDDeviceType();
 	// Setup keys
-	if ( ControllerHandSide == EControllerHand::Left )
+	if ( ControllerMotionSource == FXRMotionControllerBase::LeftHandSourceId)
 	{
 		AddKeyAction( EKeys::MotionController_Left_Grip1, FViewportActionKeyInput( ViewportWorldActionTypes::WorldMovement ) );
 		AddKeyAction( UVREditorMotionControllerInteractor::MotionController_Left_FullyPressedTriggerAxis, FViewportActionKeyInput( ViewportWorldActionTypes::SelectAndMove_FullyPressed ) );
@@ -147,17 +154,17 @@ void UVREditorMotionControllerInteractor::Init( class UVREditorMode* InVRMode )
 		AddKeyAction( EKeys::MotionController_Left_Thumbstick_Y, FViewportActionKeyInput( UVREditorMotionControllerInteractor::TrackpadPositionY ) );
 		AddKeyAction( EKeys::MotionController_Left_Thumbstick, FViewportActionKeyInput( VRActionTypes::ConfirmRadialSelection ) );
 
-		if ( HMDDeviceType == EHMDDeviceType::DT_SteamVR )
+		if ( HMDDeviceType == SteamVRDeviceType )
 		{
 			AddKeyAction( EKeys::MotionController_Left_Shoulder, FViewportActionKeyInput( VRActionTypes::Modifier ) );
 		}
-		else if( HMDDeviceType == EHMDDeviceType::DT_OculusRift )
+		else if( HMDDeviceType == OculusDeviceType )
 		{
 			AddKeyAction( EKeys::MotionController_Left_FaceButton1, FViewportActionKeyInput( VRActionTypes::Modifier ) );
 			AddKeyAction( EKeys::MotionController_Left_FaceButton2, FViewportActionKeyInput( VRActionTypes::Modifier2 ) );
 		}
 	}
-	else if ( ControllerHandSide == EControllerHand::Right )
+	else if ( ControllerMotionSource == FXRMotionControllerBase::RightHandSourceId )
 	{
 		AddKeyAction( EKeys::MotionController_Right_Grip1, FViewportActionKeyInput( ViewportWorldActionTypes::WorldMovement ) );
 		AddKeyAction( UVREditorMotionControllerInteractor::MotionController_Right_FullyPressedTriggerAxis, FViewportActionKeyInput( ViewportWorldActionTypes::SelectAndMove_FullyPressed ) );
@@ -168,11 +175,11 @@ void UVREditorMotionControllerInteractor::Init( class UVREditorMode* InVRMode )
 		AddKeyAction( EKeys::MotionController_Right_Thumbstick_Y, FViewportActionKeyInput( UVREditorMotionControllerInteractor::TrackpadPositionY ) );
 		AddKeyAction( EKeys::MotionController_Right_Thumbstick, FViewportActionKeyInput( VRActionTypes::ConfirmRadialSelection ) );
 
-		if ( HMDDeviceType == EHMDDeviceType::DT_SteamVR )
+		if ( HMDDeviceType == SteamVRDeviceType )
 		{
 			AddKeyAction( EKeys::MotionController_Right_Shoulder, FViewportActionKeyInput( VRActionTypes::Modifier ) );
 		}
-		else if ( HMDDeviceType == EHMDDeviceType::DT_OculusRift )
+		else if ( HMDDeviceType == OculusDeviceType )
 		{
 			AddKeyAction( EKeys::MotionController_Right_FaceButton1, FViewportActionKeyInput( VRActionTypes::Modifier ) );
 			AddKeyAction( EKeys::MotionController_Right_FaceButton2, FViewportActionKeyInput( VRActionTypes::Modifier2 ) );
@@ -200,7 +207,7 @@ void UVREditorMotionControllerInteractor::SetupComponent( AActor* OwningActor )
 		MotionControllerComponent->SetMobility( EComponentMobility::Movable );
 		MotionControllerComponent->SetCollisionEnabled( ECollisionEnabled::NoCollision );
 
-		MotionControllerComponent->Hand = ControllerHandSide;
+		MotionControllerComponent->MotionSource = ControllerMotionSource;
 
 		// @todo vreditor: Reenable late frame updates after we've sorted out why they cause popping artifacts on Rift
 		MotionControllerComponent->bDisableLowLatencyUpdate = true;
@@ -216,7 +223,7 @@ void UVREditorMotionControllerInteractor::SetupComponent( AActor* OwningActor )
 		HandMeshComponent->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
 		HandMeshComponent->SetCollisionResponseToAllChannels(ECR_Block);
 
-		UMaterialInterface* HandMeshMaterial = GetVRMode().GetHMDDeviceType() == EHMDDeviceType::DT_SteamVR ? AssetContainer.VivePreControllerMaterial : AssetContainer.OculusControllerMaterial;
+		UMaterialInterface* HandMeshMaterial = GetVRMode().GetHMDDeviceType() == SteamVRDeviceType ? AssetContainer.VivePreControllerMaterial : AssetContainer.OculusControllerMaterial;
 		check( HandMeshMaterial != nullptr );
 		HandMeshMID = UMaterialInstanceDynamic::Create( HandMeshMaterial, GetTransientPackage() );
 		check( HandMeshMID != nullptr );
@@ -284,15 +291,15 @@ void UVREditorMotionControllerInteractor::SetupComponent( AActor* OwningActor )
 		LaserSplineComponent->SetupAttachment(MotionControllerComponent);
 		LaserSplineComponent->RegisterComponent();
 		LaserSplineComponent->SetVisibility(false);
+		LaserSplineComponent->PostPhysicsComponentTick.bCanEverTick = false;
 
 		for (int32 i = 0; i < NumLaserSplinePoints; i++)
 		{
 			USplineMeshComponent* SplineSegment = NewObject<USplineMeshComponent>(OwningActor);
-			OwningActor->AddOwnedComponent(SplineSegment);
 			SplineSegment->SetMobility(EComponentMobility::Movable);
 			SplineSegment->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			SplineSegment->SetSplineUpDir(FVector::UpVector, false);
 			SplineSegment->PostPhysicsComponentTick.bCanEverTick = false;
-			SplineSegment->SetupAttachment(MotionControllerComponent);
 
 			UStaticMesh* StaticMesh = nullptr;
 			if (i == 0)
@@ -323,9 +330,9 @@ void UVREditorMotionControllerInteractor::SetupComponent( AActor* OwningActor )
 }
 
 
-void UVREditorMotionControllerInteractor::SetControllerHandSide( const EControllerHand InControllerHandSide )
+void UVREditorMotionControllerInteractor::SetControllerHandSide( const FName InControllerHandSide )
 {
-	ControllerHandSide = InControllerHandSide;
+	ControllerMotionSource = InControllerHandSide;
 }
 
 
@@ -354,8 +361,8 @@ void UVREditorMotionControllerInteractor::Tick( const float DeltaTime )
 
 		// The hands need to stay the same size relative to our tracking space, so we inverse compensate for world to meters scale here
 		// NOTE: We don't need to set the hand mesh location and rotation, as the MotionControllerComponent does that itself
-		if ( ControllerHandSide == EControllerHand::Right &&
-			GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift )	// Oculus has asymmetrical controllers, so we mirror the mesh horizontally
+		if ( ControllerMotionSource == FXRMotionControllerBase::RightHandSourceId &&
+			GetHMDDeviceType() == OculusDeviceType )	// Oculus has asymmetrical controllers, so we mirror the mesh horizontally
 		{
 			HandMeshComponent->SetRelativeScale3D( FVector( WorldScaleFactor, -WorldScaleFactor, WorldScaleFactor ) );
 		}
@@ -455,7 +462,7 @@ void UVREditorMotionControllerInteractor::Tick( const float DeltaTime )
 		{
 			// Offset the beginning of the laser pointer a bit, so that it doesn't overlap the hand mesh
 			const float LaserPointerStartOffset = WorldScaleFactor *
-				(GetVRMode().GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift ? VREd::OculusLaserPointerStartOffset->GetFloat() : VREd::ViveLaserPointerStartOffset->GetFloat());
+				(GetVRMode().GetHMDDeviceType() == OculusDeviceType ? VREd::OculusLaserPointerStartOffset->GetFloat() : VREd::ViveLaserPointerStartOffset->GetFloat());
 
 			// Get the hand transform and forward vector.
 			FTransform InteractorTransform;
@@ -558,7 +565,7 @@ void UVREditorMotionControllerInteractor::CalculateDragRay( float& InOutDragRayL
 	// Make sure they are touching the trackpad, otherwise we get bad data
 	if ( bIsTrackpadPositionValid[ 1 ] )
 	{
-		const bool bIsAbsolute = ( GetVRMode().GetHMDDeviceType() == EHMDDeviceType::DT_SteamVR );
+		const bool bIsAbsolute = (GetVRMode().GetHMDDeviceType() == SteamVRDeviceType);
 		float SlideDelta = GetTrackpadSlideDelta() * WorldScaleFactor;
 
 		if ( !FMath::IsNearlyZero( SlideDelta ) )
@@ -584,8 +591,8 @@ void UVREditorMotionControllerInteractor::CalculateDragRay( float& InOutDragRayL
 			{
 				InOutDragRayLength = 0.0f;
 				InOutDragRayVelocity = 0.0f;
-			}			
-			
+			}	
+
 			// Stop transforming object to laser impact point when trying to slide with touchpad or analog stick.
 			if (InteractorData.DraggingMode == EViewportInteractionDraggingMode::TransformablesAtLaserImpact && !FMath::IsNearlyZero(SlideDelta, VREd::TrackpadStopImpactAtLaserBuffer->GetFloat()))
 			{
@@ -621,9 +628,9 @@ void UVREditorMotionControllerInteractor::CalculateDragRay( float& InOutDragRayL
 }
 
 
-EHMDDeviceType::Type UVREditorMotionControllerInteractor::GetHMDDeviceType() const
+FName UVREditorMotionControllerInteractor::GetHMDDeviceType() const
 {
-	return GEngine->HMDDevice.IsValid() ? GEngine->HMDDevice->GetHMDDeviceType() : EHMDDeviceType::DT_SteamVR; //@todo: ViewportInteraction, assumption that it's steamvr ??
+	return (GEngine && GEngine->XRSystem.IsValid()) ? GEngine->XRSystem->GetSystemName() : FName();
 }
 
 
@@ -696,26 +703,29 @@ void UVREditorMotionControllerInteractor::PreviewInputKey( FEditorViewportClient
 		const bool bIsHoldingUpOnTrackpad =
 			bIsTrackpadPositionValid[0] && bIsTrackpadPositionValid[1] &&
 			TrackpadPosition.Y >= VREd::MinTrackpadOffsetBeforeRadialMenu->GetFloat() &&
-			( GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift || bIsPressingTrackpad );
+			( GetHMDDeviceType() == OculusDeviceType || bIsPressingTrackpad );
 
 		if( bIsHoldingUpOnTrackpad && Action.ActionType == ViewportWorldActionTypes::SelectAndMove && Event == IE_Pressed )
 		{
 			bOutWasHandled = true;
 
 			// Try to place the object currently selected
-			TArray<UObject*> ObjectsToPlace;
+			TArray<UObject*> SelectedObjects;
 			{
 				FEditorDelegates::LoadSelectedAssetsIfNeeded.Broadcast();
-				GEditor->GetSelectedObjects()->GetSelectedObjects( /* Out */ ObjectsToPlace );
+				GEditor->GetSelectedObjects()->GetSelectedObjects( /* Out */ SelectedObjects );
 			}
 
-			if( ObjectsToPlace.Num() > 0 )
+			if( SelectedObjects.Num() > 0 )
 			{
+				TArray<UObject*> ObjectToPlace;
+				ObjectToPlace.Add(SelectedObjects[0]);
+
 				Action.bIsInputCaptured = true;
 
 				const bool bShouldInterpolateFromDragLocation = false;
 				UActorFactory* FactoryToUse = nullptr;	// Use default factory
-				GetVRMode().GetPlacementSystem()->StartPlacingObjects( ObjectsToPlace, FactoryToUse, this, bShouldInterpolateFromDragLocation );
+				GetVRMode().GetPlacementSystem()->StartPlacingObjects( ObjectToPlace, FactoryToUse, this, bShouldInterpolateFromDragLocation );
 			}
 		}
 	}
@@ -740,9 +750,10 @@ void UVREditorMotionControllerInteractor::HandleInputKey( FEditorViewportClient&
 				FVector PlaceAt = GetHoverLocation();
 				const bool bIsPlacingActors = true;
 				const bool bAllowInterpolationWhenPlacing = true;
+				const bool bShouldUseLaserImpactDrag = true;
 				const bool bStartTransaction = true;
 				const bool bWithGrabberSphere = false;	// Never use the grabber sphere when dragging at laser impact
-				WorldInteraction->StartDragging( this, WorldInteraction->GetTransformGizmoActor()->GetRootComponent(), PlaceAt, bIsPlacingActors, bAllowInterpolationWhenPlacing, bStartTransaction, bWithGrabberSphere );
+				WorldInteraction->StartDragging( this, WorldInteraction->GetTransformGizmoActor()->GetRootComponent(), PlaceAt, bIsPlacingActors, bAllowInterpolationWhenPlacing, bShouldUseLaserImpactDrag, bStartTransaction, bWithGrabberSphere );
 			}
 		}
 		else if( Event == IE_Released )
@@ -762,8 +773,8 @@ void UVREditorMotionControllerInteractor::HandleInputAxis( FEditorViewportClient
 {
 	if ( Action.ActionType == TriggerAxis )
 	{
-		const float TriggerPressedThreshold = ( GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift ) ? GetDefault<UVRModeSettings>()->TriggerPressedThreshold_Rift : GetDefault<UVRModeSettings>()->TriggerPressedThreshold_Vive;
-		const float TriggerDeadZone = ( GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift ) ? VREd::TriggerDeadZone_Rift->GetFloat() : VREd::TriggerDeadZone_Vive->GetFloat();
+		const float TriggerPressedThreshold = ( GetHMDDeviceType() == OculusDeviceType ) ? GetDefault<UVRModeSettings>()->TriggerPressedThreshold_Rift : GetDefault<UVRModeSettings>()->TriggerPressedThreshold_Vive;
+		const float TriggerDeadZone = ( GetHMDDeviceType() == OculusDeviceType ) ? VREd::TriggerDeadZone_Rift->GetFloat() : VREd::TriggerDeadZone_Vive->GetFloat();
 
 		// Synthesize "lightly pressed" events for the trigger
 		{
@@ -779,7 +790,7 @@ void UVREditorMotionControllerInteractor::HandleInputAxis( FEditorViewportClient
 
 				// Synthesize an input key for this light press
 				const EInputEvent InputEvent = IE_Pressed;
-				const bool bWasLightPressHandled = UViewportInteractor::HandleInputKey( ViewportClient, ControllerHandSide == EControllerHand::Left ? MotionController_Left_PressedTriggerAxis : MotionController_Right_PressedTriggerAxis, InputEvent );
+				const bool bWasLightPressHandled = UViewportInteractor::HandleInputKey( ViewportClient, ControllerMotionSource == FXRMotionControllerBase::LeftHandSourceId ? MotionController_Left_PressedTriggerAxis : MotionController_Right_PressedTriggerAxis, InputEvent );
 			}
 			else if ( bIsTriggerPressed && Delta < TriggerPressedThreshold )
 			{
@@ -787,7 +798,7 @@ void UVREditorMotionControllerInteractor::HandleInputAxis( FEditorViewportClient
 
 				// Synthesize an input key for this light press
 				const EInputEvent InputEvent = IE_Released;
-				const bool bWasLightReleaseHandled = UViewportInteractor::HandleInputKey( ViewportClient, ControllerHandSide == EControllerHand::Left ? MotionController_Left_PressedTriggerAxis : MotionController_Right_PressedTriggerAxis, InputEvent );
+				const bool bWasLightReleaseHandled = UViewportInteractor::HandleInputKey( ViewportClient, ControllerMotionSource == FXRMotionControllerBase::LeftHandSourceId ? MotionController_Left_PressedTriggerAxis : MotionController_Right_PressedTriggerAxis, InputEvent );
 			}
 		}
 
@@ -798,7 +809,7 @@ void UVREditorMotionControllerInteractor::HandleInputAxis( FEditorViewportClient
 
 		// Synthesize "fully pressed" events for the trigger
 		{
-			const float TriggerFullyPressedThreshold = (GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift) ? VREd::TriggerFullyPressedThreshold_Rift->GetFloat() : VREd::TriggerFullyPressedThreshold_Vive->GetFloat();
+			const float TriggerFullyPressedThreshold = (GetHMDDeviceType() == OculusDeviceType) ? VREd::TriggerFullyPressedThreshold_Rift->GetFloat() : VREd::TriggerFullyPressedThreshold_Vive->GetFloat();
 
 			if ( !bIsTriggerFullyPressed &&	// Don't fire if we are already pressed
 				 Delta >= TriggerFullyPressedThreshold )
@@ -806,14 +817,14 @@ void UVREditorMotionControllerInteractor::HandleInputAxis( FEditorViewportClient
 				bIsTriggerFullyPressed = true;
 
 				const EInputEvent InputEvent = IE_Pressed;
-				UViewportInteractor::HandleInputKey( ViewportClient, ControllerHandSide == EControllerHand::Left ? MotionController_Left_FullyPressedTriggerAxis : MotionController_Right_FullyPressedTriggerAxis, InputEvent );
+				UViewportInteractor::HandleInputKey( ViewportClient, ControllerMotionSource == FXRMotionControllerBase::LeftHandSourceId ? MotionController_Left_FullyPressedTriggerAxis : MotionController_Right_FullyPressedTriggerAxis, InputEvent );
 			}
 			else if ( bIsTriggerFullyPressed && Delta < TriggerPressedThreshold )
 			{
 				bIsTriggerFullyPressed = false;
 
 				const EInputEvent InputEvent = IE_Released;
-				UViewportInteractor::HandleInputKey( ViewportClient, ControllerHandSide == EControllerHand::Left ? MotionController_Left_FullyPressedTriggerAxis : MotionController_Right_FullyPressedTriggerAxis, InputEvent );
+				UViewportInteractor::HandleInputKey( ViewportClient, ControllerMotionSource == FXRMotionControllerBase::LeftHandSourceId ? MotionController_Left_FullyPressedTriggerAxis : MotionController_Right_FullyPressedTriggerAxis, InputEvent );
 			}
 		}
 	}
@@ -861,7 +872,7 @@ void UVREditorMotionControllerInteractor::PollInput()
 			FVector Location = FVector::ZeroVector;
 			FRotator Rotation = FRotator::ZeroRotator; 
 			const float WorldScale = GetVRMode().GetWorldScaleFactor() *100.0f; // WorldScaleFactor is worldscale / 100.0
-			if ( MotionController->GetControllerOrientationAndPosition( WorldInteraction->GetMotionControllerID(), ControllerHandSide, /* Out */ Rotation, /* Out */ Location, WorldScale) )
+			if ( MotionController->GetControllerOrientationAndPosition( WorldInteraction->GetMotionControllerID(), ControllerMotionSource, /* Out */ Rotation, /* Out */ Location, WorldScale) )
 			{
 				bHaveMotionController = true;
 				InteractorData.RoomSpaceTransform = FTransform( Rotation.Quaternion(), Location, FVector( 1.0f ) );
@@ -880,8 +891,8 @@ void UVREditorMotionControllerInteractor::PlayHapticEffect( const float Strength
 
 		//@todo viewportinteration
 		FForceFeedbackValues ForceFeedbackValues;
-		ForceFeedbackValues.LeftLarge = ControllerHandSide == EControllerHand::Left ? Strength : 0;
-		ForceFeedbackValues.RightLarge = ControllerHandSide == EControllerHand::Right ? Strength : 0;
+		ForceFeedbackValues.LeftLarge = ControllerMotionSource == FXRMotionControllerBase::LeftHandSourceId ? Strength : 0;
+		ForceFeedbackValues.RightLarge = ControllerMotionSource == FXRMotionControllerBase::RightHandSourceId ? Strength : 0;
 
 		// @todo vreditor: If an Xbox controller is plugged in, this causes both the motion controllers and the Xbox controller to vibrate!
 		InputInterface->SetForceFeedbackChannelValues( WorldInteraction->GetMotionControllerID(), ForceFeedbackValues );
@@ -894,7 +905,7 @@ bool UVREditorMotionControllerInteractor::GetTransformAndForwardVector( FTransfo
 	{
 		OutHandTransform = InteractorData.Transform;
 
-		const float LaserPointerRotationOffset = GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift ? VREd::OculusLaserPointerRotationOffset->GetFloat() : VREd::ViveLaserPointerRotationOffset->GetFloat();
+		const float LaserPointerRotationOffset = GetHMDDeviceType() == OculusDeviceType ? VREd::OculusLaserPointerRotationOffset->GetFloat() : VREd::ViveLaserPointerRotationOffset->GetFloat();
 		OutForwardVector = OutHandTransform.GetRotation().RotateVector( FRotator( LaserPointerRotationOffset, 0.0f, 0.0f ).RotateVector( FVector( 1.0f, 0.0f, 0.0f ) ) );
 
 		return true;
@@ -905,7 +916,7 @@ bool UVREditorMotionControllerInteractor::GetTransformAndForwardVector( FTransfo
 
 float UVREditorMotionControllerInteractor::GetTrackpadSlideDelta( const bool Axis )
 {
-	const bool bIsAbsolute = ( GetVRMode().GetHMDDeviceType() == EHMDDeviceType::DT_SteamVR );
+	const bool bIsAbsolute = ( GetVRMode().GetHMDDeviceType() == SteamVRDeviceType );
 	float SlideDelta = 0.0f;
 	if ( bIsTouchingTrackpad || !bIsAbsolute )
 	{
@@ -924,7 +935,9 @@ float UVREditorMotionControllerInteractor::GetTrackpadSlideDelta( const bool Axi
 
 EControllerHand UVREditorMotionControllerInteractor::GetControllerSide() const
 {
-	return ControllerHandSide;
+	EControllerHand Hand = EControllerHand::Left;
+	FXRMotionControllerBase::GetHandEnumForSourceName(MotionControllerComponent->MotionSource, Hand);
+	return Hand;
 }
 
 UMotionControllerComponent* UVREditorMotionControllerInteractor::GetMotionControllerComponent() const
@@ -1015,7 +1028,7 @@ void UVREditorMotionControllerInteractor::ApplyButtonPressColors( const FViewpor
 		SetMotionControllerButtonPressedVisuals( Event, StaticModifierParameter, PressStrength );
 	}
 
-	if( GetVRMode().GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift && ActionType == VRActionTypes::Modifier2 )
+	if( GetVRMode().GetHMDDeviceType() == OculusDeviceType && ActionType == VRActionTypes::Modifier2 )
 	{
 		static FName StaticModifierParameter( "B5" );
 		SetMotionControllerButtonPressedVisuals( Event, StaticModifierParameter, PressStrength );
@@ -1181,8 +1194,7 @@ void UVREditorMotionControllerInteractor::UpdateHelpLabels()
 			FTransform SocketRelativeTransform( Socket->RelativeRotation, Socket->RelativeLocation, Socket->RelativeScale );
 
 			// Oculus has asymmetrical controllers, so we the sock transform horizontally
-			if ( ControllerHandSide == EControllerHand::Right &&
-				GetVRMode().GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift )
+			if ( ControllerMotionSource == FXRMotionControllerBase::RightHandSourceId && GetVRMode().GetHMDDeviceType() == OculusDeviceType )
 			{
 				const FVector Scale3D = SocketRelativeTransform.GetLocation();
 				SocketRelativeTransform.SetLocation( FVector( Scale3D.X, -Scale3D.Y, Scale3D.Z ) );
@@ -1306,7 +1318,7 @@ void UVREditorMotionControllerInteractor::UpdateSplineLaser(const FVector& InSta
 		const FVector StraightLaserEndLocation = InStartLocation + (InForward * Distance);
 		const int32 NumLaserSplinePoints = LaserSplineMeshComponents.Num();
 
-		LaserSplineComponent->AddSplinePoint(InStartLocation, ESplineCoordinateSpace::World, false);
+		LaserSplineComponent->AddSplinePoint(InStartLocation, ESplineCoordinateSpace::Local, false);
 		for (int32 Index = 1; Index < NumLaserSplinePoints; Index++)
 		{
 			float Alpha = (float)Index / (float)NumLaserSplinePoints;
@@ -1314,9 +1326,9 @@ void UVREditorMotionControllerInteractor::UpdateSplineLaser(const FVector& InSta
 			const FVector PointOnStraightLaser = FMath::Lerp(InStartLocation, StraightLaserEndLocation, Alpha);
 			const FVector PointOnSmoothLaser = FMath::Lerp(InStartLocation, InEndLocation, Alpha);
 			const FVector PointBetweenLasers = FMath::Lerp(PointOnStraightLaser, PointOnSmoothLaser, Alpha);
-			LaserSplineComponent->AddSplinePoint(PointBetweenLasers, ESplineCoordinateSpace::World, false);
+			LaserSplineComponent->AddSplinePoint(PointBetweenLasers, ESplineCoordinateSpace::Local, false);
 		}
-		LaserSplineComponent->AddSplinePoint(InEndLocation, ESplineCoordinateSpace::World, false);
+		LaserSplineComponent->AddSplinePoint(InEndLocation, ESplineCoordinateSpace::Local, false);
 
 		// Update all the segments of the spline
 		LaserSplineComponent->UpdateSpline();
@@ -1380,7 +1392,7 @@ void UVREditorMotionControllerInteractor::SetLaserVisuals( const FLinearColor& N
 void UVREditorMotionControllerInteractor::UpdateRadialMenuInput( const float DeltaTime )
 {
 	UVREditorUISystem& UISystem = GetVRMode().GetUISystem();
-	const EHMDDeviceType::Type HMDDeviceType = GetVRMode().GetHMDDeviceType();
+	const FName HMDDeviceType = GetVRMode().GetHMDDeviceType();
 	//Update the radial menu
 	EViewportInteractionDraggingMode DraggingMode = GetDraggingMode();
 	if (ControllerType == EControllerType::UI)
@@ -1421,7 +1433,7 @@ void UVREditorMotionControllerInteractor::UpdateRadialMenuInput( const float Del
 			}
 		}
 		// If we are not currently touching the Vive touchpad, reset the highlighted button
-		else if (HMDDeviceType == EHMDDeviceType::DT_SteamVR && !bIsTouchingTrackpad)
+		else if (HMDDeviceType == SteamVRDeviceType && !bIsTouchingTrackpad)
 		{
 			if (UISystem.IsShowingRadialMenu(this))
 			{
@@ -1433,7 +1445,7 @@ void UVREditorMotionControllerInteractor::UpdateRadialMenuInput( const float Del
 
 	else if (ControllerType == EControllerType::Laser)
 	{
-		if (VRMode->GetHMDDeviceType() != EHMDDeviceType::DT_SteamVR &&
+		if (HMDDeviceType != SteamVRDeviceType &&
 			(bIsTrackpadPositionValid[0] && bIsTrackpadPositionValid[1]) &&
 			DraggingMode != EViewportInteractionDraggingMode::TransformablesWithGizmo &&
 			DraggingMode != EViewportInteractionDraggingMode::TransformablesFreely &&
@@ -1472,7 +1484,7 @@ void UVREditorMotionControllerInteractor::UndoRedoFromSwipe(const ETouchSwipeDir
 {
 	EViewportInteractionDraggingMode DraggingMode = GetDraggingMode();
 	if (ControllerType == EControllerType::Laser &&
-		VRMode->GetHMDDeviceType() == EHMDDeviceType::DT_SteamVR && 
+		VRMode->GetHMDDeviceType() == SteamVRDeviceType &&
 		DraggingMode != EViewportInteractionDraggingMode::TransformablesWithGizmo &&
 		DraggingMode != EViewportInteractionDraggingMode::TransformablesFreely &&
 		DraggingMode != EViewportInteractionDraggingMode::TransformablesAtLaserImpact &&

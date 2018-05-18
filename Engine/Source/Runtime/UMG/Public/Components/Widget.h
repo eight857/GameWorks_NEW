@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -77,6 +77,13 @@ namespace UMWidget
 	:																\
 		TAttribute< ReturnType >(MemberName)
 
+#define BITFIELD_PROPERTY_BINDING(MemberName)						\
+	( MemberName ## Delegate.IsBound() && !IsDesignTime() )			\
+	?																\
+		BIND_UOBJECT_ATTRIBUTE(bool, K2_Gate_ ## MemberName)		\
+	:																\
+		TAttribute< bool >(MemberName != 0)
+
 #define PROPERTY_BINDING_IMPLEMENTATION(ReturnType, MemberName)			\
 	ReturnType K2_Cache_ ## MemberName;									\
 	ReturnType K2_Gate_ ## MemberName()									\
@@ -97,6 +104,13 @@ namespace UMWidget
 		TAttribute< ReturnType >::Create(MemberName ## Delegate.GetUObject(), MemberName ## Delegate.GetFunctionName()) \
 	:															\
 		TAttribute< ReturnType >(MemberName)
+
+#define BITFIELD_PROPERTY_BINDING(MemberName)					\
+	( MemberName ## Delegate.IsBound() && !IsDesignTime() )		\
+	?															\
+		TAttribute< bool >::Create(MemberName ## Delegate.GetUObject(), MemberName ## Delegate.GetFunctionName()) \
+	:															\
+		TAttribute< bool >(MemberName != 0)
 
 #define PROPERTY_BINDING_IMPLEMENTATION(Type, MemberName) 
 
@@ -196,21 +210,10 @@ public:
 	typedef TFunctionRef<TSharedPtr<SObjectWidget>( UUserWidget*, TSharedRef<SWidget> )> ConstructMethodType;
 
 	/**
-	 * Allows controls to be exposed as variables in a blueprint.  Not all controls need to be exposed
-	 * as variables, so this allows only the most useful ones to end up being exposed.
-	 */
-	UPROPERTY()
-	bool bIsVariable;
-
-	/**
 	 * The parent slot of the UWidget.  Allows us to easily inline edit the layout controlling this widget.
 	 */
 	UPROPERTY(Instanced, EditAnywhere, BlueprintReadOnly, Category=Layout, meta=(ShowOnlyInnerProperties))
 	UPanelSlot* Slot;
-
-	/** Sets whether this widget can be modified interactively by the user */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Behavior")
-	bool bIsEnabled;
 
 	/** A bindable delegate for bIsEnabled */
 	UPROPERTY()
@@ -225,28 +228,79 @@ public:
 	FGetText ToolTipTextDelegate;
 
 	/** Tooltip widget to show when the user hovers over the widget with the mouse */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Behavior", AdvancedDisplay)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Behavior", AdvancedDisplay)
 	UWidget* ToolTipWidget;
 
 	/** A bindable delegate for ToolTipWidget */
 	UPROPERTY()
 	FGetWidget ToolTipWidgetDelegate;
 
-	/** The visibility of the widget */
-	UPROPERTY()
-	ESlateVisibility Visiblity_DEPRECATED;
-
-	/** The visibility of the widget */
-	UPROPERTY(EditAnywhere, Category="Behavior")
-	ESlateVisibility Visibility;
 
 	/** A bindable delegate for Visibility */
 	UPROPERTY()
 	FGetSlateVisibility VisibilityDelegate;
 
+	/** A bindable delegate for Cursor */
+	//UPROPERTY()
+	//FGetMouseCursor CursorDelegate;
+
+public:
+
+	/** The render transform of the widget allows for arbitrary 2D transforms to be applied to the widget. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Render Transform", meta=( DisplayName="Transform" ))
+	FWidgetTransform RenderTransform;
+
+	/**
+	 * The render transform pivot controls the location about which transforms are applied.  
+	 * This value is a normalized coordinate about which things like rotations will occur.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Render Transform", meta=( DisplayName="Pivot" ))
+	FVector2D RenderTransformPivot;
+
+	/**
+	 * Allows controls to be exposed as variables in a blueprint.  Not all controls need to be exposed
+	 * as variables, so this allows only the most useful ones to end up being exposed.
+	 */
+	UPROPERTY()
+	uint8 bIsVariable:1;
+
+	/** Flag if the Widget was created from a blueprint */
+	UPROPERTY(Transient)
+	uint8 bCreatedByConstructionScript:1;
+
+	/** Sets whether this widget can be modified interactively by the user */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Behavior")
+	uint8 bIsEnabled:1;
+
 	/**  */
 	UPROPERTY(EditAnywhere, Category="Behavior", meta=(InlineEditConditionToggle))
-	uint32 bOverride_Cursor : 1;
+	uint8 bOverride_Cursor : 1;
+
+protected:
+
+	/**
+	 * If true prevents the widget or its child's geometry or layout information from being cached.  If this widget
+	 * changes every frame, but you want it to still be in an invalidation panel you should make it as volatile
+	 * instead of invalidating it every frame, which would prevent the invalidation panel from actually
+	 * ever caching anything.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Performance")
+	uint8 bIsVolatile:1;
+
+public:
+#if WITH_EDITORONLY_DATA
+	/** Stores the design time flag setting if the widget is hidden inside the designer */
+	UPROPERTY()
+	uint8 bHiddenInDesigner:1;
+
+	/** Stores the design time flag setting if the widget is expanded inside the designer */
+	UPROPERTY()
+	uint8 bExpandedInDesigner:1;
+
+	/** Stores the design time flag setting if the widget is locked inside the designer */
+	UPROPERTY()
+	uint8 bLockedInDesigner:1;
+#endif
 
 	/** The cursor to show when the mouse is over the widget */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Behavior", AdvancedDisplay, meta=( editcondition="bOverride_Cursor" ))
@@ -264,29 +318,13 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Clipping")
 	EWidgetClipping Clipping;
 
-protected:
+	/** The visibility of the widget */
+	UPROPERTY(EditAnywhere, Category="Behavior")
+	ESlateVisibility Visibility;
 
-	/**
-	 * If true prevents the widget or its child's geometry or layout information from being cached.  If this widget
-	 * changes every frame, but you want it to still be in an invalidation panel you should make it as volatile
-	 * instead of invalidating it every frame, which would prevent the invalidation panel from actually
-	 * ever caching anything.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Performance")
-	bool bIsVolatile;
-
-public:
-
-	/** The render transform of the widget allows for arbitrary 2D transforms to be applied to the widget. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Render Transform", meta=( DisplayName="Transform" ))
-	FWidgetTransform RenderTransform;
-
-	/**
-	 * The render transform pivot controls the location about which transforms are applied.  
-	 * This value is a normalized coordinate about which things like rotations will occur.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Render Transform", meta=( DisplayName="Pivot" ))
-	FVector2D RenderTransformPivot;
+	/** The opacity of the widget */
+	UPROPERTY(EditAnywhere, Category="Behavior")
+	float RenderOpacity;
 
 	/**
 	 * The navigation object for this widget is optionally created if the user has configured custom
@@ -297,18 +335,6 @@ public:
 	class UWidgetNavigation* Navigation;
 
 #if WITH_EDITORONLY_DATA
-
-	/** Stores the design time flag setting if the widget is hidden inside the designer */
-	UPROPERTY()
-	bool bHiddenInDesigner;
-
-	/** Stores the design time flag setting if the widget is expanded inside the designer */
-	UPROPERTY()
-	bool bExpandedInDesigner;
-
-	/** Stores the design time flag setting if the widget is locked inside the designer */
-	UPROPERTY()
-	bool bLockedInDesigner;
 
 	/** Stores a reference to the asset responsible for this widgets construction. */
 	TWeakObjectPtr<UObject> WidgetGeneratedBy;
@@ -397,6 +423,14 @@ public:
 	/** Sets the visibility of the widget. */
 	UFUNCTION(BlueprintCallable, Category="Widget")
 	virtual void SetVisibility(ESlateVisibility InVisibility);
+
+	/** Gets the current visibility of the widget. */
+	UFUNCTION(BlueprintCallable, Category="Widget")
+	float GetRenderOpacity() const;
+
+	/** Sets the visibility of the widget. */
+	UFUNCTION(BlueprintCallable, Category="Widget")
+	void SetRenderOpacity(float InOpacity);
 
 	/** Gets the clipping state of this widget. */
 	UFUNCTION(BlueprintCallable, Category = "Widget")
@@ -632,7 +666,6 @@ public:
 
 	// Begin UObject
 	virtual UWorld* GetWorld() const override;
-	virtual void PostLoad() override;
 	// End UObject
 
 #if WITH_EDITOR
@@ -706,6 +739,8 @@ public:
 	static FSizeParam ConvertSerializedSizeParamToRuntime(const FSlateChildSize& Input);
 
 	static UWidget* FindChildContainingDescendant(UWidget* Root, UWidget* Descendant);
+
+	static FString GetDefaultFontName();
 
 protected:
 	virtual void OnBindingChanged(const FName& Property);

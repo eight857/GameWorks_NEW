@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VirtualTextureSpace.h"
 
@@ -113,9 +113,9 @@ public:
 		UpdateBuffer.Bind( Initializer.ParameterMap, TEXT("UpdateBuffer") );
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && !IsHlslccShaderPlatform(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && !IsHlslccShaderPlatform(Parameters.Platform);
 	}
 
 	virtual bool Serialize( FArchive& Ar ) override
@@ -140,9 +140,9 @@ public:
 		: FGlobalShader(Initializer)
 	{}
 	
-	static bool ShouldCache( EShaderPlatform Platform )
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported( Platform, ERHIFeatureLevel::SM5 ) && !IsHlslccShaderPlatform(Platform);
+		return IsFeatureLevelSupported( Parameters.Platform, ERHIFeatureLevel::SM5 ) && !IsHlslccShaderPlatform(Parameters.Platform);
 	}
 };
 
@@ -158,9 +158,9 @@ public:
 		: FPageTableUpdateVS(Initializer)
 	{}
 
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment( Platform, OutEnvironment );
+		FGlobalShader::ModifyCompilationEnvironment( Parameters, OutEnvironment );
 		OutEnvironment.SetDefine( TEXT("PAGE_TABLE_FORMAT"), Format );
 	}
 };
@@ -177,9 +177,9 @@ public:
 		: FPageTableUpdatePS(Initializer)
 	{}
 	
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment( Platform, OutEnvironment );
+		FGlobalShader::ModifyCompilationEnvironment( Parameters, OutEnvironment );
 		OutEnvironment.SetDefine( TEXT("PAGE_TABLE_FORMAT"), Format );
 		OutEnvironment.SetRenderTargetOutputFormat( 0, Format == 0 ? PF_R16_UINT : PF_R8G8B8A8 );
 	}
@@ -301,33 +301,27 @@ void FVirtualTextureSpace::ApplyUpdates( FRHICommandList& RHICmdList )
 			default:
 				check(0);
 			}
+			checkSlow( VertexShader && PixelShader );
 			
-			if (VertexShader && PixelShader)
+			GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GEmptyVertexDeclaration.VertexDeclarationRHI;
+			GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(VertexShader);
+			GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(PixelShader);
+
+			SetGraphicsPipelineState( RHICmdList, GraphicsPSOInit );
+
 			{
-				GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GEmptyVertexDeclaration.VertexDeclarationRHI;
-				GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(VertexShader);
-				GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(PixelShader);
+				const FVertexShaderRHIParamRef ShaderRHI = VertexShader->GetVertexShader();
 
-				SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
-
-				{
-					const FVertexShaderRHIParamRef ShaderRHI = VertexShader->GetVertexShader();
-
-					SetShaderValue(RHICmdList, ShaderRHI, VertexShader->PageTableSize, PageTableSize);
-					SetShaderValue(RHICmdList, ShaderRHI, VertexShader->FirstUpdate, FirstUpdate);
-					SetShaderValue(RHICmdList, ShaderRHI, VertexShader->NumUpdates, NumUpdates);
-					SetSRVParameter(RHICmdList, ShaderRHI, VertexShader->UpdateBuffer, UpdateBufferSRV);
-				}
-			}
-			else
-			{
-				check(0);
+				SetShaderValue( RHICmdList, ShaderRHI, VertexShader->PageTableSize,	PageTableSize );
+				SetShaderValue( RHICmdList, ShaderRHI, VertexShader->FirstUpdate,	FirstUpdate );
+				SetShaderValue( RHICmdList, ShaderRHI, VertexShader->NumUpdates,	NumUpdates );
+				SetSRVParameter( RHICmdList, ShaderRHI, VertexShader->UpdateBuffer,	UpdateBufferSRV );
 			}
 
 			// needs to be the same on shader side (faster on NVIDIA and AMD)
 			uint32 QuadsPerInstance = 8;
 
-			RHICmdList.SetStreamSource( 0, NULL, 0, 0 );
+			RHICmdList.SetStreamSource( 0, NULL, 0 );
 			RHICmdList.DrawIndexedPrimitive( GQuadIndexBuffer.IndexBufferRHI, PT_TriangleList, 0, 0, 32, 0, 2 * QuadsPerInstance, FMath::DivideAndRoundUp( NumUpdates, QuadsPerInstance ) );
 
 			ExpandedUpdates[ Mip ].Reset();

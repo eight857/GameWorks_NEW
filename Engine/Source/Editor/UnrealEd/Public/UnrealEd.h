@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -30,7 +30,6 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "Classes/ActorFactories/ActorFactoryClass.h"
 #include "Classes/ActorFactories/ActorFactoryCylinderVolume.h"
 #include "Classes/ActorFactories/ActorFactoryDeferredDecal.h"
-#include "Classes/ActorFactories/ActorFactoryDestructible.h"
 #include "Classes/ActorFactories/ActorFactoryDirectionalLight.h"
 #include "Classes/ActorFactories/ActorFactoryEmitter.h"
 #include "Classes/ActorFactories/ActorFactoryEmptyActor.h"
@@ -70,13 +69,13 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "Classes/Editor/UnrealEdTypes.h"
 #include "Classes/MaterialEditor/DEditorParameterValue.h"
 #include "Classes/MaterialEditor/DEditorFontParameterValue.h"
+#include "Classes/MaterialEditor/DEditorMaterialLayersParameterValue.h"
 #include "Classes/MaterialEditor/DEditorScalarParameterValue.h"
 #include "Classes/MaterialEditor/DEditorStaticComponentMaskParameterValue.h"
 #include "Classes/MaterialEditor/DEditorStaticSwitchParameterValue.h"
 #include "Classes/MaterialEditor/DEditorTextureParameterValue.h"
 #include "Classes/MaterialEditor/DEditorVectorParameterValue.h"
 #include "Classes/Commandlets/DerivedDataCacheCommandlet.h"
-#include "Classes/Settings/DestructableMeshEditorSettings.h"
 #include "Classes/Commandlets/DiffAssetsCommandlet.h"
 #include "Classes/Commandlets/DiffPackagesCommandlet.h"
 #include "Classes/Commandlets/DiffFilesCommandlet.h"
@@ -134,8 +133,6 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "Classes/Factories/BlueprintMacroFactory.h"
 #include "Classes/Factories/BlueprintInterfaceFactory.h"
 #include "Classes/Factories/CameraAnimFactory.h"
-#include "Classes/Factories/DestructibleMeshFactory.h"
-#include "Classes/Factories/ReimportDestructibleMeshFactory.h"
 #include "Classes/Factories/EnumFactory.h"
 #include "Classes/Factories/FbxFactory.h"
 #include "Classes/Factories/FbxSceneImportFactory.h"
@@ -224,7 +221,7 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "Classes/Exporters/ObjectExporterT3D.h"
 #include "Classes/Commandlets/ParticleSystemAuditCommandlet.h"
 #include "Classes/Preferences/PersonaOptions.h"
-#include "Classes/Preferences/PhATSimOptions.h"
+#include "Classes/Preferences/PhysicsAssetEditorOptions.h"
 #include "Classes/Commandlets/PkgInfoCommandlet.h"
 #include "Classes/Exporters/PolysExporterOBJ.h"
 #include "Classes/Exporters/PolysExporterT3D.h"
@@ -264,7 +261,6 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "Classes/ThumbnailRendering/BlendSpaceThumbnailRenderer.h"
 #include "Classes/ThumbnailRendering/BlueprintThumbnailRenderer.h"
 #include "Classes/ThumbnailRendering/ClassThumbnailRenderer.h"
-#include "Classes/ThumbnailRendering/DestructibleMeshThumbnailRenderer.h"
 #include "Classes/ThumbnailRendering/LevelThumbnailRenderer.h"
 #include "Classes/ThumbnailRendering/MaterialFunctionThumbnailRenderer.h"
 #include "Classes/ThumbnailRendering/MaterialInstanceThumbnailRenderer.h"

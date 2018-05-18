@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	HTML5OpenGL.h: Public OpenGL ES 2.0 definitions for HTML5-specific functionality
@@ -14,7 +14,6 @@ typedef long long  GLint64;
 typedef unsigned long long  GLuint64;
 
 // empty functions.
-#if PLATFORM_HTML5_BROWSER
 #include <GLES3/gl3.h>
 void glDeleteQueriesEXT(GLsizei n,  const GLuint * ids);
 void glGenQueriesEXT(GLsizei n,  GLuint * ids);
@@ -25,7 +24,6 @@ void glLabelObjectEXT(GLenum type, GLuint object, GLsizei length, const GLchar *
 void glPushGroupMarkerEXT (GLsizei length, const GLchar *marker);
 void glPopGroupMarkerEXT (void);
 void glGetObjectLabelEXT (GLenum type, GLuint object, GLsizei bufSize, GLsizei *length, GLchar *label);
-#endif
 
 #define GL_BGRA									0x80E1
 #define GL_QUERY_COUNTER_BITS_EXT				0x8864

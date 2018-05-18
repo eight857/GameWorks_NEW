@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/UProjectInfo.h"
 #include "Logging/LogMacros.h"
@@ -37,7 +37,7 @@ void FUProjectDictionary::Refresh()
 		{
 			for(const FString& Line: Lines)
 			{
-				FString Entry = FString(Line).Trim();
+				FString Entry = Line.TrimStart();
 				if(!Entry.IsEmpty() && !Entry.StartsWith(";"))
 				{
 					FString DirectoryName = FPaths::ConvertRelativePathToFull(RootDir, Entry);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PhysXSupport.h: PhysX support
@@ -12,6 +12,7 @@
 #include "EngineDefines.h"
 #include "Containers/Queue.h"
 #include "Physics/PhysicsFiltering.h"
+#include "PhysXPublic.h"
 
 class UBodySetup;
 class UPhysicalMaterial;
@@ -68,46 +69,13 @@ const uint32 AggregateBodyShapesThreshold	   = 999999999;
 /////// UTILS
 
 
-/** Perform any deferred cleanup of resources (GPhysXPendingKillConvex etc) */
-ENGINE_API void DeferredPhysResourceCleanup();
-
-/** Calculates correct impulse at the body's center of mass and adds the impulse to the body. */
-ENGINE_API void AddRadialImpulseToPxRigidBody_AssumesLocked(PxRigidBody& PRigidBody, const FVector& Origin, float Radius, float Strength, uint8 Falloff, bool bVelChange);
 
 
 /** Calculates correct impulse at the body's center of mass and adds the impulse to the body. */
-DEPRECATED(4.8, "Please call AddRadialImpulseToPxRigidBody_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-inline void AddRadialImpulseToPxRigidBody(PxRigidBody& PRigidBody, const FVector& Origin, float Radius, float Strength, uint8 Falloff, bool bVelChange)
-{
-	AddRadialImpulseToPxRigidBody_AssumesLocked(PRigidBody, Origin, Radius, Strength, Falloff, bVelChange);
-}
-
-ENGINE_API void AddRadialForceToPxRigidBody_AssumesLocked(PxRigidBody& PRigidBody, const FVector& Origin, float Radius, float Strength, uint8 Falloff, bool bAccelChange);
-
-/** Calculates correct force at the body's center of mass and adds force to the body. */
-DEPRECATED(4.8, "Please call AddRadialImpulseToPxRigidBody_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-inline void AddRadialForceToPxRigidBody(PxRigidBody& PRigidBody, const FVector& Origin, float Radius, float Strength, uint8 Falloff, bool bAccelChange)
-{
-	AddRadialForceToPxRigidBody_AssumesLocked(PRigidBody, Origin, Radius, Strength, Falloff, bAccelChange);
-}
-
+/** Util to see if a PxRigidBody is non-kinematic */
 bool IsRigidBodyKinematic_AssumesLocked(const PxRigidBody* PRigidBody);
 
 bool IsRigidBodyKinematicAndInSimulationScene_AssumesLocked(const PxRigidBody* PRigidBody);
-
-DEPRECATED(4.12, "Please call IsRigidBodyKinematic_AssumesLocked")
-inline bool IsRigidBodyNonKinematic_AssumesLocked(const PxRigidBody* PRigidBody)
-{
-	return !IsRigidBodyKinematic_AssumesLocked(PRigidBody);
-}
-
-/** Util to see if a PxRigidActor is non-kinematic */
-DEPRECATED(4.8, "Please call IsRigidBodyKinematic_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
-inline bool IsRigidBodyNonKinematic(PxRigidBody* PRigidBody)
-{
-	return !IsRigidBodyKinematic_AssumesLocked(PRigidBody);
-}
-
 
 /////// GLOBAL POINTERS
 
@@ -155,9 +123,7 @@ extern TArray<PxMaterial*>		GPhysXPendingKillMaterial;
 extern ENGINE_API NvFlexLibrary*				GFlexLib;
 #endif
 
-#if WITH_PHYSX
 extern const physx::PxQuat U2PSphylBasis;
-#endif // WITH_PHYSX
 
 /** Utility class to keep track of shared physics data */
 class FPhysxSharedData
@@ -167,8 +133,8 @@ public:
 	static void Initialize();
 	static void Terminate();
 
-	void Add(PxBase* Obj);
-	void Remove(PxBase* Obj)	{ if(Obj) { SharedObjects->remove(*Obj); } }
+	void Add(PxBase* Obj, const FString& OwnerName);
+	void Remove(PxBase* Obj);
 
 	const PxCollection* GetCollection()	{ return SharedObjects; }
 
@@ -176,6 +142,7 @@ public:
 private:
 	/** Collection of shared physx objects */
 	PxCollection* SharedObjects;
+	TMap<PxBase*, FString> OwnerNames;
 	
 	static FPhysxSharedData* Singleton;
 
@@ -422,11 +389,15 @@ public:
 			}
 		};
 				
+		size_t TotalSize = 0;
 		AllocationsByType.ValueSort(FSortBySize());
 		for( auto It=AllocationsByType.CreateConstIterator(); It; ++It )
 		{
+			TotalSize += It.Value();
 			Ar->Logf(TEXT("%-10d %s"), It.Value(), *It.Key().ToString());
 		}
+
+		Ar->Logf(TEXT("Total:%-10d"), TotalSize);
 	}
 #endif
 
@@ -567,38 +538,7 @@ public:
 };
 extern FApexResourceCallback GApexResourceCallback;
 
-/**
-	APEX PhysX3 interface
-	This interface allows us to modify the PhysX simulation filter shader data with contact pair flags 
-*/
-class FApexPhysX3Interface : public nvidia::apex::PhysX3Interface
-{
-public:
-	// NxApexPhysX3Interface interface.
 
-	virtual void				setContactReportFlags(physx::PxShape* PShape, physx::PxPairFlags PFlags, nvidia::apex::DestructibleActor* actor, PxU16 actorChunkIndex) override;
-
-	virtual physx::PxPairFlags	getContactReportFlags(const physx::PxShape* PShape) const override;
-};
-extern FApexPhysX3Interface GApexPhysX3Interface;
-
-/**
-	APEX Destructible chunk report interface
-	This interface delivers summaries (which can be detailed to the single chunk level, depending on the settings)
-	of chunk fracture and destroy events.
-*/
-class FApexChunkReport : public nvidia::apex::UserChunkReport
-{
-public:
-	// NxUserChunkReport interface.
-
-	virtual void	onDamageNotify(const nvidia::apex::DamageEventReportData& damageEvent) override;
-	virtual void	onStateChangeNotify(const nvidia::apex::ChunkStateEventData& visibilityEvent) override;
-	virtual bool	releaseOnNoChunksVisible(const nvidia::apex::DestructibleActor* destructible) override;
-	virtual void	onDestructibleWake(nvidia::apex::DestructibleActor** destructibles, physx::PxU32 count) override;
-	virtual void	onDestructibleSleep(nvidia::apex::DestructibleActor** destructibles, physx::PxU32 count) override;
-};
-extern FApexChunkReport GApexChunkReport;
 #endif // #if WITH_APEX
 
 /** Util to determine whether to use NegX version of mesh, and what transform (rotation) to apply. */
@@ -630,7 +570,6 @@ public:
  * @returns						Size of the object in bytes determined by serialization
  **/
 ENGINE_API SIZE_T GetPhysxObjectSize(PxBase* Obj, const PxCollection* SharedCollection);
-#endif // WITH_PHYSX
 
 /** Helper struct holding physics body filter data during initialisation */
 struct FShapeFilterData
@@ -664,3 +603,4 @@ struct FShapeData
 	PxRigidBodyFlags SyncBodyFlags;
 	PxRigidBodyFlags AsyncBodyFlags;
 };
+#endif // WITH_PHYSX

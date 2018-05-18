@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CollectionViewUtils.h"
@@ -167,7 +167,7 @@ bool CollectionViewUtils::HasCustomColors( TArray< FLinearColor >* OutColors )
 
 	for(FString& EntryStr : Section)
 	{
-		EntryStr.Trim();
+		EntryStr.TrimStartInline();
 
 		FString ColorKeyStr;
 		FString ColorStr;

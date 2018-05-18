@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -36,6 +36,7 @@ public class MeshUtilities : ModuleRules
 				"SkeletonEditor",
 				"PropertyEditor",
 				"EditorStyle",
+                "GraphColor",
             }
 		);
 
@@ -70,11 +71,11 @@ public class MeshUtilities : ModuleRules
             AddEngineThirdPartyPrivateStaticDependencies(Target, "DX9");
 		}
 
-		if (UEBuildConfiguration.bCompileSimplygon == true)
+		if (Target.bCompileSimplygon == true)
 		{
             AddEngineThirdPartyPrivateDynamicDependencies(Target, "SimplygonMeshReduction");
             
-            if (UEBuildConfiguration.bCompileSimplygonSSF == true)
+            if (Target.bCompileSimplygonSSF == true)
             {
                 DynamicallyLoadedModuleNames.AddRange(
                     new string[] {
@@ -87,29 +88,29 @@ public class MeshUtilities : ModuleRules
         // EMBREE
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
-            string SDKDir = UEBuildConfiguration.UEThirdPartySourceDirectory + "IntelEmbree/Embree2140/Win64/";
+            string SDKDir = Target.UEThirdPartySourceDirectory + "IntelEmbree/Embree2140/Win64/";
 
             PublicIncludePaths.Add(SDKDir + "include");
             PublicLibraryPaths.Add(SDKDir + "lib");
             PublicAdditionalLibraries.Add("embree.2.14.0.lib");
-            RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Binaries/Win64/embree.2.14.0.dll"));
-            RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Binaries/Win64/tbb.dll"));
-            RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Binaries/Win64/tbbmalloc.dll"));
-            Definitions.Add("USE_EMBREE=1");
+            RuntimeDependencies.Add("$(EngineDir)/Binaries/Win64/embree.2.14.0.dll");
+            RuntimeDependencies.Add("$(EngineDir)/Binaries/Win64/tbb.dll");
+            RuntimeDependencies.Add("$(EngineDir)/Binaries/Win64/tbbmalloc.dll");
+            PublicDefinitions.Add("USE_EMBREE=1");
         }
         else if (Target.Platform == UnrealTargetPlatform.Mac)
         {
-            string SDKDir = UEBuildConfiguration.UEThirdPartySourceDirectory + "IntelEmbree/Embree2140/MacOSX/";
+            string SDKDir = Target.UEThirdPartySourceDirectory + "IntelEmbree/Embree2140/MacOSX/";
 
             PublicIncludePaths.Add(SDKDir + "include");
             PublicAdditionalLibraries.Add(SDKDir + "lib/libembree.2.14.0.dylib");
 			PublicAdditionalLibraries.Add(SDKDir + "lib/libtbb.dylib");
 			PublicAdditionalLibraries.Add(SDKDir + "lib/libtbbmalloc.dylib");
-            Definitions.Add("USE_EMBREE=1");
+            PublicDefinitions.Add("USE_EMBREE=1");
         }
         else
         {
-            Definitions.Add("USE_EMBREE=0");
+            PublicDefinitions.Add("USE_EMBREE=0");
         }
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
 #include "UObject/Class.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "UObject/Package.h"
 #include "UObject/ObjectRedirector.h"
 #include "Misc/PackageName.h"
@@ -28,6 +28,7 @@ struct ASSETREGISTRY_API FAssetRegistryVersion
 		AddAssetRegistryState,	// Added FAssetRegistryState and support for piecemeal serialization
 		ChangedAssetData,		// AssetData serialization format changed, versions before this are not readable
 		RemovedMD5Hash,			// Removed MD5 hash from package data
+		AddedHardManage,		// Added hard/soft manage references
 
 		// -----<new versions can be added above this line>-------------------------------------------------
 		VersionPlusOne,
@@ -111,6 +112,7 @@ public:
 			}
 
 			const UPackage* Outermost = InAsset->GetOutermost();
+			const UObject* Outer = InAsset->GetOuter();
 
 			PackageName = Outermost->GetFName();
 			PackagePath = FName(*FPackageName::GetLongPackagePath(Outermost->GetName()));
@@ -240,10 +242,16 @@ public:
 		return FoundClass;
 	}
 
-	/** Convert to a StringAssetReference for loading */
-	FStringAssetReference ToStringReference() const
+	/** Convert to a SoftObjectPath for loading */
+	FSoftObjectPath ToSoftObjectPath() const
 	{
-		return FStringAssetReference(ObjectPath.ToString());
+		return FSoftObjectPath(ObjectPath.ToString());
+	}
+
+	DEPRECATED(4.18, "ToStringReference was renamed to ToSoftObjectPath")
+	FSoftObjectPath ToStringReference() const
+	{
+		return ToSoftObjectPath();
 	}
 	
 	/** Gets primary asset id of this data */
@@ -435,6 +443,11 @@ private:
 		return false;
 	}
 };
+
+FORCEINLINE uint32 GetTypeHash(const FAssetData& AssetData)
+{
+	return GetTypeHash(AssetData.ObjectPath);
+}
 
 
 template<>
